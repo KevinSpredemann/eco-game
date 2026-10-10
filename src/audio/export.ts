@@ -36,6 +36,13 @@ const SFX: [string, number, (e: AudioEngine) => void][] = [
   ['hab_teleporte_zoe', 0.5, (e) => e.ability('teleporte', 0)],
   ['hab_explosao_maya', 0.9, (e) => e.ability('explosao', 0)],
   ['hab_clone_zed', 0.5, (e) => e.ability('clone', 0)],
+  ['poder_aparece', 0.5, (e) => e.powerSpawn(0)],
+  ['poder_escudo', 0.8, (e) => e.power('escudo', 0)],
+  ['poder_ima', 0.7, (e) => e.power('ima', 0)],
+  ['poder_gelo', 0.9, (e) => e.power('gelo', 0)],
+  ['poder_turbo', 0.5, (e) => e.power('turbo', 0)],
+  ['poder_dobro', 0.6, (e) => e.power('dobro', 0)],
+  ['poder_apagar_eco', 0.8, (e) => e.power('apagar', 0)],
   ['vitoria', 2.4, (e) => e.victory()],
   ['derrota', 1.4, (e) => e.defeat()],
 ];

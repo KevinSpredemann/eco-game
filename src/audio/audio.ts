@@ -319,6 +319,37 @@ export class AudioEngine {
         break;
     }
   }
+  powerSpawn(pan?: number) {
+    const t = this.now;
+    [1318, 1760].forEach((f, i) => this.tone({ type: 'sine', freq: f, dur: 0.2, gain: 0.06, when: t + i * 0.08, pan }));
+  }
+  /** cada poder tem seu som ao ser pego */
+  power(kind: string, pan?: number) {
+    const t = this.now;
+    switch (kind) {
+      case 'escudo':
+        [523, 784, 1046].forEach((f, i) => this.tone({ type: 'triangle', freq: f, dur: 0.5, gain: 0.12, when: t + i * 0.05, pan }));
+        break;
+      case 'ima':
+        this.tone({ type: 'sawtooth', freq: 120, freqEnd: 480, dur: 0.45, gain: 0.08, filter: 1200, pan });
+        this.tone({ type: 'sine', freq: 880, freqEnd: 1760, dur: 0.3, gain: 0.08, pan, when: t + 0.1 });
+        break;
+      case 'gelo':
+        for (let i = 0; i < 6; i++) this.tone({ type: 'sine', freq: 2400 + i * 260, dur: 0.35, gain: 0.05, when: t + i * 0.04, pan });
+        this.noise({ dur: 0.6, gain: 0.08, type: 'highpass', freq: 6000, pan });
+        break;
+      case 'turbo':
+        this.tone({ type: 'sawtooth', freq: 200, freqEnd: 1400, dur: 0.35, gain: 0.1, filter: 3000, pan });
+        break;
+      case 'dobro':
+        [659, 988, 1318, 1976].forEach((f, i) => this.tone({ type: 'square', freq: f, dur: 0.15, gain: 0.07, when: t + i * 0.06, filter: 4000, pan }));
+        break;
+      case 'apagar':
+        this.tone({ type: 'sine', freq: 900, freqEnd: 90, dur: 0.6, gain: 0.16, pan });
+        this.noise({ dur: 0.5, gain: 0.15, type: 'bandpass', freq: 2500, freqEnd: 200, q: 3, pan });
+        break;
+    }
+  }
   victory() {
     const t = this.now;
     const mel = [0, 4, 7, 12, 7, 12, 16, 19];
