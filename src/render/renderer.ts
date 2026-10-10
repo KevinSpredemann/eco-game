@@ -2,6 +2,7 @@ import { ArenaDef, BORDER, WORLD_H, WORLD_W, beamAngle, bridgeState, laserX, pis
 import { getCharacter } from '../game/characters';
 import * as C from '../game/constants';
 import type { EchoView, Game, GameEvent, Player } from '../game/sim';
+import { PowerId, getPower } from '../game/powerups';
 import { sampleRecording } from '../systems/echo/recorder';
 import { SpriteCache, WALK_FRAMES, drawCharacter, drawSymbol, facingOf, rr } from './sprites';
 
@@ -19,7 +20,7 @@ type Particle = {
 };
 
 const FONT = '"Chakra Petch", "Segoe UI", system-ui, sans-serif';
-const SPRITE_SCALE = 1.08;
+const SPRITE_SCALE = 1.2;
 
 function seeded(seed: number) {
   let s = seed >>> 0;
@@ -518,6 +519,21 @@ export class Renderer {
         case 'goldenSpawn':
           this.ring(e.x, e.y, '#ffd23e', 80);
           break;
+        case 'power': {
+          const def = getPower(e.power);
+          this.burst(e.x, e.y, def.color, 18, 220);
+          this.ring(e.x, e.y, def.color, 70);
+          this.text(e.x, e.y - 40, def.name.toUpperCase() + '!', def.color, 20);
+          break;
+        }
+        case 'powerSpawn':
+          this.ring(e.x, e.y, getPower(e.power).color, 50);
+          break;
+        case 'echoErased':
+          this.burst(e.x, e.y, '#ff4fc3', 26, 260);
+          this.ring(e.x, e.y, '#ff4fc3', 90);
+          this.text(e.x, e.y - 50, 'ECO APAGADO', '#ff4fc3', 20);
+          break;
         case 'objective': {
           const p = pc(e.pid);
           if (p) this.text(p.x, p.y - 70, e.text, '#ffd23e', 18);
@@ -570,6 +586,7 @@ export class Renderer {
       this.drawRewind(game);
     } else {
       this.drawFragments(game, time);
+      this.drawPowerups(game, time);
       this.drawEchoes(game, time);
       this.drawClones(game, time);
       const ps = game.players.filter((p) => p.playing && p.alive).sort((p1, p2) => p1.y - p2.y);
@@ -960,25 +977,44 @@ export class Renderer {
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(e.x, e.y - 18, 14 + e.pulse * 22, 0, Math.PI * 2);
+        ctx.arc(e.x, e.y - 26, 16 + e.pulse * 22, 0, Math.PI * 2);
         ctx.globalAlpha = alpha * (1 - e.pulse);
         ctx.stroke();
         ctx.globalAlpha = alpha;
       }
       const { facing, flip } = facingOf(e.dir);
       const frame = Math.floor(((time * 11) / (Math.PI * 2)) * WALK_FRAMES) % WALK_FRAMES;
-      const img = this.sprites.get(ch, facing, frame, e.moving, e.disrupted ? '#d8e6ff' : e.rec.color);
+      const tint = e.iced ? '#b8e6ff' : e.disrupted ? '#d8e6ff' : e.rec.color;
+      const img = this.sprites.get(ch, facing, e.iced ? 0 : frame, e.moving && !e.iced, tint);
       ctx.globalCompositeOperation = 'lighter';
       this.sprites.draw(ctx, img, e.x, e.y + 4, flip, SPRITE_SCALE);
       ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = Math.min(1, alpha + 0.15);
-      // símbolo + geração
-      drawSymbol(ctx, ch.id, e.x - 10, e.y - 62, 7, e.rec.color);
-      ctx.font = `700 11px ${FONT}`;
+      if (e.iced) {
+        ctx.strokeStyle = 'rgba(200,240,255,0.9)';
+        ctx.lineWidth = 2;
+        for (let k = 0; k < 3; k++) {
+          const a0 = (k / 3) * Math.PI;
+          ctx.beginPath();
+          ctx.moveTo(e.x + Math.cos(a0) * 9, e.y - 30 + Math.sin(a0) * 9);
+          ctx.lineTo(e.x - Math.cos(a0) * 9, e.y - 30 - Math.sin(a0) * 9);
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = Math.min(1, alpha + 0.2);
+      // de quem é + rodada
+      const mine = e.rec.playerId === 'p0';
+      const tag = mine ? `SEU ECO · R${e.rec.round}` : `R${e.rec.round}`;
+      ctx.font = `700 ${mine ? 12 : 11}px ${FONT}`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = e.rec.color;
-      ctx.fillText(`R${e.rec.round}`, e.x - 1, e.y - 62);
+      const tw = ctx.measureText(tag).width + 18;
+      const tx = e.x - tw / 2;
+      ctx.fillStyle = 'rgba(8,6,22,0.7)';
+      rr(ctx, tx - 3, e.y - 98, tw + 6, 16, 8);
+      ctx.fill();
+      drawSymbol(ctx, ch.id, tx + 7, e.y - 90, 6, e.rec.color);
+      ctx.fillStyle = mine ? '#ffffff' : e.rec.color;
+      ctx.fillText(tag, tx + 15, e.y - 90);
       ctx.globalAlpha = 1;
     }
   }
@@ -1050,15 +1086,56 @@ export class Renderer {
       ctx.lineWidth = 3;
       ctx.fillStyle = 'rgba(93,255,138,0.12)';
       ctx.beginPath();
-      ctx.arc(p.x, p.y - 20, 30 + Math.sin(time * 10) * 1.5, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y - 28, 38 + Math.sin(time * 10) * 1.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+    }
+    // ímã
+    if (p.magnetT > 0) {
+      ctx.strokeStyle = hexA('#3ee8ff', 0.35 + 0.2 * Math.sin(time * 8));
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 8]);
+      ctx.lineDashOffset = -time * 40;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 10, 60, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (p.doubleNext) label(ctx, p.x + 22, p.y - 40, 'x2', '#ff7a59', 14);
+    // seta para o núcleo quando estiver carregando energia
+    if (human && p.carry > 0) {
+      const dx = game.core.x - p.x;
+      const dy = game.core.y - p.y;
+      const d = Math.hypot(dx, dy);
+      if (d > C.CORE_R + 30) {
+        const a = Math.atan2(dy, dx);
+        const r = 54;
+        const ax = p.x + Math.cos(a) * r;
+        const ay = p.y - 14 + Math.sin(a) * r;
+        ctx.save();
+        ctx.translate(ax, ay);
+        ctx.rotate(a);
+        ctx.scale(1.7, 1.7);
+        ctx.globalAlpha = 0.75 + 0.25 * Math.sin(time * 8);
+        ctx.fillStyle = '#5dff8a';
+        ctx.strokeStyle = '#0d3a1c';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(12, 0);
+        ctx.lineTo(-6, -9);
+        ctx.lineTo(-2, 0);
+        ctx.lineTo(-6, 9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
     }
     // energia carregada
     for (let i = 0; i < p.carry; i++) {
       const a = time * 3 + (i / Math.max(1, p.carry)) * Math.PI * 2;
       const ex = p.x + Math.cos(a) * 18;
-      const ey = p.y - 52 + Math.sin(a) * 5;
+      const ey = p.y - 82 + Math.sin(a) * 5;
       ctx.fillStyle = '#5dff8a';
       ctx.strokeStyle = '#0d5a26';
       ctx.lineWidth = 1.5;
@@ -1073,7 +1150,7 @@ export class Renderer {
     }
     // marcador do jogador
     if (human) {
-      const y = p.y - 66 + Math.sin(time * 5) * 2;
+      const y = p.y - 92 + Math.sin(time * 5) * 2;
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
       ctx.moveTo(p.x - 7, y - 8);
@@ -1082,9 +1159,48 @@ export class Renderer {
       ctx.closePath();
       ctx.fill();
     } else if (alpha > 0.3) {
-      drawSymbol(ctx, p.char.id, p.x, p.y - 64, 6, p.color);
+      drawSymbol(ctx, p.char.id, p.x, p.y - 90, 6, p.color);
     }
     ctx.globalAlpha = 1;
+  }
+
+  private drawPowerups(game: Game, time: number) {
+    const ctx = this.ctx;
+    for (const pw of game.powerups) {
+      const def = getPower(pw.kind);
+      const bob = Math.sin(time * 3 + pw.id) * 3;
+      const appear = Math.min(1, pw.age * 3);
+      const y = pw.y - 14 + bob;
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(pw.x, pw.y + 6, 13, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const gr = ctx.createRadialGradient(pw.x, y, 2, pw.x, y, 30);
+      gr.addColorStop(0, hexA(def.color, 0.5));
+      gr.addColorStop(1, hexA(def.color, 0));
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.arc(pw.x, y, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(pw.x, y);
+      ctx.scale(appear * 1.3, appear * 1.3);
+      ctx.fillStyle = '#120c26';
+      ctx.strokeStyle = def.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = hexA(def.color, 0.5);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 19, time * 2, time * 2 + Math.PI * 1.2);
+      ctx.stroke();
+      drawPowerIcon(ctx, pw.kind, 0, 0, 1, def.color);
+      ctx.restore();
+      label(ctx, pw.x, pw.y - 52 + bob, def.short.toUpperCase(), def.color, 13);
+    }
   }
 
   private drawBushes(a: ArenaDef, time: number) {
@@ -1167,9 +1283,9 @@ export class Renderer {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(p.x, p.y - 18, r, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y - 26, r + 8, 0, Math.PI * 2);
       ctx.stroke();
-      label(ctx, p.x, p.y - 80, 'VOCÊ', '#ffffff', 15);
+      label(ctx, p.x, p.y - 108, 'VOCÊ', '#ffffff', 15);
     }
   }
 
@@ -1261,3 +1377,83 @@ export function hexA(hex: string, a: number): string {
 }
 
 export type { EchoView };
+
+/** Ícones dos poderes (desenhados em código). */
+export function drawPowerIcon(ctx: CanvasRenderingContext2D, kind: PowerId, x: number, y: number, s: number, color: string) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  switch (kind) {
+    case 'escudo':
+      ctx.moveTo(0, -9);
+      ctx.lineTo(7.5, -5.5);
+      ctx.lineTo(6, 3.5);
+      ctx.lineTo(0, 9);
+      ctx.lineTo(-6, 3.5);
+      ctx.lineTo(-7.5, -5.5);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case 'ima':
+      ctx.lineWidth = 4;
+      ctx.arc(0, 0, 6.5, Math.PI, 0, true);
+      ctx.moveTo(-6.5, 0);
+      ctx.lineTo(-6.5, -7);
+      ctx.moveTo(6.5, 0);
+      ctx.lineTo(6.5, -7);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-8.5, -9, 4, 3);
+      ctx.fillRect(4.5, -9, 4, 3);
+      break;
+    case 'gelo':
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI;
+        ctx.moveTo(Math.cos(a) * 9, Math.sin(a) * 9);
+        ctx.lineTo(-Math.cos(a) * 9, -Math.sin(a) * 9);
+      }
+      ctx.stroke();
+      break;
+    case 'turbo':
+      ctx.lineWidth = 3;
+      ctx.moveTo(-7, -7);
+      ctx.lineTo(-1, 0);
+      ctx.lineTo(-7, 7);
+      ctx.moveTo(1, -7);
+      ctx.lineTo(7, 0);
+      ctx.lineTo(1, 7);
+      ctx.stroke();
+      break;
+    case 'dobro':
+      ctx.font = `700 13px "Bungee", "Chakra Petch", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('x2', 0, 1);
+      break;
+    case 'apagar':
+      ctx.arc(0, -1, 6.5, Math.PI, 0);
+      ctx.lineTo(6.5, 7);
+      ctx.lineTo(3, 5);
+      ctx.lineTo(0, 7);
+      ctx.lineTo(-3, 5);
+      ctx.lineTo(-6.5, 7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#120c26';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(-3, -3);
+      ctx.lineTo(3, 3);
+      ctx.moveTo(3, -3);
+      ctx.lineTo(-3, 3);
+      ctx.stroke();
+      break;
+  }
+  ctx.restore();
+}
