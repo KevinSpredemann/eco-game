@@ -236,7 +236,7 @@ export function botThink(game: Game, p: Player, dt: number): Input {
   let threat = 0;
   if (p.phaseT <= 0) {
     for (const e of game.echoViews) {
-      if (!e.active || e.disrupted) continue;
+      if (!e.active || e.disrupted || e.iced) continue;
       if (e.rec.playerId === p.id && !game.cfg.ownEchoDamage) continue;
       for (const ahead of [0, 220, 480]) {
         const s = ahead === 0 ? e : game.predictEcho(e, ahead);
@@ -344,6 +344,8 @@ function chooseTarget(game: Game, p: Player): { x: number; y: number } | null {
   const b = p.brain!;
   const core = game.core;
   const dCore = Math.hypot(p.x - core.x, p.y - core.y);
+  const power = game.powerups.find((pw) => Math.hypot(pw.x - p.x, pw.y - p.y) < 240);
+  if (power && Math.random() > b.sloppy) return power;
   const golden = game.fragments.find((f) => f.golden);
   if (golden && Math.hypot(golden.x - p.x, golden.y - p.y) < 520) return golden;
 

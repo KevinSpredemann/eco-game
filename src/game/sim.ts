@@ -19,6 +19,7 @@ import {
 import { CharacterDef, getCharacter } from './characters';
 import * as C from './constants';
 import { botThink, BotBrain, NavGrid } from './bot';
+import { PowerId, getPower, randomPower } from './powerups';
 
 export type Difficulty = 'facil' | 'normal' | 'dificil';
 export type ObjectiveId = 'dourado' | 'tripla' | 'intocavel';
@@ -81,6 +82,10 @@ export interface Player {
   brain: BotBrain | null;
   walkPhase: number;
   hitFlash: number;
+  magnetT: number;
+  doubleNext: boolean;
+  /** último poder pego (para o HUD) */
+  power: { id: PowerId; t: number } | null;
   stats: { delivered: number; bestDelivery: number; ownEchoHits: number; echoHits: number; disrupted: number; survived: number };
 }
 
@@ -121,6 +126,7 @@ export interface EchoView {
   moving: boolean;
   active: boolean;
   disrupted: boolean;
+  iced: boolean;
   pulse: number;
   expiring: boolean;
   trail: { x: number; y: number }[];
@@ -147,7 +153,10 @@ export type GameEvent =
   | { type: 'echoSpawn'; count: number }
   | { type: 'echoExpired'; round: number }
   | { type: 'tick'; n: number }
-  | { type: 'bridgeWarn'; x: number; y: number };
+  | { type: 'bridgeWarn'; x: number; y: number }
+  | { type: 'power'; x: number; y: number; pid: string; power: PowerId }
+  | { type: 'powerSpawn'; x: number; y: number; power: PowerId }
+  | { type: 'echoErased'; x: number; y: number; pid: string };
 
 export type Phase = 'prep' | 'play' | 'rewind' | 'results';
 
@@ -162,6 +171,10 @@ export class Game {
   readonly nav: NavGrid;
   fragments: Fragment[] = [];
   clones: Clone[] = [];
+  powerups: { id: number; kind: PowerId; x: number; y: number; age: number }[] = [];
+  iceUntil = 0;
+  private powerTimer = 4;
+  private erased = new Set<string>();
   echoViews: EchoView[] = [];
   zoneEvents: ZoneEvent[] = [];
   events: GameEvent[] = [];
@@ -244,6 +257,9 @@ export class Game {
       brain: isBot ? new BotBrain(this.cfg.difficulty) : null,
       walkPhase: 0,
       hitFlash: 0,
+      magnetT: 0,
+      doubleNext: false,
+      power: null,
       stats: { delivered: 0, bestDelivery: 0, ownEchoHits: 0, echoHits: 0, disrupted: 0, survived: 0 },
     });
   }
@@ -265,6 +281,9 @@ export class Game {
     this.goldenSpot = null;
     this.goldenDone = false;
     this.clones = [];
+    this.powerups = [];
+    this.powerTimer = 4;
+    this.iceUntil = 0;
     this.disrupted.clear();
     this.trails.clear();
     this.fragments = [];
@@ -293,6 +312,9 @@ export class Game {
         tookDamage: false,
         tripleDone: false,
         hitFlash: 0,
+        magnetT: 0,
+        doubleNext: false,
+        power: null,
       });
       p.dir = Math.atan2(360 - s.y, 640 - s.x);
       p.playing = (!this.tiebreak || this.winners.includes(p.id)) && !(this.cfg.spectator && p.id === 'p0');
@@ -464,9 +486,11 @@ export class Game {
       if (!p.alive) continue;
       this.checkPickups(p);
       this.checkDelivery(p);
+      this.checkPowerups(p);
       p.recorder?.sample(tms, p.x, p.y, p.dir, p.moving);
     }
     this.updateClones(dt);
+    this.updatePowerups(dt);
     this.updateFragments(dt);
 
     const alive = this.players.filter((p) => p.playing && p.alive).length;
@@ -578,7 +602,7 @@ export class Game {
 
     const inBush = (this.arena.bushes ?? []).some((b) => dist(p.x, p.y, b.x, b.y) < b.r);
     p.hidden = inBush || p.phaseT > 0;
-    let speed = C.SPEED * (p.turboT > 0 ? 1.6 : 1) * (inBush ? 0.85 : 1);
+    let speed = C.SPEED * (p.turboT > 0 ? 1.55 : 1) * (inBush ? 0.85 : 1);
     if (p.isBot) speed *= p.brain!.speedMul;
 
     if (p.dashT > 0) {
@@ -868,7 +892,7 @@ export class Game {
   private checkEchoes(p: Player) {
     if (p.phaseT > 0) return;
     for (const e of this.echoViews) {
-      if (!e.active || e.disrupted) continue;
+      if (!e.active || e.disrupted || e.iced) continue;
       const own = e.rec.playerId === p.id;
       const d = dist(p.x, p.y, e.x, e.y);
       if (d >= C.PLAYER_R + C.ECHO_R) continue;
@@ -1005,7 +1029,12 @@ export class Game {
     if (p.carry <= 0) return;
     if (dist(p.x, p.y, this.core.x, this.core.y) > C.CORE_R) return;
     const n = p.carry;
-    const pts = deliveryPoints(n);
+    let pts = deliveryPoints(n);
+    if (p.doubleNext) {
+      pts *= 2;
+      p.doubleNext = false;
+      this.events.push({ type: 'objective', pid: p.id, text: 'Energia em dobro!' });
+    }
     this.award(p, pts);
     p.stats.delivered += n;
     p.stats.bestDelivery = Math.max(p.stats.bestDelivery, pts);
@@ -1017,6 +1046,99 @@ export class Game {
       this.award(p, POINTS.objective);
       this.events.push({ type: 'objective', pid: p.id, text: 'Entrega tripla +1' });
     }
+  }
+
+  // ------------------------------------------------------------------ poderes
+  private updatePowerups(dt: number) {
+    for (const pw of this.powerups) pw.age += dt;
+    this.powerTimer -= dt;
+    if (this.powerTimer <= 0) {
+      this.powerTimer = 5.5 + Math.random() * 2.5;
+      if (this.powerups.length < 2 && this.roundT < this.roundDur - 3) {
+        const s = this.randomFreeSpot(90);
+        if (s) {
+          const kind = randomPower();
+          this.powerups.push({ id: this.fragId++, kind, x: s.x, y: s.y, age: 0 });
+          this.events.push({ type: 'powerSpawn', x: s.x, y: s.y, power: kind });
+        }
+      }
+    }
+    // ímã: puxa energia próxima
+    for (const p of this.players) {
+      if (!p.alive || !p.playing) continue;
+      p.magnetT = Math.max(0, p.magnetT - dt);
+      if (p.power) {
+        p.power.t -= dt;
+        if (p.power.t <= 0) p.power = null;
+      }
+      if (p.magnetT <= 0 || p.carry >= C.MAX_CARRY) continue;
+      for (const f of this.fragments) {
+        if (f.golden) continue;
+        const d = dist(f.x, f.y, p.x, p.y);
+        if (d < 230 && d > 1) {
+          const k = Math.min(1, (420 * dt) / d);
+          f.x += (p.x - f.x) * k;
+          f.y += (p.y - f.y) * k;
+        }
+      }
+    }
+  }
+
+  private checkPowerups(p: Player) {
+    for (const pw of this.powerups) {
+      if (dist(p.x, p.y, pw.x, pw.y) > C.PLAYER_R + 16) continue;
+      pw.age = -1;
+      this.applyPower(p, pw.kind);
+      this.events.push({ type: 'power', x: pw.x, y: pw.y, pid: p.id, power: pw.kind });
+    }
+    this.powerups = this.powerups.filter((pw) => pw.age >= 0);
+  }
+
+  private applyPower(p: Player, kind: PowerId) {
+    const label = (t: number) => (p.power = { id: kind, t });
+    switch (kind) {
+      case 'escudo':
+        p.shieldT = Math.max(p.shieldT, 8);
+        label(8);
+        break;
+      case 'ima':
+        p.magnetT = 6;
+        label(6);
+        break;
+      case 'gelo':
+        this.iceUntil = this.roundT + 4;
+        label(4);
+        break;
+      case 'turbo':
+        p.turboT = Math.max(p.turboT, 4);
+        label(4);
+        break;
+      case 'dobro':
+        p.doubleNext = true;
+        label(30);
+        break;
+      case 'apagar': {
+        let best: EchoView | null = null;
+        let bd = Infinity;
+        for (const e of this.echoViews) {
+          if (!e.active) continue;
+          const d = dist(e.x, e.y, p.x, p.y);
+          if (d < bd) {
+            bd = d;
+            best = e;
+          }
+        }
+        label(2);
+        if (best) {
+          this.erased.add(best.key);
+          for (const g of this.echoes.generations) g.recordings = g.recordings.filter((r) => `${r.round}:${r.playerId}` !== best!.key);
+          this.echoViews = this.echoViews.filter((e) => e !== best);
+          this.events.push({ type: 'echoErased', x: best.x, y: best.y, pid: p.id });
+        }
+        break;
+      }
+    }
+    void getPower;
   }
 
   private updateClones(dt: number) {
@@ -1056,6 +1178,7 @@ export class Game {
     for (const g of this.echoes.generations) {
       const age = this.echoes.ageOf(g.round);
       for (const rec of g.recordings) {
+        if (this.erased.has(`${rec.round}:${rec.playerId}`)) continue;
         const s = sampleRecording(rec, 0);
         this.echoViews.push({
           rec,
@@ -1067,6 +1190,7 @@ export class Game {
           moving: false,
           active: true,
           disrupted: false,
+          iced: false,
           pulse: 0,
           expiring: !this.tiebreak && expiring?.round === g.round,
           trail: [],
@@ -1085,6 +1209,7 @@ export class Game {
       e.active = s.active;
       const until = this.disrupted.get(e.key) ?? 0;
       e.disrupted = this.roundT < until;
+      e.iced = this.roundT < this.iceUntil;
       const next = upcomingEvent(e.rec, tms, 450, 'dash') ?? upcomingEvent(e.rec, tms, 450, 'ability');
       e.pulse = next !== null ? 1 - (next - tms) / 450 : 0;
       if (tms > 0 && e.active) {
