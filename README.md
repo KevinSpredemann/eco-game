@@ -29,7 +29,10 @@ Volume geral, música, efeitos e "silenciar" ficam em Opções.
 ## Apps Android e iOS
 O jogo vira app nativo com **Capacitor** (o mesmo código roda dentro do app). Os projetos já estão prontos em `android/` e `ios/`, com nome **ECO**, id `com.ecojogo.app`, ícone, tela de abertura, tela cheia, só na horizontal, tela sempre acesa e o botão "voltar" do Android pausando o jogo.
 
-### Android — jeito mais fácil (sem instalar nada)
+### Android — baixar pronto
+No celular Android, abra **https://github.com/KevinSpredemann/eco-game/releases/latest/download/ECO-android.apk** e instale.
+
+### Android — compilar você mesmo (sem instalar nada)
 1. Crie um repositório no GitHub e envie esta pasta (pode ser pelo site: "Add file → Upload files").
 2. Abra a aba **Actions**: a compilação "Android APK" roda sozinha (~5 min).
 3. Entre na execução concluída e baixe **ECO-android** (contém `ECO-android.apk`).
