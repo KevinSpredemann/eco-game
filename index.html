@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ECO</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="description" content="ECO: arena multiplayer em que cada rodada deixa um fantasma que repete seus movimentos." />
+    <meta name="theme-color" content="#0a0817" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ECO" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="./icons/favicon-64.png" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  </head>
+  <body>
+    <canvas id="game" aria-label="Arena do jogo"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" hidden>
+      <div class="hud-left" id="scoreboard"></div>
+      <div class="hud-center">
+        <div class="round" id="hud-round">RODADA 1/4</div>
+        <div class="timer" id="hud-timer">30</div>
+        <div class="objective" id="hud-objective"></div>
+      </div>
+      <div class="hud-right">
+        <button class="icon-btn" id="btn-mute" aria-label="Silenciar">🔊</button>
+        <button class="icon-btn" id="btn-pause" aria-label="Pausar">❚❚</button>
+      </div>
+      <div class="hud-status" id="hud-status"></div>
+    </div>
+    <div id="banner" hidden><div class="banner-main"></div><div class="banner-sub"></div></div>
+    <div id="hint" hidden></div>
+
+    <!-- Controles de toque -->
+    <div id="touch" hidden>
+      <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div></div>
+      <div id="buttons">
+        <button id="btn-ability" class="tbtn ability"><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">HAB</span></button>
+        <button id="btn-dash" class="tbtn dash"><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">IMPULSO</span></button>
+      </div>
+    </div>
+
+    <!-- Tela inicial -->
+    <section id="screen-title" class="screen">
+      <div class="title-art" aria-hidden="true"></div>
+      <div class="title-inner">
+        <h1 class="logo">ECO<span class="logo-ghost" aria-hidden="true"></span></h1>
+        <p class="tagline">O passado também joga.</p>
+        <div class="menu">
+          <button class="btn primary" data-action="play">Jogar</button>
+          <button class="btn" data-action="training">Treino solo</button>
+          <button class="btn" data-action="howto">Como jogar</button>
+          <button class="btn" data-action="options">Opções</button>
+          <button class="btn ghost" data-action="install" id="btn-install" hidden>Instalar app</button>
+        </div>
+        <p class="title-foot" id="title-foot">Toque ou clique para ativar o som.</p>
+      </div>
+    </section>
+
+    <!-- Seleção -->
+    <section id="screen-select" class="screen scroll" hidden>
+      <div class="sheet">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="back">‹ Voltar</button>
+          <h2 id="select-title">Núcleo de Energia</h2>
+          <button class="btn small primary" data-action="start">Começar ›</button>
+        </header>
+        <h3 class="section-label">Personagem</h3>
+        <div class="char-grid" id="char-grid"></div>
+        <h3 class="section-label">Cenário</h3>
+        <div class="arena-grid" id="arena-grid"></div>
+        <div class="match-opts" id="match-opts">
+          <label class="opt">Adversários
+            <select id="sel-bots"><option value="1">1 bot</option><option value="2">2 bots</option><option value="3" selected>3 bots</option></select>
+          </label>
+          <label class="opt">Dificuldade
+            <select id="sel-diff"><option value="facil">Fácil</option><option value="normal" selected>Normal</option><option value="dificil">Difícil</option></select>
+          </label>
+        </div>
+        <button class="btn primary wide" data-action="start">Começar partida ›</button>
+      </div>
+    </section>
+
+    <!-- Como jogar -->
+    <section id="screen-howto" class="screen scroll" hidden>
+      <div class="sheet">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="back">‹ Voltar</button>
+          <h2>Como jogar</h2>
+          <span></span>
+        </header>
+        <ol class="steps">
+          <li><b>Entre na arena.</b> De 2 a 4 jogadores. Cada rodada dura 30 segundos.</li>
+          <li><b>Colete energia.</b> Passe por cima dos cristais verdes. Você carrega até 3.</li>
+          <li><b>Entregue no núcleo.</b> Cada energia entregue vale 3 pontos. O núcleo muda de lugar a cada rodada.</li>
+          <li><b>A rodada reinicia.</b> Cada jogador deixa um <em>Eco</em>: um fantasma que repete exatamente o que ele fez, no mesmo ritmo.</li>
+          <li><b>Mais caos.</b> Até 3 gerações de Ecos ficam ativas. Encostar em um Eco (até no seu) tira 1 vida e derruba sua energia.</li>
+        </ol>
+        <div class="howto-grid">
+          <div class="card">
+            <h4>Pontos</h4>
+            <p>Entregar energia: 3 por cristal<br />Sobreviver à rodada: 1<br />Objetivo da rodada: 1<br />Após 4 rodadas vence quem tiver mais pontos. Empate vai para uma rodada curta de desempate.</p>
+          </div>
+          <div class="card">
+            <h4>Controles</h4>
+            <p><b>Celular:</b> analógico à esquerda, botões IMPULSO e HABILIDADE à direita.<br /><b>Teclado:</b> WASD ou setas · Espaço = impulso · E ou Shift = habilidade · Esc = pausa.</p>
+          </div>
+          <div class="card">
+            <h4>Lendo os Ecos</h4>
+            <p>A cor e o símbolo mostram de quem é o Eco. "R2" indica a rodada em que foi gravado. Ecos antigos ficam mais transparentes e piscam antes de sumir. Um pulso branco avisa que o Eco vai dar um impulso.</p>
+          </div>
+          <div class="card">
+            <h4>Perigos</h4>
+            <p>Zonas laranja piscam antes de eletrificar. Cada cenário tem a sua armadilha: portais, pontes, feixes de fogo, pistões, arbustos ou buraco negro.</p>
+          </div>
+        </div>
+        <button class="btn primary wide" data-action="training">Fazer o treino guiado ›</button>
+      </div>
+    </section>
+
+    <!-- Opções -->
+    <section id="screen-options" class="screen scroll" hidden>
+      <div class="sheet narrow">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="back">‹ Voltar</button>
+          <h2>Opções</h2>
+          <span></span>
+        </header>
+        <div class="opts">
+          <label class="row">Volume geral <input type="range" id="opt-master" min="0" max="100" /></label>
+          <label class="row">Música <input type="range" id="opt-music" min="0" max="100" /></label>
+          <label class="row">Efeitos <input type="range" id="opt-sfx" min="0" max="100" /></label>
+          <label class="row check"><input type="checkbox" id="opt-muted" /> Silenciar tudo</label>
+          <hr />
+          <label class="row">Transparência dos controles <input type="range" id="opt-ctrl-alpha" min="20" max="100" /></label>
+          <label class="row">Tamanho dos controles <input type="range" id="opt-ctrl-size" min="70" max="140" /></label>
+          <label class="row check"><input type="checkbox" id="opt-swap" /> Inverter lados (analógico à direita)</label>
+          <hr />
+          <label class="row check"><input type="checkbox" id="opt-own" /> Seu próprio Eco também causa dano</label>
+          <label class="row check"><input type="checkbox" id="opt-trails" /> Mostrar rastro dos Ecos</label>
+          <label class="row check"><input type="checkbox" id="opt-reduced" /> Reduzir efeitos (tremor e partículas)</label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pausa -->
+    <section id="screen-pause" class="screen dim" hidden>
+      <div class="sheet narrow center">
+        <h2>Pausado</h2>
+        <div class="menu">
+          <button class="btn primary" data-action="resume">Continuar</button>
+          <button class="btn" data-action="restart">Reiniciar partida</button>
+          <button class="btn" data-action="options">Opções</button>
+          <button class="btn ghost" data-action="quit">Sair para o menu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Resultado -->
+    <section id="screen-results" class="screen dim scroll" hidden>
+      <div class="sheet narrow center">
+        <p class="eyebrow" id="res-eyebrow">Fim da partida</p>
+        <h2 id="res-title">Vitória!</h2>
+        <ol class="podium" id="res-list"></ol>
+        <p class="highlight" id="res-highlight"></p>
+        <div class="menu row-menu">
+          <button class="btn primary" data-action="restart">Revanche</button>
+          <button class="btn" data-action="select">Trocar personagem</button>
+          <button class="btn ghost" data-action="quit">Menu</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="rotate" hidden>
+      <div class="rotate-icon" aria-hidden="true">⟲</div>
+      <p>Gire o celular para jogar na horizontal.</p>
+    </div>
+    <div id="toast" hidden></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
