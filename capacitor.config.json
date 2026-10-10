@@ -1,0 +1,8 @@
+{
+  "appId": "com.ecojogo.app",
+  "appName": "ECO",
+  "webDir": "dist",
+  "backgroundColor": "#0a0817",
+  "android": { "backgroundColor": "#0a0817" },
+  "ios": { "backgroundColor": "#0a0817", "contentInset": "never" }
+}
