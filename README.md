@@ -58,6 +58,12 @@ No Xcode: selecione o alvo **App → Signing & Capabilities → Team** (sua cont
 
 Sempre que mudar o código do jogo: `npm run build && npx cap sync`.
 
+## Publicar no Render
+O arquivo `render.yaml` já configura um **Static Site** (gratuito, com HTTPS):
+1. Em render.com, entre com o GitHub.
+2. **New → Blueprint** e escolha o repositório `eco-game`.
+3. Confirme. A cada push no `main` o Render publica sozinho.
+
 ## Rodar e publicar como site (PWA)
 ```bash
 npm install

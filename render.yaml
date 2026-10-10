@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: eco-game
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+    headers:
+      # the service worker must always be fresh so updates reach players
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
+      # hashed build files never change
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
