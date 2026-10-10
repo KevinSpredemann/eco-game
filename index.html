@@ -61,26 +61,81 @@
     </section>
 
     <!-- Seleção -->
-    <section id="screen-select" class="screen scroll" hidden>
-      <div class="sheet">
+    <section id="screen-select" class="screen fit" hidden>
+      <div class="sheet fit">
         <header class="sheet-head">
           <button class="btn small ghost" data-action="back">‹ Voltar</button>
-          <h2 id="select-title">Núcleo de Energia</h2>
+          <div class="head-title">
+            <span class="step-tag" id="select-mode">Núcleo de Energia · passo 1 de 2</span>
+            <h2>Escolha seu personagem</h2>
+          </div>
+          <button class="btn small primary" data-action="to-map">Próximo ›</button>
+        </header>
+        <div class="char-grid" id="char-grid"></div>
+        <div class="pick-bar" id="char-detail"></div>
+      </div>
+    </section>
+
+    <section id="screen-map" class="screen fit" hidden>
+      <div class="sheet fit">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="to-chars">‹ Personagem</button>
+          <div class="head-title">
+            <span class="step-tag" id="map-mode">passo 2 de 2</span>
+            <h2>Escolha o mapa</h2>
+          </div>
           <button class="btn small primary" data-action="start">Começar ›</button>
         </header>
-        <h3 class="section-label">Personagem</h3>
-        <div class="char-grid" id="char-grid"></div>
-        <h3 class="section-label">Cenário</h3>
         <div class="arena-grid" id="arena-grid"></div>
-        <div class="match-opts" id="match-opts">
-          <label class="opt">Adversários
-            <select id="sel-bots"><option value="1">1 bot</option><option value="2">2 bots</option><option value="3" selected>3 bots</option></select>
-          </label>
-          <label class="opt">Dificuldade
-            <select id="sel-diff"><option value="facil">Fácil</option><option value="normal" selected>Normal</option><option value="dificil">Difícil</option></select>
-          </label>
+        <div class="pick-bar">
+          <div class="match-opts" id="match-opts">
+            <label class="opt">Adversários
+              <select id="sel-bots"><option value="1">1 bot</option><option value="2">2 bots</option><option value="3" selected>3 bots</option></select>
+            </label>
+            <label class="opt">Dificuldade
+              <select id="sel-diff"><option value="facil">Fácil</option><option value="normal" selected>Normal</option><option value="dificil">Difícil</option></select>
+            </label>
+          </div>
+          <button class="btn primary" data-action="start">Começar partida ›</button>
         </div>
-        <button class="btn primary wide" data-action="start">Começar partida ›</button>
+      </div>
+    </section>
+
+    <!-- Resumo da lógica (aparece antes da 1ª partida) -->
+    <section id="screen-rules" class="screen fit" hidden>
+      <div class="sheet fit rules">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="details">Mais detalhes</button>
+          <div class="head-title">
+            <span class="step-tag">4 rodadas de 30 segundos</span>
+            <h2>Como funciona</h2>
+          </div>
+          <button class="btn small primary" data-action="rules-ok">Entendi ›</button>
+        </header>
+        <ol class="rule-cards">
+          <li>
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6 36 22 24 42 12 22z" fill="#c8ffd8" stroke="#1fbf5a" stroke-width="3" stroke-linejoin="round"/></svg>
+            <b>Pegue energia</b>
+            <span>Passe por cima dos cristais verdes. Você carrega até 3.</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="19" fill="rgba(93,255,138,.15)" stroke="#5dff8a" stroke-width="3" stroke-dasharray="7 4"/><path d="M24 14 31 18v8l-7 4-7-4v-8z" fill="#c8ffd8" stroke="#1fbf5a" stroke-width="2"/></svg>
+            <b>Leve ao núcleo</b>
+            <span>Cada cristal entregue vale 3 pontos. Uma seta verde mostra o caminho.</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 40V22a14 14 0 0 1 28 0v18l-5-3-4 3-5-3-5 3-4-3z" fill="rgba(62,232,255,.35)" stroke="#3ee8ff" stroke-width="3" stroke-linejoin="round"/><circle cx="19" cy="22" r="2.5" fill="#fff"/><circle cx="29" cy="22" r="2.5" fill="#fff"/></svg>
+            <b>Você vira um Eco</b>
+            <span>No fim da rodada, cada jogador vira um fantasma que repete tudo o que fez. Encostar em um Eco tira 1 vida.</span>
+          </li>
+          <li>
+            <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17" fill="#120c26" stroke="#ffd23e" stroke-width="3"/><path d="M16 16l7 8-7 8M25 16l7 8-7 8" fill="none" stroke="#ffd23e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <b>Pegue poderes</b>
+            <span>Círculos com ícone aparecem pela arena. Encostou, pegou.</span>
+          </li>
+        </ol>
+        <ul class="power-list" id="rules-powers"></ul>
+        <button class="btn primary" data-action="rules-ok">Entendi, vamos jogar ›</button>
       </div>
     </section>
 
@@ -116,6 +171,10 @@
             <h4>Perigos</h4>
             <p>Zonas laranja piscam antes de eletrificar. Cada cenário tem a sua armadilha: portais, pontes, feixes de fogo, pistões, arbustos ou buraco negro.</p>
           </div>
+        </div>
+        <div class="card" style="margin-top:10px">
+          <h4>Poderes</h4>
+          <p>Escudo, Ímã, Gelo nos Ecos, Turbo, Energia em dobro e Apagar Eco aparecem pela arena a cada poucos segundos. É só encostar para pegar.</p>
         </div>
         <button class="btn primary wide" data-action="training">Fazer o treino guiado ›</button>
       </div>

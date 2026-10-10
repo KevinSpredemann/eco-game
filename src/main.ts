@@ -4,7 +4,9 @@ import { ARENAS, WORLD_W, getArena } from './game/arenas';
 import { CHARACTERS, getCharacter } from './game/characters';
 import * as C from './game/constants';
 import { Game, GameEvent, OBJECTIVES } from './game/sim';
+import { POWERS, getPower } from './game/powerups';
 import { Renderer } from './render/renderer';
+import { drawCharacter } from './render/chars';
 import { InputManager } from './ui/input';
 import { Settings, loadSettings, saveSettings } from './ui/settings';
 
@@ -88,11 +90,11 @@ function bindOptions() {
 }
 
 // ------------------------------------------------------------------ telas
-const SCREENS = ['screen-title', 'screen-select', 'screen-howto', 'screen-options', 'screen-pause', 'screen-results'];
+const SCREENS = ['screen-title', 'screen-select', 'screen-map', 'screen-rules', 'screen-howto', 'screen-options', 'screen-pause', 'screen-results'];
 function show(id: string | null) {
   for (const s of SCREENS) $('#' + s).hidden = s !== id;
   const inGame = !!game && (id === null || id === 'screen-pause' || id === 'screen-results' || (id === 'screen-options' && !!game));
-  $('#hud').hidden = !game || id === 'screen-select' || id === 'screen-title';
+  $('#hud').hidden = !game || id === 'screen-select' || id === 'screen-map' || id === 'screen-rules' || id === 'screen-title';
   $('#touch').hidden = !(game && id === null && input.touchMode);
   if (!inGame) {
     $('#banner').hidden = true;
@@ -115,6 +117,10 @@ function go(action: string) {
       openSelect();
       break;
     case 'howto':
+      rulesThenStart = false;
+      show('screen-rules');
+      break;
+    case 'details':
       show('screen-howto');
       break;
     case 'options':
@@ -125,11 +131,32 @@ function go(action: string) {
     case 'back': {
       const cur = currentScreen();
       if (cur === 'screen-options') show(lastScreenBeforeOptions);
+      else if (cur === 'screen-map') show('screen-select');
       else show('screen-title');
       break;
     }
+    case 'to-map':
+      openMap();
+      break;
+    case 'to-chars':
+      show('screen-select');
+      break;
     case 'start':
-      startMatch();
+      if (!settings.rulesSeen && !training) {
+        rulesThenStart = true;
+        show('screen-rules');
+      } else startMatch();
+      break;
+    case 'rules':
+      rulesThenStart = false;
+      show('screen-rules');
+      break;
+    case 'rules-ok':
+      settings.rulesSeen = true;
+      saveSettings(settings);
+      if (rulesThenStart) startMatch();
+      else if (game) show('screen-pause');
+      else show('screen-title');
       break;
     case 'resume':
       resume();
@@ -161,10 +188,14 @@ document.addEventListener('click', (e) => {
   if (el) go(el.dataset.action!);
 });
 
-// ------------------------------------------------------------------ seleção
+// ------------------------------------------------------------------ seleção (passo 1: personagem, passo 2: mapa)
+let rulesThenStart = false;
+function charDetail() {
+  const c = getCharacter(settings.char);
+  $('#char-detail').innerHTML = `<div class="who"><b style="color:${c.color}">${c.name} · ${c.title}</b><span><b>${c.ability.name}:</b> ${c.ability.desc}${c.passive ? ' ' + c.passive : ''}</span></div><button class="btn primary" data-action="to-map">Escolher mapa ›</button>`;
+}
 function openSelect() {
-  $('#select-title').textContent = training ? 'Treino solo' : 'Núcleo de Energia';
-  $('#match-opts').hidden = training;
+  $('#select-mode').textContent = (training ? 'Treino solo' : 'Núcleo de Energia') + ' · passo 1 de 2';
   const cg = $('#char-grid');
   cg.innerHTML = '';
   for (const c of CHARACTERS) {
@@ -173,13 +204,11 @@ function openSelect() {
     b.style.setProperty('--c', c.color);
     b.setAttribute('aria-pressed', String(c.id === settings.char));
     b.innerHTML = `
-      <img src="${c.art}" alt="${c.name}" loading="lazy" />
+      <img src="${c.art}" alt="${c.name}" />
       <span class="badge">${symbolSvg(c.id, c.color)}</span>
       <span class="info">
         <span class="name" style="color:${c.color}">${c.name}</span>
-        <span class="title">${c.title}</span>
         <span class="ab">${c.ability.name}</span>
-        <span class="desc">${c.ability.desc}${c.passive ? ' ' + c.passive : ''}</span>
       </span>`;
     b.addEventListener('click', () => {
       settings.char = c.id;
@@ -190,16 +219,23 @@ function openSelect() {
       });
       b.classList.add('selected');
       b.setAttribute('aria-pressed', 'true');
+      charDetail();
       audio.ability(c.ability.id);
     });
     cg.appendChild(b);
   }
+  charDetail();
+  show('screen-select');
+}
+function openMap() {
+  $('#map-mode').textContent = `${getCharacter(settings.char).name} · passo 2 de 2`;
+  $('#match-opts').hidden = training;
   const ag = $('#arena-grid');
   ag.innerHTML = '';
   for (const a of ARENAS) {
     const b = document.createElement('button');
     b.className = 'arena-card' + (a.id === settings.arena ? ' selected' : '');
-    b.innerHTML = `<img src="${a.art}" alt="" loading="lazy" /><span class="info"><span class="name">${a.name}</span><span class="desc">${a.desc}</span><span class="desc" style="color:${a.palette.accent}">${a.gimmick}</span></span>`;
+    b.innerHTML = `<img src="${a.art}" alt="" /><span class="info"><span class="name">${a.name}</span><span class="desc" style="color:${a.palette.accent}">${a.gimmick}</span></span>`;
     b.addEventListener('click', () => {
       settings.arena = a.id;
       saveSettings(settings);
@@ -211,8 +247,7 @@ function openSelect() {
   }
   $<HTMLSelectElement>('#sel-bots').value = String(settings.bots);
   $<HTMLSelectElement>('#sel-diff').value = settings.difficulty;
-  show('screen-select');
-  $('#screen-select').scrollTop = 0;
+  show('screen-map');
 }
 $<HTMLSelectElement>('#sel-bots').addEventListener('change', (e) => {
   settings.bots = Number((e.target as HTMLSelectElement).value);
@@ -316,7 +351,7 @@ function buildScoreboard() {
     const row = document.createElement('div');
     row.className = 'sb-row' + (p.isBot ? '' : ' me');
     row.style.setProperty('--c', p.color);
-    row.innerHTML = `<span class="bar"></span><span class="name">${p.isBot ? p.char.name : 'Você'}</span><span class="score">0</span><span class="hearts"></span>`;
+    row.innerHTML = `<span class="bar"></span><img class="ava" src="${p.char.art}" alt="" /><span class="name">${p.isBot ? p.char.name : 'Você'}</span><span class="score">0</span><span class="hearts"></span>`;
     sb.appendChild(row);
     sbRows[p.id] = row;
   }
@@ -358,7 +393,10 @@ function updateHud() {
   const ab = me.char.ability;
   const abTxt = me.abilCd > 0 ? `<span class="ab-wait">${ab.label} ${Math.ceil(me.abilCd)}s</span>` : `<span class="ab-ready">${ab.label} pronto</span>`;
   const hearts = '♥'.repeat(Math.max(0, me.hearts)) + '♡'.repeat(Math.max(0, C.HEARTS - me.hearts));
-  setHTML('#hud-status', me.alive ? `<span class="hearts">${hearts}</span><span class="pips">${pips}</span>${abTxt}` : `<span class="ab-wait">Eliminado nesta rodada — observe os Ecos</span>`);
+  const goal = me.carry >= C.MAX_CARRY ? '<span class="goal hot">Cheio! Leve ao núcleo</span>' : me.carry > 0 ? '<span class="goal hot">Leve ao núcleo →</span>' : '<span class="goal">Pegue energia</span>';
+  const pw = me.power ? getPower(me.power.id) : null;
+  const pwTxt = pw ? `<span class="pw" style="color:${pw.color}">${pw.short}${pw.id === 'dobro' ? '' : ' ' + Math.ceil(me.power!.t) + 's'}</span>` : '';
+  setHTML('#hud-status', me.alive ? `<span class="hearts">${hearts}</span><span class="pips">${pips}</span>${goal}${pwTxt}${abTxt}` : `<span class="ab-wait">Eliminado nesta rodada — observe os Ecos</span>`);
   drawCooldown('#btn-dash', me.dashCd / C.DASH_CD, '#3ee8ff');
   drawCooldown('#btn-ability', me.abilCd / ab.cooldown, me.color);
 }
@@ -509,6 +547,19 @@ function onEvents(events: GameEvent[]) {
         break;
       case 'objective':
         if (mine) audio.objective();
+        break;
+      case 'powerSpawn':
+        audio.powerSpawn(panOf(e.x));
+        break;
+      case 'power':
+        audio.power(e.power, panOf(e.x));
+        if (mine) {
+          const d = getPower(e.power);
+          banner(d.name.toUpperCase(), d.desc, 1.4);
+        }
+        break;
+      case 'echoErased':
+        if (mine) banner('ECO APAGADO', 'Esse fantasma não volta mais.', 1.3);
         break;
     }
   }
@@ -721,6 +772,7 @@ document.addEventListener('touchend', () => audio.unlock(), { passive: true });
 document.addEventListener('click', () => audio.unlock());
 window.addEventListener('keydown', firstGesture);
 
+$('#rules-powers').innerHTML = POWERS.map((p) => `<li><span class="pdot" style="--c:${p.color}"></span><b style="color:${p.color}">${p.name}</b> ${p.desc}</li>`).join('');
 bindOptions();
 applySettings();
 layout();
@@ -729,6 +781,8 @@ requestAnimationFrame(frame);
 
 // para testes automatizados
 (window as any).__eco = {
+  drawCharacter,
+  getCharacter,
   get game() {
     return game;
   },

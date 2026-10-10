@@ -16,6 +16,7 @@ export interface Settings {
   bots: number;
   difficulty: Difficulty;
   tutorialDone: boolean;
+  rulesSeen: boolean;
 }
 
 const KEY = 'eco.settings.v1';
@@ -36,6 +37,7 @@ export const DEFAULTS: Settings = {
   bots: 3,
   difficulty: 'normal',
   tutorialDone: false,
+  rulesSeen: false,
 };
 
 export function loadSettings(): Settings {
