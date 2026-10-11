@@ -13,6 +13,8 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     env:
+      # endereço público do servidor online (variável do repositório: Settings → Secrets and variables → Actions → Variables)
+      VITE_SERVER_URL: ${{ vars.ECO_SERVER_URL }}
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
     steps:
       - uses: actions/checkout@v4

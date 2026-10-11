@@ -19,6 +19,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      # endereço público do servidor online (variável do repositório: Settings → Secrets and variables → Actions → Variables)
+      VITE_SERVER_URL: ${{ vars.ECO_SERVER_URL }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

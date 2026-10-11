@@ -10,6 +10,9 @@ on:
 jobs:
   ios:
     runs-on: macos-14
+    env:
+      # endereço público do servidor online (variável do repositório: Settings → Secrets and variables → Actions → Variables)
+      VITE_SERVER_URL: ${{ vars.ECO_SERVER_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
