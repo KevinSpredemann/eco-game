@@ -1,7 +1,7 @@
 import type { CharacterDef } from '../game/characters';
 
-import { drawCharacter as drawChar, type Facing } from './chars';
-export type { Facing };
+import { drawCharacter as drawChar, type Expr, type Facing, type Pose } from './chars';
+export type { Expr, Facing, Pose };
 export const drawCharacter = drawChar;
 
 export function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -67,6 +67,85 @@ export function drawSymbol(ctx: CanvasRenderingContext2D, id: string, x: number,
       ctx.closePath();
       ctx.fill();
       break;
+    case 'nyx': // estrela ninja
+      for (let i = 0; i < 8; i++) {
+        const r = i % 2 ? 3 : 10;
+        const a = (i / 8) * Math.PI * 2;
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case 'rex': // engrenagem
+      ctx.lineWidth = 3;
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        ctx.moveTo(Math.cos(a) * 6, Math.sin(a) * 6);
+        ctx.lineTo(Math.cos(a) * 10, Math.sin(a) * 10);
+      }
+      ctx.stroke();
+      break;
+    case 'iris': // cruz de cura
+      ctx.rect(-3, -9, 6, 18);
+      ctx.rect(-9, -3, 18, 6);
+      ctx.fill();
+      break;
+    case 'tara': // punho / chifre de touro
+      ctx.moveTo(-9, -6);
+      ctx.quadraticCurveTo(-8, 4, 0, 6);
+      ctx.quadraticCurveTo(8, 4, 9, -6);
+      ctx.quadraticCurveTo(5, 0, 0, 1);
+      ctx.quadraticCurveTo(-5, 0, -9, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillRect(-3, 4, 6, 5);
+      break;
+    case 'kai': // floco de neve
+      ctx.lineWidth = 2.4;
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI;
+        ctx.moveTo(Math.cos(a) * 9, Math.sin(a) * 9);
+        ctx.lineTo(-Math.cos(a) * 9, -Math.sin(a) * 9);
+      }
+      ctx.stroke();
+      break;
+    case 'leo': // raio duplo
+      ctx.moveTo(0, -10);
+      ctx.lineTo(-7, 0);
+      ctx.lineTo(-1, 0);
+      ctx.lineTo(-4, 10);
+      ctx.lineTo(7, -3);
+      ctx.lineTo(1, -3);
+      ctx.lineTo(4, -10);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case 'mei': // espiral
+      ctx.lineWidth = 2.4;
+      for (let i = 0; i <= 40; i++) {
+        const a = i * 0.42;
+        const r = 1 + i * 0.22;
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.stroke();
+      break;
+    case 'duda': // gancho
+      ctx.lineWidth = 3;
+      ctx.moveTo(0, -10);
+      ctx.lineTo(0, 3);
+      ctx.arc(-4, 3, 4, 0, Math.PI, false);
+      ctx.moveTo(0, 3);
+      ctx.arc(4, 3, 4, Math.PI, 0, true);
+      ctx.stroke();
+      break;
+    case 'bento': // nuvem de fumaça
+      ctx.arc(-4, 2, 5, 0, Math.PI * 2);
+      ctx.arc(4, 2, 5, 0, Math.PI * 2);
+      ctx.arc(0, -3, 6, 0, Math.PI * 2);
+      ctx.fill();
+      break;
     default: // hexágono (zed)
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
@@ -82,10 +161,10 @@ export function drawSymbol(ctx: CanvasRenderingContext2D, id: string, x: number,
 }
 
 // ---------------------------------------------------------------- cache de sprites
-const SPRITE_W = 76;
-const SPRITE_H = 86;
-const ORIGIN_X = 38;
-const ORIGIN_Y = 78;
+export const SPRITE_W = 80;
+export const SPRITE_H = 94;
+export const ORIGIN_X = 40;
+export const ORIGIN_Y = 86;
 export const WALK_FRAMES = 8;
 
 export class SpriteCache {
@@ -99,24 +178,37 @@ export class SpriteCache {
     }
   }
 
-  get(c: CharacterDef, facing: Facing, frame: number, moving: boolean, ghost: string | null): HTMLCanvasElement {
-    const key = `${c.id}|${facing}|${moving ? frame : 'i'}|${ghost ?? ''}`;
+  /** luz e sombra nos sprites (desligado na qualidade baixa) */
+  lighting = true;
+  setLighting(on: boolean) {
+    if (on !== this.lighting) {
+      this.lighting = on;
+      this.cache.clear();
+    }
+  }
+
+  get(c: CharacterDef, facing: Facing, frame: number, moving: boolean, ghost: string | null, expr: Expr = 'neutral', pose: Pose = 'normal'): HTMLCanvasElement {
+    if (ghost) expr = 'neutral';
+    if (facing !== 'side') pose = 'normal';
+    const key = `${c.id}:${c.skinId ?? ''}|${facing}|${moving ? 'm' : 'i'}${frame}|${ghost ?? ''}|${expr}|${pose}`;
     let cv = this.cache.get(key);
     if (cv) return cv;
-    const base = this.render(c, facing, frame, moving);
+    if (this.cache.size > 2500) this.cache.clear();
+    const base = this.render(c, facing, frame, moving, expr, pose);
     cv = ghost ? this.ghostify(base, ghost) : base;
     this.cache.set(key, cv);
     return cv;
   }
 
-  private render(c: CharacterDef, facing: Facing, frame: number, moving: boolean) {
+  private render(c: CharacterDef, facing: Facing, frame: number, moving: boolean, expr: Expr, pose: Pose = 'normal') {
     const cv = document.createElement('canvas');
     cv.width = Math.ceil(SPRITE_W * this.px);
     cv.height = Math.ceil(SPRITE_H * this.px);
     const ctx = cv.getContext('2d')!;
     ctx.scale(this.px, this.px);
     ctx.translate(ORIGIN_X, ORIGIN_Y);
-    drawCharacter(ctx, c, facing, (frame / WALK_FRAMES) * Math.PI * 2, moving);
+    drawCharacter(ctx, c, facing, (frame / WALK_FRAMES) * Math.PI * 2, moving, expr, pose);
+    if (this.lighting) light(cv, c.glow ?? c.color, this.px);
     return cv;
   }
 
@@ -189,4 +281,47 @@ export function facingOf(dir: number): { facing: Facing; flip: boolean } {
   const dy = Math.sin(dir);
   if (Math.abs(dx) > Math.abs(dy) * 0.9) return { facing: 'side', flip: dx < 0 };
   return { facing: dy < 0 ? 'up' : 'down', flip: false };
+}
+
+/**
+ * Iluminação do sprite (feita uma vez, fica no cache):
+ * volume (luz do alto à esquerda, sombra embaixo à direita), oclusão perto dos pés
+ * e luz de recorte na cor do personagem pelas bordas de cima — dá profundidade sem exagerar no degradê.
+ */
+function light(cv: HTMLCanvasElement, rim: string, px: number) {
+  const w = cv.width;
+  const h = cv.height;
+  const g = cv.getContext('2d')!;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  // volume
+  g.globalCompositeOperation = 'source-atop';
+  const vol = g.createLinearGradient(w * 0.15, h * 0.05, w * 0.85, h * 0.95);
+  vol.addColorStop(0, 'rgba(255,248,235,0.13)');
+  vol.addColorStop(0.45, 'rgba(255,255,255,0)');
+  vol.addColorStop(1, 'rgba(10,6,40,0.30)');
+  g.fillStyle = vol;
+  g.fillRect(0, 0, w, h);
+  // oclusão nos pés
+  const ao = g.createLinearGradient(0, h * 0.72, 0, h);
+  ao.addColorStop(0, 'rgba(8,4,24,0)');
+  ao.addColorStop(1, 'rgba(8,4,24,0.28)');
+  g.fillStyle = ao;
+  g.fillRect(0, h * 0.72, w, h * 0.28);
+  // luz de recorte: borda de cima/esquerda na cor do personagem
+  const sil = document.createElement('canvas');
+  sil.width = w;
+  sil.height = h;
+  const s = sil.getContext('2d')!;
+  s.drawImage(cv, 0, 0);
+  s.globalCompositeOperation = 'source-in';
+  s.fillStyle = rim;
+  s.fillRect(0, 0, w, h);
+  s.globalCompositeOperation = 'destination-out';
+  const d = Math.max(1, px * 1.4);
+  s.drawImage(cv, d, d * 1.2);
+  g.globalCompositeOperation = 'source-atop';
+  g.globalAlpha = 0.55;
+  g.drawImage(sil, 0, 0);
+  g.restore();
 }

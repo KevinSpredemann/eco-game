@@ -314,10 +314,94 @@ export class AudioEngine {
         this.tone({ type: 'sine', freq: 140, freqEnd: 35, dur: 0.6, gain: 0.45, pan });
         this.noise({ dur: 0.7, gain: 0.35, type: 'lowpass', freq: 3000, freqEnd: 120, pan });
         break;
+      case 'sombra':
+        this.tone({ type: 'sine', freq: 500, freqEnd: 80, dur: 0.35, gain: 0.14, pan });
+        this.noise({ dur: 0.3, gain: 0.12, type: 'bandpass', freq: 3000, freqEnd: 400, q: 4, pan });
+        break;
+      case 'torreta':
+        [0, 0.07, 0.14].forEach((d) => this.tone({ type: 'square', freq: 300, freqEnd: 600, dur: 0.06, gain: 0.07, filter: 2500, pan, when: t + d }));
+        this.tone({ type: 'triangle', freq: 880, dur: 0.25, gain: 0.08, pan, when: t + 0.22 });
+        break;
+      case 'cura':
+        [523, 659, 784, 1046].forEach((f, i) => this.tone({ type: 'sine', freq: f, dur: 0.4, gain: 0.08, when: t + i * 0.07, pan }));
+        break;
+      case 'investida':
+        this.noise({ dur: 0.45, gain: 0.3, type: 'lowpass', freq: 900, freqEnd: 200, pan });
+        this.tone({ type: 'sawtooth', freq: 90, freqEnd: 50, dur: 0.4, gain: 0.25, filter: 600, pan });
+        break;
+      case 'muralha':
+        for (let i = 0; i < 5; i++) this.tone({ type: 'triangle', freq: 1800 + i * 300, freqEnd: 900, dur: 0.18, gain: 0.06, when: t + i * 0.03, pan });
+        this.noise({ dur: 0.4, gain: 0.18, type: 'highpass', freq: 3000, pan });
+        this.tone({ type: 'sine', freq: 120, freqEnd: 80, dur: 0.3, gain: 0.2, pan });
+        break;
+      case 'raio':
+        this.noise({ dur: 0.35, gain: 0.35, type: 'bandpass', freq: 2500, freqEnd: 6000, q: 1, pan });
+        this.tone({ type: 'square', freq: 1600, freqEnd: 120, dur: 0.3, gain: 0.08, filter: 5000, pan });
+        this.noise({ dur: 0.2, gain: 0.25, type: 'highpass', freq: 5000, when: t + 0.08, pan });
+        break;
+      case 'gravidade':
+        this.tone({ type: 'sine', freq: 300, freqEnd: 40, dur: 1.4, gain: 0.25, pan });
+        this.tone({ type: 'sawtooth', freq: 80, freqEnd: 30, dur: 1.4, gain: 0.08, filter: 300, pan });
+        break;
+      case 'gancho':
+        this.tone({ type: 'square', freq: 900, freqEnd: 300, dur: 0.15, gain: 0.07, filter: 3000, pan });
+        this.noise({ dur: 0.12, gain: 0.15, type: 'bandpass', freq: 3500, when: t + 0.12, pan });
+        break;
+      case 'fumaca':
+        this.noise({ dur: 0.9, gain: 0.3, type: 'lowpass', freq: 1800, freqEnd: 300, pan });
+        this.tone({ type: 'sine', freq: 200, freqEnd: 90, dur: 0.25, gain: 0.15, pan });
+        break;
       case 'clone':
         [0, 7, 12, 19, 24].forEach((n, i) => this.tone({ type: 'square', freq: mtof(76 + n), dur: 0.08, gain: 0.06, when: t + i * 0.045, filter: 4000, pan }));
         break;
     }
+  }
+  /** tiro de cada arma (eco = timbre abafado) */
+  shoot(weapon: string, pan?: number, mine = true) {
+    const g = mine ? 1 : 0.55;
+    const f = mine ? 1 : 0.6;
+    switch (weapon) {
+      case 'metralhadora':
+        this.tone({ type: 'square', freq: 520 * f, freqEnd: 180, dur: 0.05, gain: 0.05 * g, filter: 2600, pan });
+        this.noise({ dur: 0.04, gain: 0.07 * g, type: 'highpass', freq: 2500, pan });
+        break;
+      case 'escopeta':
+        this.noise({ dur: 0.22, gain: 0.3 * g, type: 'lowpass', freq: 4000 * f, freqEnd: 300, pan });
+        this.tone({ type: 'sine', freq: 140, freqEnd: 50, dur: 0.18, gain: 0.2 * g, pan });
+        break;
+      case 'laser':
+        this.tone({ type: 'sawtooth', freq: 2200 * f, freqEnd: 300, dur: 0.28, gain: 0.09 * g, filter: 6000, filterEnd: 900, pan });
+        this.tone({ type: 'sine', freq: 1200 * f, freqEnd: 2400, dur: 0.2, gain: 0.06 * g, pan });
+        break;
+      case 'torreta':
+        this.tone({ type: 'square', freq: 900, freqEnd: 400, dur: 0.05, gain: 0.04 * g, filter: 3000, pan });
+        break;
+      case 'foguete':
+        this.noise({ dur: 0.5, gain: 0.25 * g, type: 'bandpass', freq: 800, freqEnd: 2500, q: 1.5, pan });
+        this.tone({ type: 'sawtooth', freq: 150, freqEnd: 300, dur: 0.4, gain: 0.08 * g, filter: 900, pan });
+        break;
+      case 'congelante':
+        this.tone({ type: 'sine', freq: 2600 * f, freqEnd: 1400, dur: 0.1, gain: 0.05 * g, pan });
+        this.noise({ dur: 0.08, gain: 0.05 * g, type: 'highpass', freq: 6000, pan });
+        break;
+      default:
+        this.tone({ type: 'square', freq: 980 * f, freqEnd: 260, dur: 0.08, gain: 0.07 * g, filter: 3500, pan });
+        this.noise({ dur: 0.05, gain: 0.05 * g, type: 'bandpass', freq: 3000, pan });
+    }
+  }
+  bombThrow(pan?: number) {
+    this.tone({ type: 'sine', freq: 300, freqEnd: 700, dur: 0.2, gain: 0.08, pan });
+  }
+  explode(pan?: number, big = true) {
+    this.tone({ type: 'sine', freq: big ? 120 : 160, freqEnd: 30, dur: 0.7, gain: big ? 0.5 : 0.35, pan });
+    this.noise({ dur: 0.8, gain: big ? 0.4 : 0.3, type: 'lowpass', freq: 3500, freqEnd: 100, pan });
+  }
+  heal(pan?: number) {
+    [784, 988, 1318].forEach((f, i) => this.tone({ type: 'sine', freq: f, dur: 0.3, gain: 0.06, when: this.now + i * 0.06, pan }));
+  }
+  kill(mine: boolean) {
+    const t = this.now;
+    (mine ? [659, 880, 1318] : [440, 330]).forEach((f, i) => this.tone({ type: 'triangle', freq: f, dur: 0.18, gain: 0.1, when: t + i * 0.08 }));
   }
   powerSpawn(pan?: number) {
     const t = this.now;
@@ -343,6 +427,28 @@ export class AudioEngine {
         break;
       case 'dobro':
         [659, 988, 1318, 1976].forEach((f, i) => this.tone({ type: 'square', freq: f, dur: 0.15, gain: 0.07, when: t + i * 0.06, filter: 4000, pan }));
+        break;
+      case 'invisivel':
+        for (let i = 0; i < 4; i++) this.tone({ type: 'sine', freq: 1400 - i * 250, dur: 0.3, gain: 0.05, when: t + i * 0.05, pan, detune: i * 20 });
+        break;
+      case 'vampiro':
+        [220, 207, 196].forEach((f, i) => this.tone({ type: 'sawtooth', freq: f, dur: 0.35, gain: 0.07, filter: 900, when: t + i * 0.12, pan }));
+        break;
+      case 'metralhadora':
+      case 'escopeta':
+      case 'laser':
+      case 'foguete':
+      case 'congelante':
+        this.tone({ type: 'square', freq: 200, freqEnd: 800, dur: 0.15, gain: 0.08, filter: 2500, pan });
+        this.noise({ dur: 0.1, gain: 0.1, type: 'highpass', freq: 3000, pan, when: t + 0.12 });
+        break;
+      case 'bomba':
+      case 'mina':
+        this.tone({ type: 'triangle', freq: 330, dur: 0.12, gain: 0.1, pan });
+        this.tone({ type: 'triangle', freq: 220, dur: 0.18, gain: 0.1, pan, when: t + 0.1 });
+        break;
+      case 'cura':
+        this.heal(pan);
         break;
       case 'apagar':
         this.tone({ type: 'sine', freq: 900, freqEnd: 90, dur: 0.6, gain: 0.16, pan });
