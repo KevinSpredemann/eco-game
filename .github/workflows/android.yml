@@ -13,8 +13,8 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     env:
-      # endereço público do servidor online (variável do repositório: Settings → Secrets and variables → Actions → Variables)
-      VITE_SERVER_URL: ${{ vars.ECO_SERVER_URL }}
+      # endereço público do servidor online (padrão: o eco-server no Render; dá para trocar pela variável ECO_SERVER_URL do repositório)
+      VITE_SERVER_URL: ${{ vars.ECO_SERVER_URL || 'https://eco-server-u6u5.onrender.com' }}
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
     steps:
       - uses: actions/checkout@v4
