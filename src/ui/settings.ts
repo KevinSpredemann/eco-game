@@ -1,4 +1,6 @@
 import type { Difficulty } from '../game/sim';
+import { DEFAULT_LOADOUT, type Loadout } from '../game/balance';
+import { DEFAULT_KEYS, type KeyBinds } from './input';
 
 export interface Settings {
   master: number;
@@ -17,6 +19,16 @@ export interface Settings {
   difficulty: Difficulty;
   tutorialDone: boolean;
   rulesSeen: boolean;
+  /** teclas (remapeáveis) */
+  keys: KeyBinds;
+  /** equipamento escolhido */
+  loadout: Loadout;
+  /** Caça ao Chefe contra bots: papel preferido */
+  chefeRole: 'cacador' | 'chefe' | 'sorteio';
+  /** rodízio do Chefe nas partidas contra bots */
+  bossTurns: number;
+  /** qualidade gráfica */
+  quality: 'alta' | 'media' | 'baixa';
 }
 
 const KEY = 'eco.settings.v1';
@@ -38,16 +50,25 @@ export const DEFAULTS: Settings = {
   difficulty: 'normal',
   tutorialDone: false,
   rulesSeen: false,
+  keys: { ...DEFAULT_KEYS },
+  loadout: { ...DEFAULT_LOADOUT },
+  chefeRole: 'sorteio',
+  bossTurns: 0,
+  // aparelhos modestos começam na qualidade média
+  quality: typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4 ? 'media' : 'alta',
 };
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) {
+      const v = JSON.parse(raw);
+      return { ...DEFAULTS, ...v, keys: { ...DEFAULT_KEYS, ...(v.keys ?? {}) }, loadout: { ...DEFAULT_LOADOUT, ...(v.loadout ?? {}) } };
+    }
   } catch {
     /* armazenamento indisponível: usa padrões */
   }
-  return { ...DEFAULTS };
+  return { ...DEFAULTS, keys: { ...DEFAULT_KEYS }, loadout: { ...DEFAULT_LOADOUT } };
 }
 
 export function saveSettings(s: Settings) {

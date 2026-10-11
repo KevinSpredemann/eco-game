@@ -1,0 +1,260 @@
+// Tela de equipamento: arma principal, item, habilidade (E) e ultimate (R), com desenho de cada peça.
+// No topo ficam os 4 espaços do seu equipamento; embaixo, as opções do espaço escolhido e a ficha completa.
+import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout } from '../game/balance';
+import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
+import { getCharacter } from '../game/characters';
+import { drawGear, GearKind } from './gearArt';
+
+type Tab = GearKind;
+const TABS: { id: Tab; name: string; hint: string }[] = [
+  { id: 'primary', name: 'Arma', hint: 'Escolha a arma principal' },
+  { id: 'kit', name: 'Item', hint: 'Escolha o item da rodada' },
+  { id: 'skill', name: 'Habilidade', hint: 'Escolha a habilidade extra' },
+  { id: 'ult', name: 'Ultimate', hint: 'Escolha a ultimate' },
+];
+
+export interface LoadoutDeps {
+  owns: (key: string) => boolean;
+  coins: () => number;
+  buy: (key: string) => Promise<string | null>;
+  toast: (s: string) => void;
+  click: () => void;
+  keyOf: (slot: 'skill' | 'ult' | 'item') => string;
+}
+
+const AIM_LABEL = { instant: 'Uso na hora', direction: 'Mira em direção', point: 'Mira em um ponto' } as const;
+
+interface Opt {
+  id: string;
+  name: string;
+  role: string;
+  color: string;
+  price: number;
+  owned: boolean;
+  sub: string;
+  group?: string;
+}
+
+function bar(label: string, v: number, max: number, cmp?: number) {
+  const f = Math.max(0, Math.min(1, v / max));
+  const c = cmp === undefined ? null : Math.max(0, Math.min(1, cmp / max));
+  const diff = c === null ? '' : f > c + 0.02 ? '<em class="up">▲</em>' : f < c - 0.02 ? '<em class="dn">▼</em>' : '';
+  return `<div class="lo-bar"><span>${label}</span><i><b style="width:${Math.round(f * 100)}%"></b>${c !== null ? `<u style="left:${Math.round(c * 100)}%"></u>` : ''}</i>${diff}</div>`;
+}
+
+const acc = (x: WeaponDef) => Math.max(0.1, 1 - x.spread * 1.6 - (x.pellets > 1 ? 0.15 : 0));
+const perHit = (x: WeaponDef) => x.damage * x.pellets + (x.blast?.dmg ?? 0);
+
+function weaponTraits(w: WeaponDef): string[] {
+  const t: string[] = [];
+  if (w.pellets > 1) t.push(`${w.pellets} projéteis em leque`);
+  if (w.pierce) t.push('Atravessa alvos');
+  if (w.slow) t.push(`Deixa lento (${w.slow}s)`);
+  if (w.heal) t.push(`Cura ${Math.round(w.heal * 100)}% do dano`);
+  if (w.knock && w.knock >= 140) t.push('Empurra');
+  if (w.blast) t.push(`Explode (raio ${w.blast.r})`);
+  if (w.range <= 160) t.push('Precisa chegar perto');
+  if (w.cooldown >= 0.8) t.push('Lenta: errou, ficou exposto');
+  return t;
+}
+
+export class LoadoutScreen {
+  private tab: Tab = 'primary';
+  private l: Loadout;
+  /** item em destaque na ficha (pode ser um bloqueado, só para ver) */
+  private focus = '';
+  private charId = 'kael';
+  private onConfirm: (l: Loadout) => void = () => {};
+
+  constructor(
+    private root: HTMLElement,
+    private deps: LoadoutDeps,
+  ) {
+    this.l = sanitizeLoadout(null);
+    window.addEventListener('resize', () => {
+      if (!this.root.hidden) this.drawAll();
+    });
+  }
+
+  open(opts: { charId: string; loadout: Loadout; subtitle: string; confirmText: string; onConfirm: (l: Loadout) => void }) {
+    this.charId = opts.charId;
+    this.l = sanitizeLoadout(opts.loadout, this.deps.owns);
+    this.onConfirm = opts.onConfirm;
+    this.tab = 'primary';
+    this.focus = '';
+    this.root.querySelector('.lo-sub')!.textContent = opts.subtitle;
+    this.root.querySelectorAll<HTMLElement>('[data-lo-confirm]').forEach((b) => (b.textContent = opts.confirmText));
+    this.render();
+  }
+
+  get value() {
+    return this.l;
+  }
+
+  private ownsGear(id: string) {
+    const p = gearPrice(id);
+    return p === 0 || p === null || this.deps.owns('gear:' + id);
+  }
+  private weaponOf(id: string): WeaponDef {
+    return WEAPONS[id === 'assinatura' ? primaryOf(this.charId) : (id as WeaponId)];
+  }
+  private keyLabel(t: Tab) {
+    return t === 'primary' ? 'clique / ATIRAR' : this.deps.keyOf(t === 'kit' ? 'item' : t);
+  }
+
+  private optionsOf(tab: Tab): Opt[] {
+    if (tab === 'primary') {
+      return ['assinatura', ...STANDARD_PRIMARIES].map((id) => {
+        const w = this.weaponOf(id);
+        const price = id === 'assinatura' ? 0 : PRIMARY_PRICE[id] ?? 0;
+        return { id, name: w.name, role: CATEGORY_LABEL[w.cat ?? 'equilibrada'], color: w.color, price, owned: price === 0 || this.ownsGear(id), sub: `${Math.round(weaponDps(w))} dano/s · alcance ${w.range}`, group: id === 'assinatura' ? `Arma de ${getCharacter(this.charId).name}` : 'Armas padrão' };
+      });
+    }
+    if (tab === 'kit') return (Object.keys(KITS) as KitId[]).map((id) => ({ id, name: KITS[id].name, role: ROLE_LABEL[KITS[id].role], color: ROLE_COLOR[KITS[id].role], price: KITS[id].price, owned: this.ownsGear(id), sub: `${KITS[id].count} por rodada` }));
+    if (tab === 'skill') return (Object.keys(SKILLS) as SkillId[]).map((id) => ({ id, name: SKILLS[id].name, role: ROLE_LABEL[SKILLS[id].role], color: ROLE_COLOR[SKILLS[id].role], price: SKILLS[id].price, owned: this.ownsGear(id), sub: `Recarga ${SKILLS[id].cooldown}s · ${AIM_LABEL[SKILLS[id].aim]}` }));
+    return (Object.keys(ULTS) as UltId[]).map((id) => ({ id, name: ULTS[id].name, role: ROLE_LABEL[ULTS[id].role], color: ROLE_COLOR[ULTS[id].role], price: ULTS[id].price, owned: this.ownsGear(id), sub: AIM_LABEL[ULTS[id].aim] }));
+  }
+
+  private currentOf(tab: Tab): string {
+    return tab === 'primary' ? this.l.primary : tab === 'kit' ? this.l.kit : tab === 'skill' ? this.l.skill : this.l.ult;
+  }
+  private set(id: string) {
+    if (this.tab === 'primary') this.l.primary = id;
+    else if (this.tab === 'kit') this.l.kit = id as KitId;
+    else if (this.tab === 'skill') this.l.skill = id as SkillId;
+    else this.l.ult = id as UltId;
+  }
+  /** id usado no desenho (a arma própria vira a arma do personagem) */
+  private artId(tab: Tab, id: string) {
+    return tab === 'primary' && id === 'assinatura' ? primaryOf(this.charId) : id;
+  }
+
+  // ---------------------------------------------------------------- ficha do item
+  private detail(o: Opt): string {
+    const id = o.id;
+    const equipped = id === this.currentOf(this.tab);
+    const status = equipped
+      ? '<span class="lo-state on">✓ Equipado</span>'
+      : o.owned
+        ? '<button class="btn small primary lo-equip">Equipar</button>'
+        : `<button class="btn small primary lo-buy"><span class="coin"></span>Liberar por ${o.price}</button>`;
+    let body = '';
+    if (this.tab === 'primary') {
+      const w = this.weaponOf(id);
+      const cur = this.weaponOf(this.l.primary);
+      const cmp = cur !== w ? cur : undefined;
+      body = `<div class="lo-bars">${[
+        bar('Dano por disparo', perHit(w), 60, cmp && perHit(cmp)),
+        bar('Dano por segundo', weaponDps(w), 60, cmp && weaponDps(cmp)),
+        bar('Alcance', w.range, 500, cmp?.range),
+        bar('Cadência', 1 / w.cooldown, 10, cmp && 1 / cmp.cooldown),
+        bar('Precisão', acc(w), 1, cmp && acc(cmp)),
+      ].join('')}</div>
+      <p class="lo-desc">${weaponTraits(w).join(' · ') || 'Sem efeito extra: confiável em média distância.'}</p>
+      ${cmp ? `<p class="lo-cmp">▲▼ e a marquinha branca comparam com a ${cmp.name} (equipada).</p>` : ''}`;
+    } else if (this.tab === 'kit') {
+      const k = KITS[id as KitId];
+      body = `<div class="lo-facts"><span>Usa com <b>${this.keyLabel('kit')}</b></span><span><b>${k.count}</b> por rodada</span></div><p class="lo-desc">${k.desc}</p><p class="lo-cmp">Itens não recarregam ao renascer.</p>`;
+    } else if (this.tab === 'skill') {
+      const s = SKILLS[id as SkillId];
+      const facts = [`Tecla <b>${this.keyLabel('skill')}</b>`, `Recarga <b>${s.cooldown}s</b>`, s.range ? `Alcance <b>${s.range}</b>` : '', s.duration ? `Dura <b>${s.duration}s</b>` : '', s.damage ? `${s.role === 'suporte' ? 'Cura' : 'Dano'} <b>${s.damage}</b>` : ''];
+      body = `<div class="lo-facts">${facts.filter(Boolean).map((x) => `<span>${x}</span>`).join('')}</div><p class="lo-desc">${s.desc}</p>${s.aim !== 'instant' ? '<p class="lo-cmp">Segure para ver a prévia e solte para usar. Esc ou botão direito cancela.</p>' : ''}`;
+    } else {
+      const u = ULTS[id as UltId];
+      const facts = [`Tecla <b>${this.keyLabel('ult')}</b>`, u.damage ? `Dano <b>${u.damage}</b>` : '', u.radius ? `Raio <b>${u.radius}</b>` : '', u.range ? `Alcance <b>${u.range}</b>` : '', u.windup ? `Aviso <b>${u.windup}s</b>` : '', u.duration ? `Dura <b>${u.duration}s</b>` : ''];
+      body = `<div class="lo-facts">${facts.filter(Boolean).map((x) => `<span>${x}</span>`).join('')}</div><p class="lo-desc">${u.desc}</p><p class="lo-cmp">Carrega com o tempo, causando e levando dano. Os rivais veem o aviso antes do golpe.</p>`;
+    }
+    return `<div class="lo-hero" style="--c:${o.color}">
+        <canvas class="lo-art" data-art="${this.tab}:${this.artId(this.tab, id)}:${o.color}:${o.owned ? 1 : 0}"></canvas>
+        <div class="lo-hinfo">
+          <b class="lo-dname nm" style="--c:${o.color}">${o.name}</b>
+          <span class="lo-chip" style="--c:${o.color}">${o.role}</span>
+          ${status}
+        </div>
+      </div>
+      ${body}`;
+  }
+
+  // ---------------------------------------------------------------- montagem
+  private render() {
+    // 1) os 4 espaços do equipamento (com desenho do que está equipado)
+    const slots = this.root.querySelector('.lo-slots')!;
+    slots.innerHTML = TABS.map((t) => {
+      const cur = this.optionsOf(t.id).find((o) => o.id === this.currentOf(t.id))!;
+      return `<button class="lo-slot${t.id === this.tab ? ' on' : ''}" role="tab" aria-selected="${t.id === this.tab}" data-lo-tab="${t.id}" style="--c:${cur.color}">
+        <span class="lo-slot-k">${t.name} <small>${this.keyLabel(t.id)}</small></span>
+        <canvas data-art="${t.id}:${this.artId(t.id, cur.id)}:${cur.color}:1"></canvas>
+        <b>${cur.name}</b>
+      </button>`;
+    }).join('');
+    slots.querySelectorAll<HTMLElement>('[data-lo-tab]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.deps.click();
+        this.tab = b.dataset.loTab as Tab;
+        this.focus = '';
+        this.render();
+      }),
+    );
+    // 2) opções do espaço escolhido (cards com desenho), agrupadas
+    const opts = this.optionsOf(this.tab);
+    const cur = this.currentOf(this.tab);
+    if (!this.focus) this.focus = cur;
+    const tabInfo = TABS.find((t) => t.id === this.tab)!;
+    this.root.querySelector('.lo-list-title')!.innerHTML = `<b>${tabInfo.hint}</b><span>${opts.filter((o) => o.owned).length} de ${opts.length} liberadas</span>`;
+    let lastGroup = '';
+    const grid = this.root.querySelector('.lo-grid')!;
+    grid.innerHTML = opts
+      .map((o) => {
+        const head = o.group && o.group !== lastGroup ? `<span class="lo-group">${o.group}</span>` : '';
+        lastGroup = o.group ?? lastGroup;
+        return `${head}<button class="lo-opt${o.id === cur ? ' on' : ''}${o.id === this.focus ? ' focus' : ''}${o.owned ? '' : ' locked'}" data-lo-opt="${o.id}" style="--c:${o.color}">
+          <canvas data-art="${this.tab}:${this.artId(this.tab, o.id)}:${o.color}:${o.owned ? 1 : 0}"></canvas>
+          ${o.id === cur ? '<span class="lo-badge">✓</span>' : !o.owned ? '<span class="lo-badge lock">🔒</span>' : ''}
+          <b>${o.name}</b>
+          <span class="lo-chip">${o.role}</span>
+          <small>${o.owned ? o.sub : `<span class="coin"></span>${o.price}`}</small>
+        </button>`;
+      })
+      .join('');
+    grid.querySelectorAll<HTMLElement>('[data-lo-opt]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const id = b.dataset.loOpt!;
+        const o = opts.find((x) => x.id === id)!;
+        this.deps.click();
+        this.focus = id;
+        // liberado: equipa na hora; bloqueado: só mostra a ficha com o botão de liberar
+        if (o.owned) this.set(id);
+        this.render();
+      }),
+    );
+    // 3) ficha completa do item em foco
+    const focused = opts.find((o) => o.id === this.focus) ?? opts[0];
+    const det = this.root.querySelector('.lo-detail')!;
+    det.innerHTML = this.detail(focused);
+    det.querySelector('.lo-equip')?.addEventListener('click', () => {
+      this.deps.click();
+      this.set(focused.id);
+      this.render();
+    });
+    det.querySelector('.lo-buy')?.addEventListener('click', async () => {
+      if (this.deps.coins() < focused.price) return this.deps.toast(`Faltam ${focused.price - this.deps.coins()} moedas para liberar ${focused.name}.`);
+      const err = await this.deps.buy('gear:' + focused.id);
+      if (err) return this.deps.toast(err);
+      this.deps.toast(`${focused.name} liberado e equipado!`);
+      this.set(focused.id);
+      this.render();
+    });
+    requestAnimationFrame(() => this.drawAll());
+  }
+
+  private drawAll() {
+    this.root.querySelectorAll<HTMLCanvasElement>('canvas[data-art]').forEach((cv) => {
+      const [kind, id, color, owned] = cv.dataset.art!.split(':');
+      drawGear(cv, kind as GearKind, id, color, { locked: owned === '0' });
+    });
+  }
+
+  confirm() {
+    this.onConfirm(sanitizeLoadout(this.l, this.deps.owns));
+  }
+}

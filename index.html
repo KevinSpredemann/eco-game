@@ -30,39 +30,183 @@
         <button class="icon-btn" id="btn-pause" aria-label="Pausar">❚❚</button>
       </div>
       <div class="hud-status" id="hud-status"></div>
+      <div class="skillbar" id="skillbar" aria-label="Habilidades"></div>
+      <div class="boss-hud" id="boss-hud" hidden>
+        <div class="bh-top"><b id="bh-name">CHEFE</b><span id="bh-phase">FASE 1</span></div>
+        <div class="bh-bar"><i id="bh-fill"></i><s style="left:33.3%"></s><s style="left:66.6%"></s></div>
+        <div class="bh-info" id="bh-info"></div>
+      </div>
     </div>
     <div id="banner" hidden><div class="banner-main"></div><div class="banner-sub"></div></div>
     <div id="hint" hidden></div>
+    <div id="rw-sum" hidden></div>
 
     <!-- Controles de toque -->
     <div id="touch" hidden>
       <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div></div>
       <div id="buttons">
-        <button id="btn-ability" class="tbtn ability"><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">HAB</span></button>
+        <button id="btn-ability" class="tbtn ability"><canvas class="ticon"></canvas><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">HAB</span><span class="tcd"></span></button>
         <button id="btn-dash" class="tbtn dash"><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">IMPULSO</span></button>
+        <button id="btn-fire" class="tbtn fire" hidden><span class="tlabel">ATIRAR</span></button>
+        <button id="btn-item" class="tbtn item" hidden><canvas class="ticon"></canvas><span class="tlabel">ITEM</span></button>
+        <button id="btn-bonus" class="tbtn bonus empty"><span class="bicon"></span><span class="tlabel">PODER</span></button>
+        <button id="btn-skill" class="tbtn skill" hidden><canvas class="ticon"></canvas><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">HAB 2</span><span class="tcd"></span></button>
+        <button id="btn-ult" class="tbtn ult" hidden><canvas class="ticon"></canvas><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">ULT</span><span class="tcd"></span></button>
       </div>
+      <div id="aim-cancel" hidden>✕ Solte aqui para cancelar</div>
     </div>
 
     <!-- Tela inicial -->
+    <button class="account-chip" id="account-chip" data-action="account" hidden>
+      <img class="ava" alt="" />
+      <span class="who"><b class="nm">Convidado</b><span class="lv">Nível 1</span></span>
+      <span class="coins"><span class="coin" aria-hidden="true"></span><b class="cv">0</b></span>
+    </button>
+
     <section id="screen-title" class="screen">
-      <div class="title-art" aria-hidden="true"></div>
+      <canvas class="title-art" id="title-canvas" aria-hidden="true"></canvas>
+      <canvas class="title-hero" id="title-hero" aria-hidden="true"></canvas>
+      <div class="title-hero-tag" id="title-hero-tag" aria-live="polite"></div>
       <div class="title-inner">
-        <h1 class="logo">ECO<span class="logo-ghost" aria-hidden="true"></span></h1>
-        <p class="tagline">O passado também joga.</p>
-        <div class="menu">
-          <button class="btn primary" data-action="play">Jogar</button>
-          <button class="btn" data-action="training">Treino solo</button>
-          <button class="btn" data-action="howto">Como jogar</button>
-          <button class="btn" data-action="options">Opções</button>
-          <button class="btn ghost" data-action="install" id="btn-install" hidden>Instalar app</button>
+        <h1 class="logo" data-text="ECO">ECO</h1>
+        <p class="tagline">O passado também joga</p>
+        <button class="btn primary play-btn" data-action="play"><span class="chev">«</span><span>Jogar</span><span class="chev">»</span></button>
+        <div class="menu-tiles">
+          <button class="tile online-btn" data-action="online"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3.2" /><circle cx="16.5" cy="9" r="3.2" /><path d="M2.5 19c.6-3.2 3-5 5.5-5s4.9 1.8 5.5 5M11 19c.6-3.2 3-5 5.5-5s4.9 1.8 5.5 5" /></svg><span>Online</span></button>
+          <button class="tile" data-action="shop"><svg viewBox="0 0 24 24"><path d="M4 8h16l-1.5 11.5a2 2 0 0 1-2 1.5h-9a2 2 0 0 1-2-1.5z" /><path d="M8.5 8V6.5a3.5 3.5 0 0 1 7 0V8" /></svg><span>Loja</span></button>
+          <button class="tile" data-action="howto"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1.9-1.1 1.8M12 17h.01" /></svg><span>Como jogar</span></button>
+          <button class="tile" data-action="options"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" /></svg><span>Opções</span></button>
         </div>
+        <button class="btn ghost small" data-action="install" id="btn-install" hidden>Instalar app</button>
         <p class="title-foot" id="title-foot">Toque ou clique para ativar o som.</p>
+      </div>
+    </section>
+
+    <!-- Modos -->
+    <section id="screen-modes" class="screen fit" hidden>
+      <div class="sheet fit">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="back">‹ Voltar</button>
+          <div class="head-title"><span class="step-tag">Contra bots</span><h2>Escolha o modo</h2></div>
+          <span></span>
+        </header>
+        <div class="mode-grid" id="mode-grid"></div>
+        <div class="more-modes">
+          <span class="mm-label">Mais modos</span>
+          <div class="mm-row" id="more-modes"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Conta -->
+    <section id="screen-account" class="screen scroll" hidden>
+      <div class="sheet narrow">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="back">‹ Voltar</button>
+          <div class="head-title"><span class="step-tag">Sua conta</span><h2 id="acc-title">Entrar</h2></div>
+          <span></span>
+        </header>
+        <div id="acc-guest">
+          <div class="tabs" role="tablist">
+            <button class="tab on" data-tab="login" role="tab">Entrar</button>
+            <button class="tab" data-tab="register" role="tab">Criar conta</button>
+          </div>
+          <form id="acc-form" class="form" autocomplete="on">
+            <label>Apelido <input id="acc-user" name="username" autocomplete="username" maxlength="16" required /></label>
+            <label>Senha <input id="acc-pass" name="password" type="password" autocomplete="current-password" minlength="6" maxlength="72" required /></label>
+            <p class="form-note" id="acc-note">Seu progresso de convidado (moedas e itens) vai junto quando você cria a conta.</p>
+            <p class="form-error" id="acc-error" role="alert" hidden></p>
+            <button class="btn primary" type="submit" id="acc-submit">Entrar</button>
+          </form>
+        </div>
+        <div id="acc-logged" hidden>
+          <div class="acc-stats" id="acc-stats"></div>
+          <button class="btn ghost" data-action="logout">Sair da conta</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Loja -->
+    <section id="screen-shop" class="screen fit" hidden>
+      <div class="sheet fit">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="back">‹ Voltar</button>
+          <div class="head-title"><span class="step-tag" id="shop-coins">0 moedas</span><h2>Loja</h2></div>
+          <span></span>
+        </header>
+        <div class="tabs" role="tablist" id="shop-tabs">
+          <button class="tab on" data-shop="char" role="tab">Personagens</button>
+          <button class="tab" data-shop="skin" role="tab">Roupas</button>
+          <button class="tab" data-shop="trail" role="tab">Rastros</button>
+        </div>
+        <div class="shop-grid" id="shop-grid"></div>
+        <p class="form-note shop-note">Ganhe moedas jogando: cada partida dá moedas, vitórias e partidas online dão mais.</p>
+      </div>
+    </section>
+
+    <!-- Online -->
+    <section id="screen-online" class="screen scroll" hidden>
+      <div class="sheet narrow">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="back">‹ Voltar</button>
+          <div class="head-title"><span class="step-tag" id="online-status">Conectando…</span><h2>Jogar online</h2></div>
+          <span></span>
+        </header>
+        <div class="online-box">
+          <h3 class="section-label">Criar uma sala</h3>
+          <div class="mode-pills" id="online-modes">
+            <button class="pill on" data-omode="duelo">Duelo x1</button>
+            <button class="pill" data-omode="combate">Combate</button>
+            <button class="pill" data-omode="nucleo">Núcleo</button>
+            <button class="pill" data-omode="bandeira">Bandeira 2x2</button>
+            <button class="pill" data-omode="rei">Rei da Colina</button>
+            <button class="pill" data-omode="ondas">Ondas (juntos)</button>
+            <button class="pill" data-omode="royale">Batalha Real</button>
+            <button class="pill" data-omode="chefe">Caça ao Chefe</button>
+          </div>
+          <button class="btn primary" data-action="create-room">Criar sala e chamar amigos</button>
+          <h3 class="section-label">Jogar com desconhecidos</h3>
+          <button class="btn quick-btn" data-action="quick-chefe">Buscar partida · Caça ao Chefe</button>
+          <h3 class="section-label">Entrar numa sala</h3>
+          <form id="join-form" class="join-row">
+            <input id="join-code" maxlength="4" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Código da sala" />
+            <button class="btn" type="submit">Entrar</button>
+          </form>
+          <p class="form-error" id="online-error" role="alert" hidden></p>
+          <p class="form-note" id="online-note"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sala -->
+    <section id="screen-lobby" class="screen scroll" hidden>
+      <div class="sheet narrow">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="leave-room">‹ Sair</button>
+          <div class="head-title"><span class="step-tag">Código da sala</span><h2 class="room-code" id="room-code">----</h2></div>
+          <button class="btn small" data-action="share-room">Convidar</button>
+        </header>
+        <ul class="lobby-list" id="lobby-list"></ul>
+        <div class="lobby-config" id="lobby-config">
+          <label class="opt">Modo
+            <select id="lobby-mode"><option value="duelo">Duelo x1</option><option value="combate">Combate</option><option value="nucleo">Núcleo de Energia</option><option value="bandeira">Captura a Bandeira 2x2</option><option value="rei">Rei da Colina</option><option value="ondas">Sobrevivência (juntos)</option><option value="royale">Batalha Real</option><option value="chefe">Caça ao Chefe (3 contra 1)</option></select>
+          </label>
+          <label class="opt">Mapa <select id="lobby-arena"></select></label>
+          <label class="opt">Bots <select id="lobby-bots"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+        </div>
+        <div class="lobby-actions">
+          <button class="btn" data-action="lobby-char">Trocar personagem</button>
+          <button class="btn" data-action="lobby-loadout">Equipamento</button>
+          <button class="btn" data-action="lobby-ready" id="lobby-ready">Estou pronto</button>
+          <button class="btn primary" data-action="lobby-start" id="lobby-start">Começar</button>
+        </div>
+        <p class="form-note" id="lobby-note"></p>
       </div>
     </section>
 
     <!-- Seleção -->
     <section id="screen-select" class="screen fit" hidden>
-      <div class="sheet fit">
+      <div class="sheet fit car-sheet">
         <header class="sheet-head">
           <button class="btn small ghost" data-action="back">‹ Voltar</button>
           <div class="head-title">
@@ -71,36 +215,70 @@
           </div>
           <button class="btn small primary" data-action="to-map">Próximo ›</button>
         </header>
-        <div class="char-grid" id="char-grid"></div>
-        <div class="pick-bar" id="char-detail"></div>
+        <div class="carousel" id="char-carousel">
+          <button class="car-arrow left" aria-label="Personagem anterior"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg></button>
+          <div class="car-track"></div>
+          <button class="car-arrow right" aria-label="Próximo personagem"><svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg></button>
+        </div>
+        <div class="car-thumbs" id="char-thumbs"></div>
+        <div class="hero-panel" id="char-detail"></div>
       </div>
     </section>
 
     <section id="screen-map" class="screen fit" hidden>
-      <div class="sheet fit">
+      <div class="sheet fit car-sheet">
         <header class="sheet-head">
           <button class="btn small ghost" data-action="to-chars">‹ Personagem</button>
           <div class="head-title">
             <span class="step-tag" id="map-mode">passo 2 de 2</span>
             <h2>Escolha o mapa</h2>
           </div>
-          <button class="btn small primary" data-action="start">Começar ›</button>
+          <button class="btn small primary" data-action="start" id="map-go-top">Começar ›</button>
         </header>
-        <div class="arena-grid" id="arena-grid"></div>
-        <div class="pick-bar">
+        <div class="carousel" id="map-carousel">
+          <button class="car-arrow left" aria-label="Mapa anterior"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg></button>
+          <div class="car-track"></div>
+          <button class="car-arrow right" aria-label="Próximo mapa"><svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg></button>
+        </div>
+        <div class="hero-panel map-panel">
+          <div class="hp-info" id="map-info"></div>
           <div class="match-opts" id="match-opts">
-            <label class="opt">Adversários
-              <select id="sel-bots"><option value="1">1 bot</option><option value="2">2 bots</option><option value="3" selected>3 bots</option></select>
+            <label class="opt" id="role-opt" hidden>Seu papel
+              <select id="sel-role"><option value="cacador">Caçador</option><option value="chefe">Chefe</option><option value="sorteio">Sorteio justo</option></select>
+            </label>
+            <label class="opt"><span id="bots-label">Adversários</span>
+              <select id="sel-bots"></select>
             </label>
             <label class="opt">Dificuldade
               <select id="sel-diff"><option value="facil">Fácil</option><option value="normal" selected>Normal</option><option value="dificil">Difícil</option></select>
             </label>
           </div>
-          <button class="btn primary" data-action="start">Começar partida ›</button>
+          <button class="btn primary go-btn" data-action="start" id="map-go">Começar partida ›</button>
         </div>
       </div>
     </section>
 
+    <!-- Equipamento -->
+    <section id="screen-loadout" class="screen fit" hidden>
+      <div class="sheet fit lo-sheet">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="loadout-back">‹ Voltar</button>
+          <div class="head-title">
+            <span class="step-tag lo-sub">passo 3 de 3</span>
+            <h2>Equipamento</h2>
+          </div>
+          <button class="btn small primary" data-lo-confirm data-action="loadout-ok">Confirmar ›</button>
+        </header>
+        <div class="lo-slots" role="tablist" aria-label="Seu equipamento"></div>
+        <div class="lo-body">
+          <div class="lo-list">
+            <div class="lo-list-title"></div>
+            <div class="lo-grid"></div>
+          </div>
+          <div class="lo-detail"></div>
+        </div>
+      </div>
+    </section>
     <!-- Resumo da lógica (aparece antes da 1ª partida) -->
     <section id="screen-rules" class="screen fit" hidden>
       <div class="sheet fit rules">
@@ -147,34 +325,51 @@
           <h2>Como jogar</h2>
           <span></span>
         </header>
-        <ol class="steps">
-          <li><b>Entre na arena.</b> De 2 a 4 jogadores. Cada rodada dura 30 segundos.</li>
-          <li><b>Colete energia.</b> Passe por cima dos cristais verdes. Você carrega até 3.</li>
-          <li><b>Entregue no núcleo.</b> Cada energia entregue vale 3 pontos. O núcleo muda de lugar a cada rodada.</li>
-          <li><b>A rodada reinicia.</b> Cada jogador deixa um <em>Eco</em>: um fantasma que repete exatamente o que ele fez, no mesmo ritmo.</li>
-          <li><b>Mais caos.</b> Até 3 gerações de Ecos ficam ativas. Encostar em um Eco (até no seu) tira 1 vida e derruba sua energia.</li>
-        </ol>
         <div class="howto-grid">
           <div class="card">
-            <h4>Pontos</h4>
-            <p>Entregar energia: 3 por cristal<br />Sobreviver à rodada: 1<br />Objetivo da rodada: 1<br />Após 4 rodadas vence quem tiver mais pontos. Empate vai para uma rodada curta de desempate.</p>
+            <h4>Núcleo de Energia</h4>
+            <p>Pegue os cristais verdes (até 3) e entregue no núcleo: 3 pontos cada. A cada rodada, todo mundo deixa um <em>Eco</em>, um fantasma que repete o que você fez. Encostar num Eco tira 1 vida.</p>
+          </div>
+          <div class="card">
+            <h4>Duelo x1</h4>
+            <p>Você contra um rival, com armas, bombas e poderes. Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Seus Ecos repetem os seus tiros também!</p>
+          </div>
+          <div class="card">
+            <h4>Combate</h4>
+            <p>Até 4 jogadores, todos contra todos. Eliminar vale 2 pontos e ser o último de pé vale 3. Pegue armas (metralhadora, escopeta, laser) e itens (bombas e minas) pela arena.</p>
+          </div>
+          <div class="card">
+            <h4>Cristais de poder</h4>
+            <p>De vez em quando surge um cristal brilhante com o símbolo de um personagem. Passe por cima para pegar a habilidade dele e use uma vez com o botão PODER (ou R / botão direito do mouse).</p>
+          </div>
+          <div class="card">
+            <h4>Mais modos</h4>
+            <p><b>Captura a Bandeira:</b> 2 contra 2, leve a bandeira rival até a sua base.<br /><b>Rei da Colina:</b> fique sozinho na zona da coroa (+1 por segundo).<br /><b>Sobrevivência:</b> você e aliados contra 5 ondas de robôs e um chefão.<br /><b>Batalha Real:</b> a zona fecha; o último de pé vence.</p>
           </div>
           <div class="card">
             <h4>Controles</h4>
-            <p><b>Celular:</b> analógico à esquerda, botões IMPULSO e HABILIDADE à direita.<br /><b>Teclado:</b> WASD ou setas · Espaço = impulso · E ou Shift = habilidade · Esc = pausa.</p>
+            <p><b>Computador:</b> WASD anda · mouse mira, clique atira · <b>Q</b> habilidade do personagem · <b>E</b> habilidade do equipamento · <b>R</b> ultimate · <b>Shift</b> impulso · <b>Espaço</b> item · <b>F</b> poder do cristal · <b>Esc</b> cancela a mira ou pausa. Segure Q, E ou R para ver a prévia e solte para usar. Dá para trocar as teclas em Opções.<br /><b>Celular:</b> analógico à esquerda. Toque num botão de habilidade para usar na hora, ou arraste para mirar e solte. Para cancelar, solte em cima do "✕".</p>
+          </div>
+          <div class="card">
+            <h4>Caça ao Chefe</h4>
+            <p>3 caçadores contra 1 jogador que vira o Chefe (mais vida, golpes enormes). Os golpes do Chefe mostram a área antes de cair: saia dela. Acertar as <b>costas</b> dá 50% a mais de dano. Na fase 2 surgem <b>geradores</b> que protegem o Chefe: destrua-os. Na fase 3 rochas caem pela arena. O time tem vidas extras compartilhadas; se o tempo acabar, o Chefe vence.</p>
+          </div>
+          <div class="card">
+            <h4>Equipamento</h4>
+            <p>Antes da partida escolha a arma principal (a sua ou uma padrão), o item, a habilidade do E e a ultimate do R. Cada opção tem vantagens e limites, nada é só "mais forte". A ultimate carrega com o tempo e com a luta.</p>
           </div>
           <div class="card">
             <h4>Lendo os Ecos</h4>
-            <p>A cor e o símbolo mostram de quem é o Eco. "R2" indica a rodada em que foi gravado. Ecos antigos ficam mais transparentes e piscam antes de sumir. Um pulso branco avisa que o Eco vai dar um impulso.</p>
+            <p>A cor e o símbolo mostram de quem é o Eco. "R2" indica a rodada em que foi gravado. Ecos antigos ficam mais transparentes e piscam antes de sumir. Tiros de Eco são tracejados e fazem menos dano.</p>
           </div>
           <div class="card">
-            <h4>Perigos</h4>
-            <p>Zonas laranja piscam antes de eletrificar. Cada cenário tem a sua armadilha: portais, pontes, feixes de fogo, pistões, arbustos ou buraco negro.</p>
+            <h4>Moedas e loja</h4>
+            <p>Toda partida dá moedas, e vencer dá mais. Use na Loja para liberar personagens, roupas e rastros. Entre na sua conta para guardar tudo e jogar online com amigos.</p>
           </div>
         </div>
         <div class="card" style="margin-top:10px">
           <h4>Poderes</h4>
-          <p>Escudo, Ímã, Gelo nos Ecos, Turbo, Energia em dobro e Apagar Eco aparecem pela arena a cada poucos segundos. É só encostar para pegar.</p>
+          <p>Escudo, Ímã, Gelo nos Ecos, Turbo, Energia em dobro, Apagar Eco, Invisível e Cura aparecem pela arena. Nos modos com armas também caem metralhadora, escopeta, laser, lança-foguetes, raio congelante, vampiro, bombas e minas. É só encostar para pegar.</p>
         </div>
         <button class="btn primary wide" data-action="training">Fazer o treino guiado ›</button>
       </div>
@@ -201,6 +396,14 @@
           <label class="row check"><input type="checkbox" id="opt-own" /> Seu próprio Eco também causa dano</label>
           <label class="row check"><input type="checkbox" id="opt-trails" /> Mostrar rastro dos Ecos</label>
           <label class="row check"><input type="checkbox" id="opt-reduced" /> Reduzir efeitos (tremor e partículas)</label>
+          <label class="row">Qualidade gráfica
+            <select id="opt-quality"><option value="alta">Alta (luz e sombras, máxima nitidez)</option><option value="media">Média (mais leve)</option><option value="baixa">Baixa (celulares mais simples)</option></select>
+          </label>
+          <hr />
+          <h3 class="section-label">Teclado (computador)</h3>
+          <p class="form-note">WASD ou setas andam · mouse mira e clique atira · Esc cancela a mira ou pausa. Toque numa ação e aperte a nova tecla.</p>
+          <div class="keybinds" id="keybinds"></div>
+          <button class="btn small ghost" id="keys-reset">Voltar ao padrão</button>
         </div>
       </div>
     </section>
@@ -211,6 +414,7 @@
         <h2>Pausado</h2>
         <div class="menu">
           <button class="btn primary" data-action="resume">Continuar</button>
+          <button class="btn" data-action="pause-loadout" id="pause-loadout">Equipamento (próxima rodada)</button>
           <button class="btn" data-action="restart">Reiniciar partida</button>
           <button class="btn" data-action="options">Opções</button>
           <button class="btn ghost" data-action="quit">Sair para o menu</button>
@@ -225,6 +429,7 @@
         <h2 id="res-title">Vitória!</h2>
         <ol class="podium" id="res-list"></ol>
         <p class="highlight" id="res-highlight"></p>
+        <p class="res-coins" id="res-coins" hidden></p>
         <div class="menu row-menu">
           <button class="btn primary" data-action="restart">Revanche</button>
           <button class="btn" data-action="select">Trocar personagem</button>
