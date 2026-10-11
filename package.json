@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/precache.mjs",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=server/dist/index.mjs",
+    "start": "node server/dist/index.mjs",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json"
   },
   "devDependencies": {
     "@capacitor/android": "^6.1.2",
@@ -15,12 +18,18 @@
     "@capacitor/ios": "^6.1.2",
     "@fontsource/bungee": "^5.1.0",
     "@fontsource/chakra-petch": "^5.1.0",
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.24.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vitest": "^2.1.4"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.1",
-    "@capacitor/core": "^6.1.2"
+    "@capacitor/core": "^6.1.2",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0"
   }
 }
