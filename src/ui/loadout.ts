@@ -1,9 +1,11 @@
 // Tela de equipamento: arma principal, item, habilidade (E) e ultimate (R), com desenho de cada peça.
-// No topo ficam os 4 espaços do seu equipamento; embaixo, as opções do espaço escolhido e a ficha completa.
+// No topo ficam os 4 espaços do seu equipamento; embaixo, um carrossel (deslizar para o lado, igual aos
+// personagens e mapas) com as opções do espaço escolhido, e a ficha completa do item no centro.
 import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout } from '../game/balance';
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
 import { drawGear, GearKind } from './gearArt';
+import { Carousel, fitText } from './carousel';
 
 type Tab = GearKind;
 const TABS: { id: Tab; name: string; hint: string }[] = [
@@ -65,6 +67,10 @@ export class LoadoutScreen {
   private focus = '';
   private charId = 'kael';
   private onConfirm: (l: Loadout) => void = () => {};
+  private car: Carousel | null = null;
+  /** de qual espaço é o carrossel montado agora (remonta só ao trocar de espaço) */
+  private carTab: Tab | null = null;
+  private opts: Opt[] = [];
 
   constructor(
     private root: HTMLElement,
@@ -82,6 +88,7 @@ export class LoadoutScreen {
     this.onConfirm = opts.onConfirm;
     this.tab = 'primary';
     this.focus = '';
+    this.carTab = null;
     this.root.querySelector('.lo-sub')!.textContent = opts.subtitle;
     this.root.querySelectorAll<HTMLElement>('[data-lo-confirm]').forEach((b) => (b.textContent = opts.confirmText));
     this.render();
@@ -164,20 +171,26 @@ export class LoadoutScreen {
       const facts = [`Tecla <b>${this.keyLabel('ult')}</b>`, u.damage ? `Dano <b>${u.damage}</b>` : '', u.radius ? `Raio <b>${u.radius}</b>` : '', u.range ? `Alcance <b>${u.range}</b>` : '', u.windup ? `Aviso <b>${u.windup}s</b>` : '', u.duration ? `Dura <b>${u.duration}s</b>` : ''];
       body = `<div class="lo-facts">${facts.filter(Boolean).map((x) => `<span>${x}</span>`).join('')}</div><p class="lo-desc">${u.desc}</p><p class="lo-cmp">Carrega com o tempo, causando e levando dano. Os rivais veem o aviso antes do golpe.</p>`;
     }
-    return `<div class="lo-hero" style="--c:${o.color}">
-        <canvas class="lo-art" data-art="${this.tab}:${this.artId(this.tab, id)}:${o.color}:${o.owned ? 1 : 0}"></canvas>
-        <div class="lo-hinfo">
-          <b class="lo-dname nm" style="--c:${o.color}">${o.name}</b>
-          <span class="lo-chip" style="--c:${o.color}">${o.role}</span>
-          ${status}
-        </div>
-      </div>
+    // o card do meio já mostra desenho e nome: aqui ficam só o estado e os números
+    return `<div class="lo-dhead" style="--c:${o.color}">${status}<span class="lo-dtag">${o.role}</span></div>
       ${body}`;
   }
 
   // ---------------------------------------------------------------- montagem
+  /** seta do teclado: passa para o item ao lado */
+  go(d: number) {
+    this.car?.go(d);
+  }
+
   private render() {
-    // 1) os 4 espaços do equipamento (com desenho do que está equipado)
+    this.renderSlots();
+    if (this.carTab !== this.tab) this.buildCarousel();
+    this.renderDetail();
+    requestAnimationFrame(() => this.drawAll());
+  }
+
+  /** 1) os 4 espaços do equipamento (com desenho do que está equipado) */
+  private renderSlots() {
     const slots = this.root.querySelector('.lo-slots')!;
     slots.innerHTML = TABS.map((t) => {
       const cur = this.optionsOf(t.id).find((o) => o.id === this.currentOf(t.id))!;
@@ -189,46 +202,76 @@ export class LoadoutScreen {
     }).join('');
     slots.querySelectorAll<HTMLElement>('[data-lo-tab]').forEach((b) =>
       b.addEventListener('click', () => {
+        if (b.dataset.loTab === this.tab) return;
         this.deps.click();
         this.tab = b.dataset.loTab as Tab;
         this.focus = '';
         this.render();
       }),
     );
-    // 2) opções do espaço escolhido (cards com desenho), agrupadas
-    const opts = this.optionsOf(this.tab);
+  }
+
+  /** 2) carrossel com as opções do espaço escolhido: o item do meio fica em foco (e equipa se for liberado) */
+  private buildCarousel() {
+    this.carTab = this.tab;
+    this.opts = this.optionsOf(this.tab);
     const cur = this.currentOf(this.tab);
     if (!this.focus) this.focus = cur;
-    const tabInfo = TABS.find((t) => t.id === this.tab)!;
-    this.root.querySelector('.lo-list-title')!.innerHTML = `<b>${tabInfo.hint}</b><span>${opts.filter((o) => o.owned).length} de ${opts.length} liberadas</span>`;
-    let lastGroup = '';
-    const grid = this.root.querySelector('.lo-grid')!;
-    grid.innerHTML = opts
-      .map((o) => {
-        const head = o.group && o.group !== lastGroup ? `<span class="lo-group">${o.group}</span>` : '';
-        lastGroup = o.group ?? lastGroup;
-        return `${head}<button class="lo-opt${o.id === cur ? ' on' : ''}${o.id === this.focus ? ' focus' : ''}${o.owned ? '' : ' locked'}" data-lo-opt="${o.id}" style="--c:${o.color}">
-          <canvas data-art="${this.tab}:${this.artId(this.tab, o.id)}:${o.color}:${o.owned ? 1 : 0}"></canvas>
-          ${o.id === cur ? '<span class="lo-badge">✓</span>' : !o.owned ? '<span class="lo-badge lock">🔒</span>' : ''}
-          <b>${o.name}</b>
-          <span class="lo-chip">${o.role}</span>
-          <small>${o.owned ? o.sub : `<span class="coin"></span>${o.price}`}</small>
-        </button>`;
-      })
-      .join('');
-    grid.querySelectorAll<HTMLElement>('[data-lo-opt]').forEach((b) =>
-      b.addEventListener('click', () => {
-        const id = b.dataset.loOpt!;
-        const o = opts.find((x) => x.id === id)!;
-        this.deps.click();
-        this.focus = id;
-        // liberado: equipa na hora; bloqueado: só mostra a ficha com o botão de liberar
-        if (o.owned) this.set(id);
-        this.render();
-      }),
-    );
-    // 3) ficha completa do item em foco
+    const box = this.root.querySelector<HTMLElement>('.lo-car')!;
+    // remonta do zero (tira os eventos do carrossel anterior)
+    box.innerHTML = `<button class="car-arrow left" aria-label="Anterior"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg></button>
+      <div class="car-track"></div>
+      <button class="car-arrow right" aria-label="Próximo"><svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg></button>`;
+    this.car = new Carousel(box, this.opts.length, (i) => {
+      const o = this.opts[i];
+      const el = document.createElement('button');
+      el.className = 'lo-card';
+      el.dataset.loOpt = o.id;
+      el.style.setProperty('--c', o.color);
+      el.innerHTML = `<canvas class="lo-cart" data-art="${this.tab}:${this.artId(this.tab, o.id)}:${o.color}:${o.owned ? 1 : 0}"></canvas>
+        <span class="lo-badge"></span>
+        <span class="car-label">${o.group ? `<small class="lo-grp">${o.group}</small>` : ''}<b>${o.name}</b><span class="lo-chip">${o.role}</span><small class="lo-sub2">${o.owned ? o.sub : `<span class="coin"></span>${o.price} moedas`}</small></span>`;
+      return el;
+    });
+    this.car.aspect = 0.82;
+    this.car.onResize = () => this.drawAll();
+    this.car.onChange = (i) => {
+      const o = this.opts[i];
+      this.deps.click();
+      this.focus = o.id;
+      // liberado: equipa na hora; bloqueado: só mostra a ficha com o botão de liberar
+      if (o.owned) this.set(o.id);
+      this.renderSlots();
+      this.renderDetail();
+      requestAnimationFrame(() => this.drawAll());
+    };
+    const start = Math.max(0, this.opts.findIndex((o) => o.id === this.focus));
+    this.car.set(start, true);
+  }
+
+  /** 3) ficha completa do item em foco + marcas (equipado / bloqueado) nos cards + contador */
+  private renderDetail() {
+    // a lista pode ter mudado (compra): atualiza "liberado" sem remontar o carrossel
+    this.opts = this.optionsOf(this.tab);
+    const cur = this.currentOf(this.tab);
+    const opts = this.opts;
     const focused = opts.find((o) => o.id === this.focus) ?? opts[0];
+    const tabInfo = TABS.find((t) => t.id === this.tab)!;
+    const idx = opts.indexOf(focused) + 1;
+    this.root.querySelector('.lo-list-title')!.innerHTML = `<b>${tabInfo.hint}</b><span>${idx} de ${opts.length} · ${opts.filter((o) => o.owned).length} liberadas · deslize para o lado</span>`;
+    this.root.querySelectorAll<HTMLElement>('.lo-card').forEach((el) => {
+      const o = opts.find((x) => x.id === el.dataset.loOpt);
+      if (!o) return;
+      const badge = el.querySelector('.lo-badge')!;
+      el.classList.toggle('equipped', o.id === cur);
+      el.classList.toggle('locked', !o.owned);
+      badge.className = 'lo-badge' + (o.id === cur ? '' : !o.owned ? ' lock' : ' none');
+      badge.textContent = o.id === cur ? '✓' : !o.owned ? '🔒' : '';
+      const sub = el.querySelector('.lo-sub2')!;
+      sub.innerHTML = o.owned ? o.sub : `<span class="coin"></span>${o.price} moedas`;
+      const cv = el.querySelector<HTMLCanvasElement>('canvas')!;
+      cv.dataset.art = `${this.tab}:${this.artId(this.tab, o.id)}:${o.color}:${o.owned ? 1 : 0}`;
+    });
     const det = this.root.querySelector('.lo-detail')!;
     det.innerHTML = this.detail(focused);
     det.querySelector('.lo-equip')?.addEventListener('click', () => {
@@ -244,10 +287,10 @@ export class LoadoutScreen {
       this.set(focused.id);
       this.render();
     });
-    requestAnimationFrame(() => this.drawAll());
   }
 
   private drawAll() {
+    fitText(this.root.querySelector<HTMLElement>('.lo-card.center .car-label b'));
     this.root.querySelectorAll<HTMLCanvasElement>('canvas[data-art]').forEach((cv) => {
       const [kind, id, color, owned] = cv.dataset.art!.split(':');
       drawGear(cv, kind as GearKind, id, color, { locked: owned === '0' });
