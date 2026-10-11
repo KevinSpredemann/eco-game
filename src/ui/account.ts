@@ -7,7 +7,11 @@ const TKEY = 'eco.token.v1';
 /** Endereço do servidor: definido na publicação (VITE_SERVER_URL) ou localhost no desenvolvimento. */
 export function serverUrl(): string {
   const env = (import.meta as any).env?.VITE_SERVER_URL as string | undefined;
-  if (env) return env.startsWith('http') ? env.replace(/\/$/, '') : `https://${env}`;
+  if (env) {
+    if (env.startsWith('http')) return env.replace(/\/$/, '');
+    // o Render entrega o nome interno do servidor (ex.: eco-server-ab12); o endereço público é o mesmo + .onrender.com
+    return env.includes('.') ? `https://${env}` : `https://${env}.onrender.com`;
+  }
   if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787';
   return '';
 }

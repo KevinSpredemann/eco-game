@@ -8,7 +8,7 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
-      # where the online server lives (filled in by Render)
+      # online server name inside Render (e.g. eco-server-ab12); the game adds .onrender.com to reach it
       - key: VITE_SERVER_URL
         fromService:
           type: web
