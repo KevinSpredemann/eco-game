@@ -26,7 +26,7 @@ import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, ULTS, sanitizeLoadout } from './game/balance';
 import { ACTION_LABEL, Action, DEFAULT_KEYS, Slot, isReservedKey, keyLabel } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
-import { SkillBar, SlotView, drawSlotArt } from './ui/skillbar';
+import { SkillBar, SlotView, drawSlotArt, slotReady } from './ui/skillbar';
 import type { AimPreview } from './render/combatFx';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
@@ -1503,6 +1503,24 @@ function buildSlots(g: AnyGame): SlotView[] {
   const me = g.human;
   const K = (a: Action) => keyLabel(settings.keys[a]);
   const slots: SlotView[] = [];
+  // arma (tiro): primeiro espaço — clique do mouse. Cinza quando não dá para atirar (tonto, caído, fora da rodada)
+  if (g.combat) {
+    const w = WEAPONS[me.weapon];
+    const slow = w.cooldown >= 0.5;
+    const cantShoot = !me.alive || me.stunT > 0 || g.phase !== 'play';
+    slots.push({
+      id: 'fire',
+      key: input.touchMode ? 'ATIRAR' : 'Clique',
+      name: w.name,
+      art: { kind: 'primary', id: me.weapon, color: w.color },
+      color: w.color,
+      cd: slow ? me.fireCd / (w.cooldown || 1) : 0,
+      secs: slow ? me.fireCd : 0,
+      off: cantShoot,
+      note: me.ammo > 0 ? `×${me.ammo}` : cantShoot && me.stunT > 0 ? 'TONTO' : undefined,
+      desc: `${w.name}: segure o clique para atirar onde o mouse aponta.${me.ammo > 0 ? ` Arma pega na arena: ${me.ammo} tiros.` : ''}`,
+    });
+  }
   if (me.boss) {
     const S = BOSS.skills;
     const ph = g.bossPhase ?? 1;
@@ -1538,6 +1556,7 @@ function buildSlots(g: AnyGame): SlotView[] {
 
 /** desenhos e números de recarga nos botões de toque */
 let touchIconSig = '';
+const touchWasReady = new Map<string, boolean>();
 function touchIcons(slots: SlotView[]) {
   const sig = slots.map((s) => `${s.id}:${s.art.kind}:${s.art.id}`).join('|');
   const byId = new Map(slots.map((s) => [s.id, s]));
@@ -1555,6 +1574,29 @@ function touchIcons(slots: SlotView[]) {
         if (s && cv) drawSlotArt(cv, s.art);
       }
     });
+  }
+  // cinza quando não dá para usar, colorido e com brilho quando dá (+ pulso no instante em que fica pronto)
+  for (const [id, sel] of [
+    ['fire', '#btn-fire'],
+    ['ability', '#btn-ability'],
+    ['skill', '#btn-skill'],
+    ['ult', '#btn-ult'],
+    ['item', '#btn-item'],
+    ['dash', '#btn-dash'],
+    ['bonus', '#btn-bonus'],
+  ] as const) {
+    const s = byId.get(id);
+    const b = document.querySelector<HTMLElement>(sel);
+    if (!s || !b) continue;
+    const ready = slotReady(s);
+    if (ready && touchWasReady.get(id) === false) {
+      b.classList.remove('just-ready');
+      void b.offsetWidth;
+      b.classList.add('just-ready');
+    }
+    touchWasReady.set(id, ready);
+    b.classList.toggle('cool', !ready);
+    b.classList.toggle('is-ready', ready);
   }
   for (const [id, sel] of [
     ['ability', '#btn-ability'],
