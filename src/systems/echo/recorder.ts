@@ -1,4 +1,4 @@
-import type { EchoAction, EchoRecording, EchoSample, RecordedFrame } from '../../shared/types';
+import type { EchoAction, EchoRecording, EchoSample, RecordedEvent, RecordedFrame } from '../../shared/types';
 
 /** Intervalo fixo de gravação (ms). 20 amostras/s é leve e suficiente com interpolação. */
 export const SAMPLE_MS = 50;
@@ -38,9 +38,9 @@ export class EchoRecorder {
     this.pendingJump = true;
   }
 
-  event(t: number, action: EchoAction): void {
+  event(t: number, action: EchoAction, extra?: { a?: number; w?: string; tx?: number; ty?: number }): void {
     if (this.finished) return;
-    this.rec.events.push({ t, action });
+    this.rec.events.push(extra ? { t, action, ...extra } : { t, action });
   }
 
   finish(t: number, x: number, y: number, direction: number): EchoRecording {
@@ -119,4 +119,11 @@ export function upcomingEvent(rec: EchoRecording, t: number, windowMs: number, a
     if (e.action === action && e.t >= t && e.t <= t + windowMs) return e.t;
   }
   return null;
+}
+
+/** Eventos gravados entre dois instantes (t0, t1] — usado para os Ecos repetirem tiros e bombas. */
+export function eventsBetween(rec: EchoRecording, t0: number, t1: number): RecordedEvent[] {
+  const out: RecordedEvent[] = [];
+  for (const e of rec.events) if (e.t > t0 && e.t <= t1) out.push(e);
+  return out;
 }
