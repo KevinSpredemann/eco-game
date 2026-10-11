@@ -106,8 +106,16 @@ export function drawSlotArt(cv: HTMLCanvasElement, a: SlotArt) {
   }
 }
 
+/** pronta para usar? (mesma regra na barra do computador e nos botões do celular) */
+export function slotReady(s: SlotView) {
+  if (s.off) return false;
+  return s.charge !== undefined ? s.charge >= 100 : s.secs <= 0;
+}
+
 export class SkillBar {
   private sig = '';
+  /** estado anterior (para o pulso no instante em que fica pronta) */
+  private wasReady = new Map<string, boolean>();
   private els = new Map<string, HTMLElement>();
   private tip: HTMLElement;
   constructor(private root: HTMLElement) {
@@ -141,8 +149,17 @@ export class SkillBar {
       e.dataset.desc = s.desc;
       e.dataset.title = `${s.name} · ${s.key}`;
       const charge = s.charge !== undefined;
-      const ready = !s.off && (charge ? (s.charge ?? 0) >= 100 : s.secs <= 0);
+      const ready = slotReady(s);
+      // acabou de ficar pronta: pulso de luz (como no LoL)
+      const before = this.wasReady.get(s.id);
+      if (ready && before === false) {
+        e.classList.remove('just-ready');
+        void e.offsetWidth;
+        e.classList.add('just-ready');
+      }
+      this.wasReady.set(s.id, ready);
       e.classList.toggle('ready', ready);
+      e.classList.toggle('cool', !ready);
       e.classList.toggle('off', !!s.off);
       e.style.setProperty('--p', String(charge ? 1 - Math.min(100, s.charge ?? 0) / 100 : Math.max(0, Math.min(1, s.cd))));
       const num = e.querySelector('.sk-num')!;
