@@ -44,6 +44,32 @@ export interface Well {
   range: number;
 }
 
+/** trem que cruza a pista de tempos em tempos */
+export interface Train {
+  y: number;
+  h: number;
+  period: number;
+  phase: number;
+  dir: 1 | -1;
+  len: number;
+}
+/** rajadas de vento que empurram todo mundo */
+export interface Wind {
+  period: number;
+  dur: number;
+  force: number;
+}
+/** redemoinho que anda pela arena */
+export interface Tornado {
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+  speed: number;
+  phase: number;
+  r: number;
+}
+
 export interface ArenaPalette {
   bg: string;
   floorA: string;
@@ -77,6 +103,17 @@ export interface ArenaDef {
   lasers?: Laser[];
   bushes?: Circle[];
   wells?: Well[];
+  /** poças de lava (sempre perigosas) */
+  lava?: Circle[];
+  /** gelo escorregadio */
+  ice?: Rect[];
+  /** areia movediça (lenta e puxa para o centro) */
+  sand?: Circle[];
+  trains?: Train[];
+  wind?: Wind;
+  tornados?: Tornado[];
+  /** como as zonas de perigo aparecem */
+  zoneStyle?: 'eletrico' | 'meteoro' | 'avalanche' | 'tempestade';
   /** 1 = normal; menor = mais escorregadio */
   grip: number;
   music: { root: number; scale: number[]; bpm: number };
@@ -483,6 +520,262 @@ export const ARENAS: ArenaDef[] = [
     grip: 0.28,
     music: { root: 48, scale: PHRYG, bpm: 116 },
   },
+  {
+    id: 'vulcao',
+    name: 'Vulcão Ardente',
+    desc: 'Rios de lava, rochas quentes e chuva de meteoros.',
+    gimmick: 'Lava queima sempre. Os círculos avisam onde o meteoro vai cair.',
+    art: '',
+    palette: {
+      bg: '#0a0302',
+      floorA: '#2a1410',
+      floorB: '#331a14',
+      grid: 'rgba(255,120,40,0.06)',
+      wall: '#2a1a16',
+      wallTop: '#4a2e24',
+      wallEdge: '#ff6a2a',
+      accent: '#ffb35c',
+      hazard: '#ff4a1e',
+    },
+    walls: [
+      { x: 440, y: 96, w: 44, h: 150 },
+      { x: 796, y: 474, w: 44, h: 150 },
+      { x: 150, y: 384, w: 130, h: 40 },
+      { x: 1000, y: 296, w: 130, h: 40 },
+    ],
+    pillars: [
+      { x: 540, y: 540, r: 26 },
+      { x: 740, y: 180, r: 26 },
+      { x: 220, y: 120, r: 22 },
+      { x: 1060, y: 600, r: 22 },
+    ],
+    lava: [
+      { x: 640, y: 360, r: 66 },
+      { x: 320, y: 230, r: 48 },
+      { x: 960, y: 490, r: 48 },
+      { x: 330, y: 590, r: 38 },
+      { x: 950, y: 130, r: 38 },
+    ],
+    spawns: [
+      { x: 90, y: 300 },
+      { x: 1190, y: 420 },
+      { x: 640, y: 90 },
+      { x: 640, y: 630 },
+      { x: 90, y: 640 },
+      { x: 1190, y: 80 },
+      { x: 420, y: 400 },
+      { x: 860, y: 320 },
+    ],
+    cores: [
+      { x: 640, y: 200 },
+      { x: 640, y: 530 },
+      { x: 170, y: 520 },
+      { x: 1110, y: 200 },
+      { x: 450, y: 380 },
+    ],
+    zones: [
+      { x: 520, y: 260, r: 58 },
+      { x: 760, y: 460, r: 58 },
+      { x: 200, y: 250, r: 55 },
+      { x: 1080, y: 470, r: 55 },
+      { x: 820, y: 280, r: 52 },
+      { x: 460, y: 470, r: 52 },
+      { x: 640, y: 640, r: 50 },
+    ],
+    zoneStyle: 'meteoro',
+    grip: 1,
+    music: { root: 40, scale: PHRYG, bpm: 128 },
+  },
+  {
+    id: 'gelo',
+    name: 'Montanha Gelada',
+    desc: 'Lago congelado, pinheiros e rajadas de vento.',
+    gimmick: 'No gelo você escorrega. As setas avisam a rajada de vento.',
+    art: '',
+    palette: {
+      bg: '#0c1626',
+      floorA: '#dfe9f4',
+      floorB: '#d2deeb',
+      grid: 'rgba(80,120,170,0.08)',
+      wall: '#7f9cbc',
+      wallTop: '#b8d4ee',
+      wallEdge: '#ffffff',
+      accent: '#5ac8ff',
+      hazard: '#ff6a3c',
+    },
+    walls: [
+      { x: 470, y: 110, w: 70, h: 44 },
+      { x: 740, y: 566, w: 70, h: 44 },
+      { x: 40, y: 330, w: 90, h: 60 },
+      { x: 1150, y: 330, w: 90, h: 60 },
+    ],
+    pillars: [
+      { x: 210, y: 150, r: 26 },
+      { x: 1070, y: 570, r: 26 },
+      { x: 210, y: 570, r: 24 },
+      { x: 1070, y: 150, r: 24 },
+      { x: 640, y: 100, r: 22 },
+      { x: 640, y: 620, r: 22 },
+    ],
+    ice: [
+      { x: 340, y: 230, w: 600, h: 260 },
+      { x: 90, y: 440, w: 160, h: 90 },
+      { x: 1030, y: 190, w: 160, h: 90 },
+    ],
+    wind: { period: 11, dur: 2.6, force: 210 },
+    spawns: [
+      { x: 90, y: 200 },
+      { x: 1190, y: 520 },
+      { x: 640, y: 170 },
+      { x: 640, y: 560 },
+      { x: 90, y: 640 },
+      { x: 1190, y: 80 },
+      { x: 320, y: 90 },
+      { x: 960, y: 630 },
+    ],
+    cores: [
+      { x: 640, y: 360 },
+      { x: 260, y: 360 },
+      { x: 1020, y: 360 },
+      { x: 400, y: 600 },
+      { x: 880, y: 120 },
+    ],
+    zones: [
+      { x: 470, y: 300, r: 58 },
+      { x: 810, y: 420, r: 58 },
+      { x: 300, y: 600, r: 55 },
+      { x: 980, y: 120, r: 55 },
+      { x: 800, y: 200, r: 52 },
+      { x: 480, y: 520, r: 52 },
+    ],
+    zoneStyle: 'avalanche',
+    grip: 1,
+    music: { root: 52, scale: DORIAN, bpm: 104 },
+  },
+  {
+    id: 'metro',
+    name: 'Metrô Neon',
+    desc: 'Plataformas, colunas e trens que passam sem frear.',
+    gimmick: 'Luz vermelha nos trilhos = trem chegando. Saia da linha!',
+    art: '',
+    palette: {
+      bg: '#06040e',
+      floorA: '#1a1830',
+      floorB: '#201d3a',
+      grid: 'rgba(255,80,200,0.06)',
+      wall: '#2a2448',
+      wallTop: '#3e3670',
+      wallEdge: '#ff4fd8',
+      accent: '#4af0ff',
+      hazard: '#ff3b5c',
+    },
+    walls: [
+      { x: 200, y: 300, w: 36, h: 120 },
+      { x: 1044, y: 300, w: 36, h: 120 },
+      { x: 520, y: 620, w: 90, h: 40 },
+      { x: 670, y: 60, w: 90, h: 40 },
+    ],
+    pillars: [
+      { x: 400, y: 360, r: 20 },
+      { x: 640, y: 300, r: 20 },
+      { x: 640, y: 420, r: 20 },
+      { x: 880, y: 360, r: 20 },
+    ],
+    trains: [
+      { y: 148, h: 72, period: 9, phase: 0, dir: 1, len: 560 },
+      { y: 500, h: 72, period: 9, phase: 4.5, dir: -1, len: 560 },
+    ],
+    spawns: [
+      { x: 90, y: 360 },
+      { x: 1190, y: 360 },
+      { x: 640, y: 80 },
+      { x: 640, y: 640 },
+      { x: 90, y: 640 },
+      { x: 1190, y: 80 },
+      { x: 300, y: 360 },
+      { x: 980, y: 360 },
+    ],
+    cores: [
+      { x: 640, y: 360 },
+      { x: 160, y: 620 },
+      { x: 1120, y: 90 },
+      { x: 400, y: 640 },
+      { x: 880, y: 80 },
+    ],
+    zones: [
+      { x: 520, y: 360, r: 56 },
+      { x: 760, y: 360, r: 56 },
+      { x: 300, y: 650, r: 50 },
+      { x: 980, y: 650, r: 50 },
+      { x: 300, y: 80, r: 50 },
+      { x: 980, y: 80, r: 50 },
+    ],
+    grip: 1,
+    music: { root: 46, scale: MINOR, bpm: 132 },
+  },
+  {
+    id: 'deserto',
+    name: 'Ruínas do Deserto',
+    desc: 'Templos em ruínas, areia movediça e um tornado.',
+    gimmick: 'A areia movediça prende. O tornado arremessa quem encostar.',
+    art: '',
+    palette: {
+      bg: '#1a0f06',
+      floorA: '#d9b072',
+      floorB: '#cfa566',
+      grid: 'rgba(120,70,20,0.08)',
+      wall: '#9a6a3a',
+      wallTop: '#c8955a',
+      wallEdge: '#ffe0a0',
+      accent: '#ffcf6b',
+      hazard: '#ff5a1e',
+    },
+    walls: [
+      { x: 250, y: 430, w: 150, h: 34 },
+      { x: 880, y: 256, w: 150, h: 34 },
+      { x: 560, y: 40, w: 160, h: 40 },
+      { x: 560, y: 640, w: 160, h: 40 },
+    ],
+    pillars: [
+      { x: 160, y: 160, r: 24 },
+      { x: 1120, y: 560, r: 24 },
+      { x: 1120, y: 160, r: 24 },
+      { x: 160, y: 560, r: 24 },
+    ],
+    sand: [
+      { x: 420, y: 230, r: 62 },
+      { x: 860, y: 490, r: 62 },
+      { x: 640, y: 360, r: 46 },
+    ],
+    tornados: [{ cx: 640, cy: 360, rx: 400, ry: 220, speed: 0.32, phase: 0, r: 44 }],
+    spawns: [
+      { x: 90, y: 360 },
+      { x: 1190, y: 360 },
+      { x: 640, y: 130 },
+      { x: 640, y: 590 },
+      { x: 300, y: 90 },
+      { x: 980, y: 630 },
+      { x: 300, y: 630 },
+      { x: 980, y: 90 },
+    ],
+    cores: [
+      { x: 640, y: 240 },
+      { x: 250, y: 300 },
+      { x: 1030, y: 420 },
+      { x: 1030, y: 160 },
+      { x: 250, y: 580 },
+    ],
+    zones: [
+      { x: 480, y: 450, r: 56 },
+      { x: 800, y: 270, r: 56 },
+      { x: 200, y: 450, r: 52 },
+      { x: 1080, y: 270, r: 52 },
+      { x: 640, y: 520, r: 52 },
+    ],
+    zoneStyle: 'tempestade',
+    grip: 1,
+    music: { root: 44, scale: PHRYG, bpm: 112 },
+  },
 ];
 
 export function getArena(id: string): ArenaDef {
@@ -549,4 +842,34 @@ export function distToSegment(px: number, py: number, ax: number, ay: number, bx
   const cx = ax + dx * k;
   const cy = ay + dy * k;
   return Math.hypot(px - cx, py - cy);
+}
+
+/** trem: 'warn' (luz vermelha) e 'pass' (passando). x0..x1 = parte ocupada pelo trem. */
+export const TRAIN_PASS = 1.1;
+export const TRAIN_WARN = 1.8;
+export function trainState(tr: Train, t: number): { phase: 'idle' | 'warn' | 'pass'; x0: number; x1: number } {
+  const c = (((t + tr.phase) % tr.period) + tr.period) % tr.period;
+  const passAt = tr.period - TRAIN_PASS;
+  if (c < passAt - TRAIN_WARN) return { phase: 'idle', x0: 0, x1: 0 };
+  if (c < passAt) return { phase: 'warn', x0: 0, x1: 0 };
+  const k = (c - passAt) / TRAIN_PASS;
+  const travel = WORLD_W + tr.len;
+  const head = tr.dir > 0 ? -tr.len + travel * k + tr.len : WORLD_W + tr.len - travel * k - tr.len;
+  return tr.dir > 0 ? { phase: 'pass', x0: head - tr.len, x1: head } : { phase: 'pass', x0: head, x1: head + tr.len };
+}
+
+/** vento: 'warn' antes da rajada, 'blow' durante. dir alterna a cada rajada. */
+export function windState(w: Wind, t: number): { phase: 'idle' | 'warn' | 'blow'; dir: 1 | -1 } {
+  const n = Math.floor(t / w.period);
+  const c = t - n * w.period;
+  const dir: 1 | -1 = n % 2 ? -1 : 1;
+  const blowAt = w.period - w.dur;
+  if (c < blowAt - 1.6) return { phase: 'idle', dir };
+  if (c < blowAt) return { phase: 'warn', dir };
+  return { phase: 'blow', dir };
+}
+
+export function tornadoPos(td: Tornado, t: number): Pt {
+  const a = td.phase + t * td.speed;
+  return { x: td.cx + Math.cos(a) * td.rx, y: td.cy + Math.sin(a * 2) * td.ry * 0.6 + Math.sin(a) * td.ry * 0.4 };
 }

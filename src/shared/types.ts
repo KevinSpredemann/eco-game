@@ -1,6 +1,6 @@
 // Tipos compartilhados — prontos para serem usados também por um servidor (Colyseus) no futuro.
 
-export type EchoAction = 'dash' | 'ability' | 'deliver' | 'hit';
+export type EchoAction = 'dash' | 'ability' | 'deliver' | 'hit' | 'shoot' | 'bomb' | 'mine';
 
 export type RecordedFrame = {
   t: number; // ms desde o início da rodada
@@ -15,6 +15,13 @@ export type RecordedFrame = {
 export type RecordedEvent = {
   t: number;
   action: EchoAction;
+  /** ângulo do tiro */
+  a?: number;
+  /** arma usada */
+  w?: string;
+  /** alvo de bomba */
+  tx?: number;
+  ty?: number;
 };
 
 export type EchoRecording = {
