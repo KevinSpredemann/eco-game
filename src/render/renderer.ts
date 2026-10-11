@@ -109,6 +109,29 @@ export class Renderer {
     if (this.arena) this.buildBase(this.arena);
   }
 
+  /** vitrine (tela inicial): ninguém é "você" — sem rótulo, sem tremor/flash nem setas de dano */
+  showcase = false;
+  private meId(game: Game) {
+    return this.showcase ? '\u0000' : game.human.id;
+  }
+
+  /** câmera fixa da vitrine: escala e deslocamento definidos de fora (só reconstrói o chão se a escala mudar) */
+  setView(scale: number, ox: number, oy: number) {
+    this.scale = scale;
+    // chão e desenhos dos personagens só são refeitos quando o zoom muda bastante (zoom suave sem travar)
+    if (!this.builtScale || Math.abs(scale / this.builtScale - 1) > 0.3) {
+      this.builtScale = scale;
+      this.sprites.setScale(scale * this.dpr * SPRITE_SCALE);
+      if (this.arena) this.buildBase(this.arena);
+    }
+    this.ox = ox;
+    this.oy = oy;
+  }
+  private builtScale = 0;
+  get viewScale() {
+    return this.scale;
+  }
+
   setArena(a: ArenaDef) {
     this.arena = a;
     this.particles = [];
@@ -801,14 +824,14 @@ export class Renderer {
           this.setMood(e.pid, 'hurt', 0.55);
           this.burst(e.x, e.y, '#ff5a5a', game.combat ? 6 : 16, 220);
           if (game.combat) {
-            if (e.pid === game.human.id) {
+            if (e.pid === this.meId(game)) {
               this.flash = Math.max(this.flash, 0.18);
               this.flashColor = '#ff2a4a';
               this.shake = Math.max(this.shake, 4);
             }
             break;
           }
-          if (e.pid === game.human.id) {
+          if (e.pid === this.meId(game)) {
             this.shake = 10;
             this.flash = 0.35;
             this.flashColor = '#ff2a4a';
@@ -1001,15 +1024,15 @@ export class Renderer {
         }
         case 'dmg': {
           // números de dano/cura/escudo: cor + texto (nunca só a cor)
-          if (this.reducedEffects && e.k === 'hp' && e.pid !== game.human.id) break;
+          if (this.reducedEffects && e.k === 'hp' && e.pid !== this.meId(game)) break;
           const p = pc(e.pid);
           const big = p?.boss ? 40 : 0;
           const jx = (Math.random() - 0.5) * 26;
           const txt = e.k === 'heal' ? `+${e.n}` : e.k === 'shield' ? `${e.n}⛉` : e.k === 'dodge' ? 'ESQUIVOU' : e.k === 'weak' ? `${e.n}!` : String(e.n);
           const SRC: Record<string, string> = { eco: '#9fdcff', perigo: '#ffb347', explosao: '#ffd23e', criatura: '#a6ff6a', golpe: '#d9a6ff' };
-          const col = e.k === 'heal' ? '#5dffb8' : e.k === 'shield' ? '#7ff0ff' : e.k === 'dodge' ? '#3ee8ff' : e.k === 'weak' ? '#ffe14a' : e.src && SRC[e.src] ? SRC[e.src] : e.pid === game.human.id ? '#ff6b6b' : '#ffffff';
+          const col = e.k === 'heal' ? '#5dffb8' : e.k === 'shield' ? '#7ff0ff' : e.k === 'dodge' ? '#3ee8ff' : e.k === 'weak' ? '#ffe14a' : e.src && SRC[e.src] ? SRC[e.src] : e.pid === this.meId(game) ? '#ff6b6b' : '#ffffff';
           if (e.k === 'hp' || e.k === 'shield') this.lastHit.set(e.pid, performance.now() / 1000);
-          if (e.pid === game.human.id && (e.k === 'hp' || e.k === 'shield') && e.sx !== undefined && e.sy !== undefined) {
+          if (e.pid === this.meId(game) && (e.k === 'hp' || e.k === 'shield') && e.sx !== undefined && e.sy !== undefined) {
             const h = game.human;
             this.hitDirs.push({ ang: Math.atan2(e.sy - h.y, e.sx - h.x), t: 0.9, src: e.src ?? 'arma' });
             if (this.hitDirs.length > 6) this.hitDirs.shift();
@@ -1131,7 +1154,7 @@ export class Renderer {
     const flip = Math.cos(p.aim) < 0;
     // antecipação suave: sobe enquanto prepara o golpe
     an.windup += ((p.castT > 0 ? 1 : 0) - an.windup) * 0.25;
-    if (game.combat && p.id === game.human.id && p.alive) this.drawAimGuide(game, p, time);
+    if (game.combat && p.id === this.meId(game) && p.alive) this.drawAimGuide(game, p, time);
     const pose = {
       t: time,
       walk: p.walkPhase * 0.6,
@@ -1384,13 +1407,13 @@ export class Renderer {
       this.drawBushes(a, time);
       this.drawHazardsTop(game, t, time);
     }
-    if (game.phase === 'play') this.drawHitDirs(game, dt);
+    if (game.phase === 'play' && !this.showcase) this.drawHitDirs(game, dt);
     // quedas e derrota do Chefe continuam mesmo na transição de fim de rodada
     this.tickAnim(dt);
     this.drawFalls(game, dt, time);
     this.drawParticles(dt);
 
-    if (game.phase === 'prep') this.drawPrepHints(game, time);
+    if (game.phase === 'prep' && !this.showcase) this.drawPrepHints(game, time);
 
     if (this.flash > 0) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2059,7 +2082,7 @@ export class Renderer {
 
   private drawPlayer(game: Game, p: Player, time: number) {
     const ctx = this.ctx;
-    const human = p.id === game.human.id;
+    const human = p.id === this.meId(game);
     let alpha = 1;
     if (p.hidden && p.phaseT <= 0) alpha = human ? 0.55 : 0.14;
     if (p.cloakT > 0 && !human && game.hostile(game.human, p)) alpha = 0.06;
@@ -2685,7 +2708,7 @@ export class Renderer {
         ctx.beginPath();
         ctx.ellipse(pos.x, pos.y + 2, 18 + kk * 26, (18 + kk * 26) * 0.5, 0, 0, Math.PI * 2);
         ctx.stroke();
-        const mine = d.playerId === game.human.id;
+        const mine = d.playerId === this.meId(game);
         const op = game.players.find((q) => q.id === d.playerId);
         const nm = (op?.name || op?.char.name || ch.name).replace(/ \(bot\)$/, '');
         label(ctx, pos.x, pos.y - 96, mine ? `SEU ECO · R${d.round}` : `ECO ${nm.toUpperCase()} · R${d.round}`, mine ? '#ffffff' : col, 12);
