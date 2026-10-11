@@ -19,6 +19,8 @@ export interface Settings {
   difficulty: Difficulty;
   tutorialDone: boolean;
   rulesSeen: boolean;
+  /** já escolheu entre conta e convidado na primeira abertura */
+  welcomeSeen: boolean;
   /** teclas (remapeáveis) */
   keys: KeyBinds;
   /** equipamento escolhido */
@@ -50,6 +52,7 @@ export const DEFAULTS: Settings = {
   difficulty: 'normal',
   tutorialDone: false,
   rulesSeen: false,
+  welcomeSeen: false,
   keys: { ...DEFAULT_KEYS },
   loadout: { ...DEFAULT_LOADOUT },
   chefeRole: 'sorteio',

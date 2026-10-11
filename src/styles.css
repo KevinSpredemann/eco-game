@@ -3726,3 +3726,729 @@ body.rewinding #hud-status {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------------- correções do celular */
+/* equipamento no celular em pé: a folha rola (a regra .sheet.fit travava com overflow: hidden) */
+@media (max-width: 600px) and (min-height: 560px) {
+  .sheet.fit.lo-sheet {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+}
+/* cartão da conta: nome sem o sublinhado grosso dos personagens, nível sempre visível embaixo */
+.account-chip .nm {
+  text-decoration: none;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-chip .who {
+  gap: 2px;
+}
+.account-chip .lv {
+  display: block;
+  line-height: 1.2;
+}
+
+/* ---------------------------------------------------------------- carrosséis: nomes sempre inteiros */
+/* só o card do meio mostra o nome (os dos lados ficam meio para fora da tela e cortavam o texto) */
+.car-card .car-label {
+  transition: opacity 0.25s;
+}
+.car-card:not(.center) .car-label {
+  opacity: 0;
+}
+/* o nome do card do meio encolhe para caber na largura do card (nunca corta) */
+.car-card {
+  container-type: inline-size;
+}
+.car-card.center .car-label b,
+.car-card.center .car-label b.nm {
+  font-size: clamp(0.8rem, 8.5cqi, 1.4rem);
+  display: block;
+  max-width: 100%;
+  overflow-wrap: normal;
+}
+/* nome na ficha do equipamento: ocupa a largura disponível e encolhe para caber */
+.lo-hinfo {
+  min-width: 0;
+}
+.lo-dname {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- equipamento em carrossel */
+.lo-car {
+  min-height: 190px;
+}
+.lo-card canvas.lo-cart {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  width: 100%;
+  height: 62%;
+  display: block;
+  background: radial-gradient(circle at 50% 55%, color-mix(in srgb, var(--c) 22%, transparent), transparent 70%);
+}
+.lo-card .car-label {
+  padding: 8px 10px 10px;
+  gap: 3px;
+  background: linear-gradient(180deg, rgba(8, 6, 22, 0), rgba(8, 6, 22, 0.95) 30%);
+}
+.lo-card .car-label b {
+  color: #f4f5ff;
+}
+.lo-card .lo-chip {
+  align-self: center;
+}
+.lo-card .lo-grp {
+  font-size: 0.56rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.lo-card .lo-sub2 {
+  font-size: 0.66rem;
+  color: #b9c4e4;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.lo-card.locked .lo-sub2 {
+  color: #ffd23e;
+  font-weight: 700;
+}
+.lo-card .lo-badge {
+  z-index: 3;
+  width: 26px;
+  height: 26px;
+  font-size: 0.9rem;
+}
+.lo-card .lo-badge.none {
+  display: none;
+}
+.lo-card.equipped {
+  border-color: var(--c);
+}
+.lo-list {
+  min-width: 0;
+}
+.lo-list .lo-list-title {
+  display: flex;
+}
+@media (max-height: 460px) {
+  .lo-car {
+    min-height: 150px;
+  }
+  .lo-list .lo-list-title {
+    display: none;
+  }
+  .lo-card .lo-chip,
+  .lo-card .lo-grp {
+    display: none;
+  }
+}
+/* celular em pé: carrossel em cima e a ficha embaixo, a folha rola */
+@media (max-width: 600px) and (min-height: 560px) {
+  .lo-body {
+    flex-direction: column;
+  }
+  .lo-car {
+    flex: none;
+    height: 236px;
+  }
+  .lo-list .lo-list-title {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 2px;
+  }
+}
+
+/* ---------------------------------------------------------------- tela inicial em pé: nome do personagem no topo */
+@media (orientation: portrait) {
+  .title-hero-tag {
+    top: calc(max(10px, env(safe-area-inset-top)) + 62px);
+    bottom: auto;
+    left: 16px;
+    right: auto;
+    transform: none;
+    text-align: left;
+  }
+}
+
+/* ---------------------------------------------------------------- equipamento sem rolar: ficha só com números */
+.lo-dhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+}
+.lo-dhead .lo-state {
+  font-size: 0.85rem;
+}
+.lo-dhead .btn.small {
+  min-height: 32px;
+  padding: 5px 12px;
+}
+.lo-dtag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c);
+}
+.lo-detail {
+  overflow: hidden;
+}
+@media (max-width: 600px) and (min-height: 560px) {
+  /* tudo numa tela só: o carrossel ocupa o espaço que sobrar */
+  .sheet.fit.lo-sheet {
+    overflow: hidden;
+  }
+  .lo-body {
+    flex: 1;
+    min-height: 0;
+  }
+  .lo-list {
+    flex: 1;
+    min-height: 0;
+  }
+  .lo-car {
+    flex: 1;
+    height: auto;
+    min-height: 130px;
+  }
+  .lo-detail {
+    flex: none;
+    padding: 10px 12px;
+    gap: 6px;
+  }
+  .lo-bar {
+    font-size: 0.72rem;
+  }
+  .lo-desc {
+    font-size: 0.74rem;
+    margin: 0;
+  }
+  .lo-cmp {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- telas sem rolar: abas e carrossel da loja */
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.sheet.fit.narrow {
+  height: auto;
+  max-height: 100%;
+}
+#screen-options.screen.fit,
+#screen-online.screen.fit {
+  align-items: center;
+}
+#screen-options .opts.pane,
+#screen-online .pane {
+  overflow: hidden;
+}
+#screen-online .online-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rules .pane.power-list {
+  display: block;
+  overflow: hidden;
+}
+.shop-car {
+  min-height: 200px;
+}
+.shop-card .car-label b {
+  color: #f4f5ff;
+}
+.shop-card .lo-badge {
+  z-index: 3;
+  width: 26px;
+  height: 26px;
+}
+.shop-card.equipped {
+  border-color: var(--c);
+}
+.shop-act {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-line);
+  border-radius: 14px;
+  background: rgba(14, 10, 32, 0.7);
+}
+.shop-act-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.shop-act-info b {
+  font-family: var(--display);
+  font-size: 1.05rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shop-act-info span {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.shop-act .btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 14px;
+}
+@media (max-height: 460px) {
+  .shop-car {
+    min-height: 130px;
+  }
+  .shop-note {
+    display: none;
+  }
+  .shop-act {
+    padding: 6px 10px;
+  }
+}
+.shop-card canvas.pv {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* Como funciona: grade (4 lado a lado; 2x2 em pé), cartões compactos que cabem sem rolar */
+.rule-cards.pane {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  align-content: stretch;
+}
+.rule-cards li {
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (orientation: portrait) {
+  .rule-cards.pane {
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: minmax(0, 1fr);
+  }
+  .rule-cards li {
+    padding: 10px 8px;
+    gap: 4px;
+  }
+  .rule-cards svg {
+    width: 38px;
+    height: 38px;
+  }
+  .rule-cards b {
+    font-size: 0.9rem;
+  }
+  .rule-cards span {
+    font-size: 0.74rem;
+    line-height: 1.3;
+  }
+}
+@media (max-height: 460px) {
+  .rule-cards svg {
+    width: 30px;
+    height: 30px;
+  }
+  .rule-cards li {
+    padding: 8px;
+    gap: 3px;
+  }
+  .rule-cards span {
+    font-size: 0.72rem;
+  }
+}
+.rules .power-list.pane {
+  flex: 1;
+}
+/* telas bem baixas em pé (iPhone pequeno com a barra do navegador) */
+@media (orientation: portrait) and (max-height: 600px) {
+  .lo-slot canvas {
+    height: 28px;
+  }
+  .lo-slot {
+    padding: 4px 3px 5px;
+  }
+  .lo-list .lo-list-title span {
+    display: none;
+  }
+  .lo-car {
+    min-height: 100px;
+  }
+  .lo-detail {
+    padding: 8px 10px;
+    gap: 4px;
+  }
+  .lo-facts span {
+    font-size: 0.66rem;
+  }
+  .lo-desc {
+    font-size: 0.7rem;
+    line-height: 1.3;
+  }
+  .lo-bar {
+    font-size: 0.66rem;
+  }
+}
+@media (max-height: 600px) {
+  #screen-online .mode-pills .pill {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+  }
+  #screen-online .mode-pills {
+    gap: 5px;
+  }
+  #screen-online .section-label {
+    margin: 0;
+  }
+  #screen-online .form-note {
+    font-size: 0.72rem;
+    margin: 0;
+  }
+}
+/* celular em pé e baixo (ex.: iPhone SE com a barra do Safari): mesma coluna única */
+@media (max-width: 600px) and (orientation: portrait) and (max-height: 559px) {
+  .lo-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    gap: 6px;
+  }
+  .lo-list {
+    flex: 1;
+    min-height: 0;
+  }
+  .lo-car {
+    flex: 1;
+    min-height: 90px;
+  }
+  .lo-detail {
+    flex: none;
+  }
+  .lo-bar {
+    grid-template-columns: 96px 1fr 12px;
+  }
+  .lo-slot-k small {
+    display: none;
+  }
+}
+/* card pequeno: só o nome e a função (os números já estão na ficha embaixo) */
+@container (max-width: 190px) {
+  .lo-card .lo-grp,
+  .lo-card .lo-sub2 {
+    display: none;
+  }
+  .lo-card .car-label {
+    padding: 6px 6px 8px;
+  }
+}
+@container (max-width: 140px) {
+  .lo-card .lo-chip {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- conta: convidado ou conta */
+.account-chip.guest .lv {
+  color: #7ff0ff;
+  font-weight: 700;
+}
+#screen-account.screen.fit {
+  align-items: center;
+}
+.acc-sheet {
+  width: min(480px, 100%);
+}
+.acc-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.acc-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1.5px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.03);
+}
+.acc-opt > b {
+  font-family: var(--display);
+  font-size: 1.05rem;
+  letter-spacing: 0.03em;
+}
+.acc-opt-account {
+  border-color: rgba(62, 232, 255, 0.55);
+  background: linear-gradient(180deg, rgba(62, 232, 255, 0.1), rgba(62, 232, 255, 0.02));
+}
+.acc-opt ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: #c9d2ee;
+}
+.acc-opt li::before {
+  content: '✓ ';
+  color: #5dffb8;
+  font-weight: 800;
+}
+.acc-opt p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #b9c4e4;
+  line-height: 1.4;
+}
+.acc-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+@media (max-height: 460px) {
+  .acc-choice {
+    flex-direction: row;
+  }
+  .acc-opt {
+    flex: 1;
+    padding: 10px 12px;
+    gap: 6px;
+  }
+  .acc-opt ul,
+  .acc-opt p {
+    font-size: 0.74rem;
+  }
+  #acc-guest .form {
+    gap: 6px;
+    margin-top: 4px;
+  }
+  #acc-guest .form-note {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- Como jogar: páginas para o lado (sem rolar para baixo) */
+.howto-sheet {
+  max-width: 980px;
+}
+.howto-pager {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+#howto-grid.howto-grid {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 100%;
+  grid-template-columns: none;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+}
+#howto-grid::-webkit-scrollbar {
+  display: none;
+}
+#howto-grid .card {
+  scroll-snap-align: start;
+  margin: 0 46px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px 20px;
+  overflow: hidden;
+  min-height: 0;
+}
+#howto-grid .card h4 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+#howto-grid .card p {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0;
+}
+.howto-pager .car-arrow {
+  width: 40px;
+  height: 40px;
+}
+.howto-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  min-height: 8px;
+}
+.howto-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+}
+.howto-dots i.on {
+  background: #3ee8ff;
+  box-shadow: 0 0 8px #3ee8ff;
+}
+/* deitado / computador: dois cartões por página */
+@media (orientation: landscape) {
+  #howto-grid.howto-grid {
+    grid-auto-columns: 50%;
+  }
+  #howto-grid .card {
+    margin: 0 8px;
+  }
+  #howto-grid .card:nth-child(odd) {
+    margin-left: 46px;
+  }
+  #howto-grid .card:nth-child(even) {
+    margin-right: 46px;
+  }
+}
+@media (max-height: 460px) {
+  #howto-grid .card {
+    padding: 10px 14px;
+    gap: 6px;
+  }
+  #howto-grid .card p {
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+}
+@media (orientation: portrait) and (max-height: 600px) {
+  #howto-grid .card {
+    margin: 0 42px;
+    padding: 12px 14px;
+    gap: 6px;
+  }
+  #howto-grid .card h4 {
+    font-size: 1rem;
+  }
+  #howto-grid .card p {
+    font-size: 0.82rem;
+    line-height: 1.42;
+  }
+}
+@media (max-height: 360px) {
+  #howto-grid .card p {
+    font-size: 0.74rem;
+    line-height: 1.35;
+  }
+}
+/* o encaixe respeita a margem (a seta não cobre o texto) */
+#howto-grid .card {
+  scroll-margin-left: 46px;
+}
+@media (orientation: portrait) and (max-height: 600px) {
+  #howto-grid .card {
+    scroll-margin-left: 42px;
+  }
+}
+@media (orientation: landscape) {
+  #howto-grid .card:nth-child(even) {
+    scroll-snap-align: none;
+  }
+}
+/* computador/deitado: a ficha só do tamanho dos números (sem caixa vazia) */
+@media (min-width: 601px) {
+  .lo-detail {
+    align-self: center;
+  }
+}
+
+/* ---------------------------------------------------------------- nomes: barra colorida EMBAIXO do nome (não um sublinhado
+   que passava por cima da segunda linha quando o nome quebra, ex.: LABORATÓRIO / SOMBRIO) */
+.nm,
+.car-card.center .car-label b.nm,
+.title-hero-tag b.nm {
+  text-decoration: none !important;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 1.15;
+  padding-bottom: 5px;
+  border-bottom: 3px solid var(--c, #3ee8ff);
+}
+.podium .nm {
+  padding-bottom: 2px;
+  border-bottom-width: 2px;
+}
+.account-chip .nm {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+/* nos painéis a barra acompanha só a largura do nome */
+.hp-name.nm,
+.lo-card .car-label b.nm {
+  align-self: flex-start;
+  width: auto;
+}
+.car-label b.nm {
+  align-self: center;
+}
+/* o nome do card do meio aparece NA HORA (sem esmaecer) */
+.car-card .car-label {
+  transition: none;
+}
+
+/* ---------------------------------------------------------------- tela inicial: duelo de verdade ao fundo */
+#title-canvas {
+  transition: opacity 0.3s;
+}
+/* escurece só onde fica o menu (o texto continua legível sobre a luta) */
+.title-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(6, 4, 16, 0.82) 0%, rgba(6, 4, 16, 0.55) 30%, rgba(6, 4, 16, 0) 52%),
+    radial-gradient(ellipse at 70% 50%, rgba(0, 0, 0, 0) 55%, rgba(6, 4, 16, 0.55) 100%);
+}
+@media (orientation: portrait) {
+  .title-shade {
+    background:
+      linear-gradient(180deg, rgba(6, 4, 16, 0.35) 0%, rgba(6, 4, 16, 0) 14%, rgba(6, 4, 16, 0) 46%, rgba(6, 4, 16, 0.85) 62%, rgba(6, 4, 16, 0.96) 100%);
+  }
+}
+/* nome: aparece no card que está no meio (troca na hora, até durante o arrasto) */
+.car-card:not(.center) .car-label {
+  opacity: 1;
+}
+.car-card:not(.named) .car-label {
+  opacity: 0;
+}

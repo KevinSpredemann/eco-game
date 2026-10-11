@@ -59,14 +59,13 @@
     <!-- Tela inicial -->
     <button class="account-chip" id="account-chip" data-action="account" hidden>
       <img class="ava" alt="" />
-      <span class="who"><b class="nm">Convidado</b><span class="lv">Nível 1</span></span>
+      <span class="who"><b class="nm">Convidado</b><span class="lv">Entrar ou criar conta ›</span></span>
       <span class="coins"><span class="coin" aria-hidden="true"></span><b class="cv">0</b></span>
     </button>
 
     <section id="screen-title" class="screen">
       <canvas class="title-art" id="title-canvas" aria-hidden="true"></canvas>
-      <canvas class="title-hero" id="title-hero" aria-hidden="true"></canvas>
-      <div class="title-hero-tag" id="title-hero-tag" aria-live="polite"></div>
+      <div class="title-shade" aria-hidden="true"></div>
       <div class="title-inner">
         <h1 class="logo" data-text="ECO">ECO</h1>
         <p class="tagline">O passado também joga</p>
@@ -99,14 +98,35 @@
     </section>
 
     <!-- Conta -->
-    <section id="screen-account" class="screen scroll" hidden>
-      <div class="sheet narrow">
+    <section id="screen-account" class="screen fit" hidden>
+      <div class="sheet fit narrow acc-sheet">
         <header class="sheet-head">
-          <button class="btn small ghost" data-action="back">‹ Voltar</button>
-          <div class="head-title"><span class="step-tag">Sua conta</span><h2 id="acc-title">Entrar</h2></div>
+          <button class="btn small ghost" data-action="back" id="acc-back">‹ Voltar</button>
+          <div class="head-title"><span class="step-tag" id="acc-tag">Sua conta</span><h2 id="acc-title">Como você quer jogar?</h2></div>
           <span></span>
         </header>
-        <div id="acc-guest">
+        <!-- 1) escolha: conta ou convidado -->
+        <div id="acc-choice" class="acc-choice">
+          <div class="acc-opt acc-opt-account">
+            <b>Entrar ou criar conta</b>
+            <ul>
+              <li>Moedas, itens e nível salvos no servidor</li>
+              <li>A mesma conta no celular, no computador e no app</li>
+              <li>Seu apelido aparece nas partidas online</li>
+            </ul>
+            <div class="acc-btns">
+              <button class="btn primary" data-acc-go="login">Entrar</button>
+              <button class="btn" data-acc-go="register">Criar conta</button>
+            </div>
+          </div>
+          <div class="acc-opt acc-opt-guest">
+            <b>Jogar como convidado</b>
+            <p>Sem cadastro. Tudo fica salvo só neste aparelho. Dá para criar a conta depois sem perder nada.</p>
+            <button class="btn ghost" data-acc-go="guest">Continuar como convidado</button>
+          </div>
+        </div>
+        <!-- 2) formulário -->
+        <div id="acc-guest" hidden>
           <div class="tabs" role="tablist">
             <button class="tab on" data-tab="login" role="tab">Entrar</button>
             <button class="tab" data-tab="register" role="tab">Criar conta</button>
@@ -119,8 +139,10 @@
             <button class="btn primary" type="submit" id="acc-submit">Entrar</button>
           </form>
         </div>
+        <!-- 3) já entrou -->
         <div id="acc-logged" hidden>
           <div class="acc-stats" id="acc-stats"></div>
+          <p class="form-note">Seu progresso fica salvo na sua conta. Entre com o mesmo apelido em qualquer aparelho.</p>
           <button class="btn ghost" data-action="logout">Sair da conta</button>
         </div>
       </div>
@@ -139,21 +161,28 @@
           <button class="tab" data-shop="skin" role="tab">Roupas</button>
           <button class="tab" data-shop="trail" role="tab">Rastros</button>
         </div>
-        <div class="shop-grid" id="shop-grid"></div>
+        <div class="carousel shop-car" id="shop-car"></div>
+        <div class="shop-act" id="shop-act"></div>
         <p class="form-note shop-note">Ganhe moedas jogando: cada partida dá moedas, vitórias e partidas online dão mais.</p>
       </div>
     </section>
 
     <!-- Online -->
-    <section id="screen-online" class="screen scroll" hidden>
-      <div class="sheet narrow">
+    <section id="screen-online" class="screen fit" hidden>
+      <div class="sheet fit narrow">
         <header class="sheet-head">
           <button class="btn small ghost" data-action="back">‹ Voltar</button>
           <div class="head-title"><span class="step-tag" id="online-status">Conectando…</span><h2>Jogar online</h2></div>
           <span></span>
         </header>
+        <div class="tabs" role="tablist" data-tabset="onl">
+          <button class="tab on" data-tab="criar" role="tab">Criar sala</button>
+          <button class="tab" data-tab="entrar" role="tab">Entrar</button>
+          <button class="tab" data-tab="buscar" role="tab">Buscar partida</button>
+        </div>
         <div class="online-box">
-          <h3 class="section-label">Criar uma sala</h3>
+          <div class="pane" data-pane-of="onl" data-pane="criar">
+          <h3 class="section-label">Escolha o modo e chame os amigos</h3>
           <div class="mode-pills" id="online-modes">
             <button class="pill on" data-omode="duelo">Duelo x1</button>
             <button class="pill" data-omode="combate">Combate</button>
@@ -165,13 +194,19 @@
             <button class="pill" data-omode="chefe">Caça ao Chefe</button>
           </div>
           <button class="btn primary" data-action="create-room">Criar sala e chamar amigos</button>
-          <h3 class="section-label">Jogar com desconhecidos</h3>
-          <button class="btn quick-btn" data-action="quick-chefe">Buscar partida · Caça ao Chefe</button>
-          <h3 class="section-label">Entrar numa sala</h3>
+          </div>
+          <div class="pane" data-pane-of="onl" data-pane="entrar" hidden>
+          <h3 class="section-label">Digite o código que seu amigo mandou</h3>
           <form id="join-form" class="join-row">
             <input id="join-code" maxlength="4" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Código da sala" />
             <button class="btn" type="submit">Entrar</button>
           </form>
+          </div>
+          <div class="pane" data-pane-of="onl" data-pane="buscar" hidden>
+          <h3 class="section-label">Jogar com desconhecidos</h3>
+          <p class="form-note">Entra numa sala aberta. Começa quando lotar ou todos estiverem prontos; bots completam as vagas.</p>
+          <button class="btn quick-btn" data-action="quick-chefe">Buscar partida · Caça ao Chefe</button>
+          </div>
           <p class="form-error" id="online-error" role="alert" hidden></p>
           <p class="form-note" id="online-note"></p>
         </div>
@@ -273,7 +308,7 @@
         <div class="lo-body">
           <div class="lo-list">
             <div class="lo-list-title"></div>
-            <div class="lo-grid"></div>
+            <div class="carousel lo-car"></div>
           </div>
           <div class="lo-detail"></div>
         </div>
@@ -290,7 +325,11 @@
           </div>
           <button class="btn small primary" data-action="rules-ok">Entendi ›</button>
         </header>
-        <ol class="rule-cards">
+        <div class="tabs" role="tablist" data-tabset="rul">
+          <button class="tab on" data-tab="regras" role="tab">Regras</button>
+          <button class="tab" data-tab="poderes" role="tab">Poderes</button>
+        </div>
+        <ol class="rule-cards pane" data-pane-of="rul" data-pane="regras">
           <li>
             <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6 36 22 24 42 12 22z" fill="#c8ffd8" stroke="#1fbf5a" stroke-width="3" stroke-linejoin="round"/></svg>
             <b>Pegue energia</b>
@@ -312,20 +351,21 @@
             <span>Círculos com ícone aparecem pela arena. Encostou, pegou.</span>
           </li>
         </ol>
-        <ul class="power-list" id="rules-powers"></ul>
-        <button class="btn primary" data-action="rules-ok">Entendi, vamos jogar ›</button>
+        <ul class="power-list pane" data-pane-of="rul" data-pane="poderes" id="rules-powers" hidden></ul>
       </div>
     </section>
 
     <!-- Como jogar -->
-    <section id="screen-howto" class="screen scroll" hidden>
-      <div class="sheet">
+    <section id="screen-howto" class="screen fit" hidden>
+      <div class="sheet fit howto-sheet">
         <header class="sheet-head">
           <button class="btn small ghost" data-action="back">‹ Voltar</button>
           <h2>Como jogar</h2>
           <span></span>
         </header>
-        <div class="howto-grid">
+        <div class="howto-pager">
+          <button class="car-arrow left" id="howto-prev" aria-label="Anterior"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg></button>
+          <div class="howto-grid" id="howto-grid">
           <div class="card">
             <h4>Núcleo de Energia</h4>
             <p>Pegue os cristais verdes (até 3) e entregue no núcleo: 3 pontos cada. A cada rodada, todo mundo deixa um <em>Eco</em>, um fantasma que repete o que você fez. Encostar num Eco tira 1 vida.</p>
@@ -366,41 +406,52 @@
             <h4>Moedas e loja</h4>
             <p>Toda partida dá moedas, e vencer dá mais. Use na Loja para liberar personagens, roupas e rastros. Entre na sua conta para guardar tudo e jogar online com amigos.</p>
           </div>
-        </div>
-        <div class="card" style="margin-top:10px">
+          <div class="card">
           <h4>Poderes</h4>
           <p>Escudo, Ímã, Gelo nos Ecos, Turbo, Energia em dobro, Apagar Eco, Invisível e Cura aparecem pela arena. Nos modos com armas também caem metralhadora, escopeta, laser, lança-foguetes, raio congelante, vampiro, bombas e minas. É só encostar para pegar.</p>
         </div>
-        <button class="btn primary wide" data-action="training">Fazer o treino guiado ›</button>
+          </div>
+          <button class="car-arrow right" id="howto-next" aria-label="Próximo"><svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg></button>
+        </div>
+        <div class="howto-dots" id="howto-dots"></div>
       </div>
     </section>
 
     <!-- Opções -->
-    <section id="screen-options" class="screen scroll" hidden>
-      <div class="sheet narrow">
+    <section id="screen-options" class="screen fit" hidden>
+      <div class="sheet fit narrow">
         <header class="sheet-head">
           <button class="btn small ghost" data-action="back">‹ Voltar</button>
           <h2>Opções</h2>
           <span></span>
         </header>
-        <div class="opts">
+        <div class="tabs" role="tablist" data-tabset="opt">
+          <button class="tab on" data-tab="som" role="tab">Som</button>
+          <button class="tab" data-tab="ctrl" role="tab">Controles</button>
+          <button class="tab" data-tab="jogo" role="tab">Jogo</button>
+          <button class="tab" data-tab="teclas" role="tab">Teclado</button>
+        </div>
+        <div class="opts pane" data-pane-of="opt" data-pane="som">
           <label class="row">Volume geral <input type="range" id="opt-master" min="0" max="100" /></label>
           <label class="row">Música <input type="range" id="opt-music" min="0" max="100" /></label>
           <label class="row">Efeitos <input type="range" id="opt-sfx" min="0" max="100" /></label>
           <label class="row check"><input type="checkbox" id="opt-muted" /> Silenciar tudo</label>
-          <hr />
+        </div>
+        <div class="opts pane" data-pane-of="opt" data-pane="ctrl" hidden>
+          <p class="form-note">Botões na tela do celular e do tablet.</p>
           <label class="row">Transparência dos controles <input type="range" id="opt-ctrl-alpha" min="20" max="100" /></label>
           <label class="row">Tamanho dos controles <input type="range" id="opt-ctrl-size" min="70" max="140" /></label>
           <label class="row check"><input type="checkbox" id="opt-swap" /> Inverter lados (analógico à direita)</label>
-          <hr />
+        </div>
+        <div class="opts pane" data-pane-of="opt" data-pane="jogo" hidden>
           <label class="row check"><input type="checkbox" id="opt-own" /> Seu próprio Eco também causa dano</label>
           <label class="row check"><input type="checkbox" id="opt-trails" /> Mostrar rastro dos Ecos</label>
           <label class="row check"><input type="checkbox" id="opt-reduced" /> Reduzir efeitos (tremor e partículas)</label>
           <label class="row">Qualidade gráfica
             <select id="opt-quality"><option value="alta">Alta (luz e sombras, máxima nitidez)</option><option value="media">Média (mais leve)</option><option value="baixa">Baixa (celulares mais simples)</option></select>
           </label>
-          <hr />
-          <h3 class="section-label">Teclado (computador)</h3>
+        </div>
+        <div class="opts pane" data-pane-of="opt" data-pane="teclas" hidden>
           <p class="form-note">WASD ou setas andam · mouse mira e clique atira · Esc cancela a mira ou pausa. Toque numa ação e aperte a nova tecla.</p>
           <div class="keybinds" id="keybinds"></div>
           <button class="btn small ghost" id="keys-reset">Voltar ao padrão</button>

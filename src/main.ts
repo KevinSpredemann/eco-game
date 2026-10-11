@@ -17,9 +17,9 @@ import { drawMonster } from './render/monster';
 import { account, serverUrl } from './ui/account';
 import { InputManager } from './ui/input';
 import { Settings, loadSettings, saveSettings } from './ui/settings';
-import { TitleScene } from './ui/titleScene';
+import { TitleShowcase } from './ui/titleShowcase';
 import { avatarURL, drawMapPreview, drawPortrait } from './ui/portraits';
-import { Carousel } from './ui/carousel';
+import { Carousel, fitText } from './ui/carousel';
 import { drawModeArt } from './ui/modeArt';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
@@ -184,40 +184,14 @@ const SCREENS = [
   'screen-results',
 ];
 const CHIP_ON = new Set(['screen-title']);
-const titleScene = new TitleScene($<HTMLCanvasElement>('#title-canvas'));
+const titleScene = new TitleShowcase($<HTMLCanvasElement>('#title-canvas'));
 // herói em destaque na tela inicial: começa pelo seu personagem e vai trocando
-const titleHero = new HeroScene($<HTMLCanvasElement>('#title-hero'), true);
-let titleHeroIdx = 0;
-let titleHeroTimer = 0;
-function showTitleHero(step = 0) {
-  const eq = account.profile.equipped.char;
-  const order = [eq, ...CHARACTERS.map((c) => c.id).filter((id) => id !== eq)];
-  titleHeroIdx = (titleHeroIdx + step + order.length) % order.length;
-  const c = getCharacter(order[titleHeroIdx]);
-  const skin = c.id === eq ? account.profile.equipped.skin : 'padrao';
-  titleHero.set(withSkin(c, skin), false);
-  const tag = $('#title-hero-tag');
-  tag.style.opacity = '0';
-  setTimeout(() => {
-    tag.innerHTML = `<b class="nm" style="--c:${c.color}">${c.name.toUpperCase()}</b><span>${c.title} · ${c.ability.name}</span>`;
-    tag.style.opacity = '1';
-  }, 180);
-}
-
 function show(id: string | null) {
   for (const s of SCREENS) $('#' + s).hidden = s !== id;
   if (id === 'screen-title') {
-    titleScene.setHero(withSkin(getCharacter(account.profile.equipped.char), account.profile.equipped.skin));
     titleScene.start();
-    titleHeroIdx = 0;
-    showTitleHero(0);
-    titleHero.start();
-    clearInterval(titleHeroTimer);
-    titleHeroTimer = window.setInterval(() => showTitleHero(1), 5200);
   } else {
     titleScene.stop();
-    titleHero.stop();
-    clearInterval(titleHeroTimer);
   }
   if (id !== 'screen-select') heroScene.stop();
   if (id !== 'screen-map') mapScene.stop();
@@ -269,7 +243,14 @@ function go(action: string, el?: HTMLElement) {
         if (selectCtx === 'lobby') show('screen-lobby');
         else openModes();
       } else if (cur === 'screen-shop') show(backFromShop);
-      else show('screen-title');
+      else if (cur === 'screen-account' && !account.logged && !$('#acc-guest').hidden) openAccount('choice');
+      else {
+        if (cur === 'screen-account' && !settings.welcomeSeen) {
+          settings.welcomeSeen = true;
+          saveSettings(settings);
+        }
+        show('screen-title');
+      }
       break;
     }
     case 'to-map':
@@ -390,8 +371,10 @@ function renderChip() {
   const p = account.profile;
   const chip = $('#account-chip');
   (chip.querySelector('.ava') as HTMLImageElement).src = avatarURL(withSkin(getCharacter(p.equipped.char), p.equipped.skin), 40);
-  chip.querySelector('.nm')!.textContent = account.logged ? p.username : 'Convidado · Entrar';
-  chip.querySelector('.lv')!.textContent = `Nível ${account.level}`;
+  chip.querySelector('.nm')!.textContent = account.logged ? p.username : 'Convidado';
+  // convidado: o cartão já diz o que fazer; com conta: o nível
+  chip.querySelector('.lv')!.textContent = account.logged ? `Nível ${account.level}` : 'Entrar ou criar conta ›';
+  chip.classList.toggle('guest', !account.logged);
   chip.querySelector('.cv')!.textContent = String(p.coins);
   $('#shop-coins').textContent = `${p.coins} moedas`;
   settings.char = p.equipped.char;
@@ -399,12 +382,16 @@ function renderChip() {
 account.onChange(renderChip);
 
 let accTab: 'login' | 'register' = 'login';
-function openAccount() {
+/** view: 'choice' = conta ou convidado; 'form' = entrar/criar; com conta mostra o perfil */
+function openAccount(view: 'choice' | 'form' = 'choice') {
   const logged = account.logged;
-  $('#acc-guest').hidden = logged;
+  $('#acc-choice').hidden = logged || view !== 'choice';
+  $('#acc-guest').hidden = logged || view !== 'form';
   $('#acc-logged').hidden = !logged;
-  $('#acc-title').textContent = logged ? account.profile.username : accTab === 'login' ? 'Entrar' : 'Criar conta';
+  $('#acc-tag').textContent = logged ? 'Sua conta' : view === 'choice' ? 'Bem-vindo ao ECO' : 'Sua conta';
+  $('#acc-title').textContent = logged ? account.profile.username : view === 'choice' ? 'Como você quer jogar?' : accTab === 'login' ? 'Entrar' : 'Criar conta';
   $('#acc-error').hidden = true;
+  if (view === 'form') setAccTab(accTab);
   if (logged) {
     const p = account.profile;
     $('#acc-stats').innerHTML = [
@@ -421,13 +408,35 @@ function openAccount() {
   }
   show('screen-account');
 }
+function setAccTab(t: 'login' | 'register') {
+  accTab = t;
+  document.querySelectorAll<HTMLElement>('#acc-guest .tab').forEach((x) => x.classList.toggle('on', x.dataset.tab === t));
+  $('#acc-submit').textContent = t === 'login' ? 'Entrar' : 'Criar conta';
+  $('#acc-title').textContent = t === 'login' ? 'Entrar' : 'Criar conta';
+  $<HTMLInputElement>('#acc-pass').autocomplete = t === 'login' ? 'current-password' : 'new-password';
+  $('#acc-note').textContent =
+    t === 'login' ? 'Use o apelido e a senha que você criou. Funciona em qualquer aparelho.' : 'Escolha um apelido (3 a 16 letras) e uma senha de pelo menos 6. Suas moedas e itens de convidado vão junto.';
+}
+/** escolha da primeira tela: entrar, criar conta ou seguir como convidado */
+document.querySelectorAll<HTMLElement>('[data-acc-go]').forEach((b) =>
+  b.addEventListener('click', () => {
+    audio.click();
+    const go = b.dataset.accGo!;
+    if (go === 'guest') {
+      settings.welcomeSeen = true;
+      saveSettings(settings);
+      toast('Jogando como convidado. Dá para criar a conta depois tocando no seu nome, lá em cima.');
+      show('screen-title');
+      return;
+    }
+    accTab = go as 'login' | 'register';
+    openAccount('form');
+    setTimeout(() => $<HTMLInputElement>('#acc-user').focus(), 50);
+  }),
+);
 document.querySelectorAll<HTMLElement>('#acc-guest .tab').forEach((t) =>
   t.addEventListener('click', () => {
-    accTab = t.dataset.tab as 'login' | 'register';
-    document.querySelectorAll('#acc-guest .tab').forEach((x) => x.classList.toggle('on', x === t));
-    $('#acc-submit').textContent = accTab === 'login' ? 'Entrar' : 'Criar conta';
-    $('#acc-title').textContent = accTab === 'login' ? 'Entrar' : 'Criar conta';
-    $<HTMLInputElement>('#acc-pass').autocomplete = accTab === 'login' ? 'current-password' : 'new-password';
+    setAccTab(t.dataset.tab as 'login' | 'register');
     audio.click();
   }),
 );
@@ -443,6 +452,8 @@ $('#acc-form').addEventListener('submit', async (e) => {
     else await account.register(user, pass);
     $<HTMLInputElement>('#acc-pass').value = '';
     toast(accTab === 'login' ? `Bem-vindo de volta, ${account.profile.username}!` : 'Conta criada! Seu progresso agora fica salvo no servidor.');
+    settings.welcomeSeen = true;
+    saveSettings(settings);
     show('screen-title');
   } catch (err) {
     const box = $('#acc-error');
@@ -617,6 +628,7 @@ function refreshCharCards() {
     el.innerHTML = charCardHTML(c);
     requestAnimationFrame(() => drawPortrait(el.querySelector('canvas')!, withSkin(c, skin), { locked: !st.owned }));
   });
+  fitText(charCar.center.querySelector<HTMLElement>('.car-label b'));
   placeHeroStage();
   $('#char-thumbs')
     .querySelectorAll<HTMLElement>('button')
@@ -635,8 +647,23 @@ function placeHeroStage() {
   heroScene.set(withSkin(withLevel(c, abilityLevel(account.profile, c.id)), account.profile.equipped.skin), !charState(c).owned);
 }
 
-function charDetail() {
-  const c = CHARACTERS[charCar?.index ?? 0];
+/**
+ * trava a altura de um painel na maior entre todas as opções (mede cada uma sem mostrar):
+ * assim o carrossel acima nunca muda de tamanho ao trocar de personagem/mapa (o card não "pula")
+ */
+function lockPanelHeight(el: HTMLElement, n: number, renderAt: (i: number) => void, cur: number) {
+  el.style.minHeight = '';
+  let max = 0;
+  for (let i = 0; i < n; i++) {
+    renderAt(i);
+    max = Math.max(max, el.offsetHeight);
+  }
+  renderAt(cur);
+  if (max) el.style.minHeight = max + 'px';
+}
+
+function charDetail(at?: number) {
+  const c = CHARACTERS[at ?? charCar?.index ?? 0];
   const st = charState(c);
   const lvC = withLevel(c, st.lv);
   const nextC = withLevel(c, Math.min(5, st.lv + 1));
@@ -694,6 +721,13 @@ function charDetail() {
   });
 }
 
+window.addEventListener('resize', () => {
+  requestAnimationFrame(() => {
+    if (currentScreen() === 'screen-select' && charCar) lockPanelHeight($('#char-detail'), CHARACTERS.length, (i) => charDetail(i), charCar.index);
+    if (currentScreen() === 'screen-map' && mapCar) lockPanelHeight($('#map-info').closest<HTMLElement>('.hero-panel')!, ARENAS.length, (i) => mapInfo(i), mapCar.index);
+  });
+});
+
 function buildCharCarousel() {
   const root = $('#char-carousel');
   charCar = new Carousel(root, CHARACTERS.length, () => document.createElement('button'));
@@ -724,6 +758,35 @@ function buildCharCarousel() {
     th.appendChild(b);
   });
 }
+
+// ------------------------------------------------------------------ Como jogar: páginas para o lado
+{
+  const grid = $('#howto-grid');
+  const dots = $('#howto-dots');
+  const pages = () => Math.max(1, Math.round(grid.scrollWidth / Math.max(1, grid.clientWidth)));
+  const page = () => Math.round(grid.scrollLeft / Math.max(1, grid.clientWidth));
+  const paint = () => {
+    const n = pages();
+    const i = page();
+    if (dots.childElementCount !== n) dots.innerHTML = Array.from({ length: n }, () => '<i></i>').join('');
+    dots.querySelectorAll('i').forEach((d, k) => d.classList.toggle('on', k === i));
+  };
+  const go = (d: number) => grid.scrollTo({ left: (page() + d) * grid.clientWidth, behavior: 'smooth' });
+  $('#howto-prev').addEventListener('click', () => go(-1));
+  $('#howto-next').addEventListener('click', () => go(1));
+  grid.addEventListener('scroll', () => requestAnimationFrame(paint), { passive: true });
+  new ResizeObserver(paint).observe(grid);
+}
+
+// ------------------------------------------------------------------ abas genéricas (telas que não rolam)
+document.addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-tabset] [data-tab]');
+  if (!b) return;
+  const set = b.closest<HTMLElement>('[data-tabset]')!;
+  set.querySelectorAll<HTMLElement>('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
+  document.querySelectorAll<HTMLElement>(`[data-pane-of="${set.dataset.tabset}"]`).forEach((p) => (p.hidden = p.dataset.pane !== b.dataset.tab));
+  audio.click();
+});
 
 // ------------------------------------------------------------------ pular o Rebobinando
 let skipAsked = false;
@@ -788,6 +851,9 @@ window.addEventListener('keydown', (e) => {
   const d = e.key === 'ArrowLeft' ? -1 : 1;
   if (!$('#screen-select').hidden && charCar) charCar.go(d);
   else if (!$('#screen-map').hidden && mapCar) mapCar.go(d);
+  else if (!$('#screen-loadout').hidden) loadoutScreen.go(d);
+  else if (!$('#screen-shop').hidden) shopCar?.go(d);
+  else if (!$('#screen-howto').hidden) ($(d < 0 ? '#howto-prev' : '#howto-next') as HTMLButtonElement).click();
 });
 
 function openSelect() {
@@ -796,15 +862,16 @@ function openSelect() {
   if (!charCar) buildCharCarousel();
   const idx = Math.max(0, CHARACTERS.findIndex((c) => c.id === settings.char));
   show('screen-select');
+  // painel com altura fixa ANTES de posicionar o carrossel (senão o card nasce grande e encolhe)
+  lockPanelHeight($('#char-detail'), CHARACTERS.length, (i) => charDetail(i), idx);
   charCar!.set(idx, true);
   refreshCharCards();
-  charDetail();
   heroScene.start();
 }
 const LOCK = '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="11" width="14" height="10" rx="2" fill="#ffd23e"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#ffd23e" stroke-width="2.4" fill="none"/></svg>';
 
-function mapInfo() {
-  const a = ARENAS[mapCar?.index ?? 0];
+function mapInfo(at?: number) {
+  const a = ARENAS[at ?? mapCar?.index ?? 0];
   const d = MAP_DIFFICULTY[a.id] ?? 3;
   const dl = ['', 'Fácil', 'Fácil', 'Média', 'Difícil', 'Insana'][d];
   const dc = ['', '#5dff8a', '#5dff8a', '#ffd23e', '#ff8a3c', '#ff3b5c'][d];
@@ -863,9 +930,10 @@ function openMap() {
   $<HTMLSelectElement>('#sel-diff').value = settings.difficulty;
   if (!mapCar) buildMapCarousel();
   show('screen-map');
-  mapCar!.set(Math.max(0, ARENAS.findIndex((a) => a.id === settings.arena)), true);
+  const mi = Math.max(0, ARENAS.findIndex((a) => a.id === settings.arena));
+  lockPanelHeight($('#map-info').closest<HTMLElement>('.hero-panel')!, ARENAS.length, (i) => mapInfo(i), mi);
+  mapCar!.set(mi, true);
   placeMapStage();
-  mapInfo();
   requestAnimationFrame(() => $('#map-carousel').querySelectorAll<HTMLCanvasElement>('canvas.preview').forEach((cv, i) => drawMapPreview(cv, ARENAS[i])));
   mapScene.start();
 }
@@ -905,29 +973,48 @@ function symbolSvg(id: string, color: string) {
 
 // ------------------------------------------------------------------ loja
 let shopTab: 'char' | 'skin' | 'trail' = 'char';
-function openShop(tab: 'char' | 'skin' | 'trail') {
+let shopCar: Carousel | null = null;
+/** loja em carrossel (deslizar para o lado), igual a personagens/mapas/equipamento: nada rola para baixo */
+function openShop(tab: 'char' | 'skin' | 'trail', keep?: number) {
   shopTab = tab;
   document.querySelectorAll<HTMLElement>('#shop-tabs .tab').forEach((t) => t.classList.toggle('on', t.dataset.shop === tab));
-  const grid = $('#shop-grid');
-  grid.innerHTML = '';
   const p = account.profile;
   const base = withSkin(getCharacter(p.equipped.char), p.equipped.skin);
-  const items: { id: string; name: string; price: number; draw: (cv: HTMLCanvasElement) => void }[] =
+  const items: { id: string; name: string; price: number; color: string; draw: (cv: HTMLCanvasElement) => void }[] =
     tab === 'char'
-      ? CHARACTERS.map((c) => ({ id: c.id, name: c.name, price: CHAR_PRICES[c.id] ?? 0, draw: (cv) => drawPortrait(cv, withSkin(c, p.equipped.skin)) }))
+      ? CHARACTERS.map((c) => ({ id: c.id, name: c.name, price: CHAR_PRICES[c.id] ?? 0, color: c.color, draw: (cv) => drawPortrait(cv, withSkin(c, p.equipped.skin)) }))
       : tab === 'skin'
-        ? SKINS.map((s) => ({ id: s.id, name: s.name, price: s.price, draw: (cv) => drawPortrait(cv, withSkin(getCharacter(p.equipped.char), s.id)) }))
-        : TRAILS.map((t) => ({ id: t.id, name: t.name, price: t.price, draw: (cv) => drawTrailPreview(cv, base, t.colors) }));
-  for (const it of items) {
+        ? SKINS.map((s) => ({ id: s.id, name: s.name, price: s.price, color: base.color, draw: (cv) => drawPortrait(cv, withSkin(getCharacter(p.equipped.char), s.id)) }))
+        : TRAILS.map((t) => ({ id: t.id, name: t.name, price: t.price, color: t.colors[0] ?? base.color, draw: (cv) => drawTrailPreview(cv, base, t.colors) }));
+  const box = $('#shop-car');
+  box.innerHTML = `<button class="car-arrow left" aria-label="Anterior"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg></button>
+    <div class="car-track"></div>
+    <button class="car-arrow right" aria-label="Próximo"><svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg></button>`;
+  const car = new Carousel(box, items.length, (i) => {
+    const it = items[i];
+    const owned = owns(p, `${tab}:${it.id}`);
+    const b = document.createElement('button');
+    b.className = 'shop-card' + (p.equipped[tab] === it.id ? ' equipped' : '') + (owned ? '' : ' locked');
+    b.style.setProperty('--c', it.color);
+    b.innerHTML = `<canvas class="pv"></canvas>${p.equipped[tab] === it.id ? '<span class="lo-badge">✓</span>' : !owned ? '<span class="lo-badge lock">🔒</span>' : ''}<span class="car-label"><b>${it.name}</b></span>`;
+    return b;
+  });
+  shopCar = car;
+  car.aspect = 0.72;
+  const drawAll = () => box.querySelectorAll<HTMLCanvasElement>('canvas.pv').forEach((cv, i) => items[i].draw(cv));
+  car.onResize = drawAll;
+  const act = () => {
+    const it = items[car.index];
     const key = `${tab}:${it.id}`;
     const owned = owns(p, key);
     const equipped = p.equipped[tab] === it.id;
-    const b = document.createElement('button');
-    b.className = 'shop-item' + (equipped ? ' equipped' : '');
-    b.innerHTML = `<canvas></canvas><span class="si"><span class="sn">${it.name}</span>${
-      equipped ? '<span class="sp equip">Equipado</span>' : owned ? '<span class="sp own">Seu · toque para usar</span>' : `<span class="sp price"><span class="coin"></span>${it.price}</span>`
-    }</span>`;
-    b.addEventListener('click', async () => {
+    const btn = equipped
+      ? '<span class="lo-state on">✓ Equipado</span>'
+      : owned
+        ? '<button class="btn primary shop-go">Usar</button>'
+        : `<button class="btn primary shop-go"><span class="coin"></span>Comprar por ${it.price}</button>`;
+    $('#shop-act').innerHTML = `<div class="shop-act-info"><b>${it.name}</b><span>${car.index + 1} de ${items.length} · deslize para o lado</span></div>${btn}`;
+    $('#shop-act').querySelector('.shop-go')?.addEventListener('click', async () => {
       if (!owned) {
         if (p.coins < it.price) return toast(`Faltam ${it.price - p.coins} moedas para ${it.name}.`);
         const err = await account.buy(key);
@@ -938,11 +1025,17 @@ function openShop(tab: 'char' | 'skin' | 'trail') {
       const err = await account.equip(tab, it.id);
       if (err) return toast(err);
       audio.click();
-      openShop(tab);
+      openShop(tab, car.index);
     });
-    grid.appendChild(b);
-    requestAnimationFrame(() => it.draw(b.querySelector('canvas')!));
-  }
+  };
+  car.onChange = () => {
+    audio.click();
+    act();
+  };
+  const start = keep ?? Math.max(0, items.findIndex((it) => p.equipped[tab] === it.id));
+  car.set(start, true);
+  act();
+  requestAnimationFrame(drawAll);
   if (currentScreen() !== 'screen-shop') show('screen-shop');
 }
 document.querySelectorAll<HTMLElement>('#shop-tabs .tab').forEach((t) =>
@@ -2295,7 +2388,6 @@ function checkRotate() {
 }
 window.addEventListener('resize', () => {
   layout();
-  if (titleScene.running) titleScene.resize();
 });
 window.addEventListener('orientationchange', () => setTimeout(layout, 200));
 
@@ -2379,7 +2471,9 @@ applySettings();
 renderChip();
 account.refresh();
 layout();
-show('screen-title');
+// primeira vez: pergunta se quer entrar/criar conta ou jogar como convidado
+if (!account.logged && !settings.welcomeSeen) openAccount('choice');
+else show('screen-title');
 requestAnimationFrame(frame);
 
 // para testes automatizados
