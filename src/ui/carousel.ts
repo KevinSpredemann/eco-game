@@ -1,6 +1,18 @@
 // Carrossel circular: um item gigante no centro, vizinhos menores nas laterais.
 // Setas, deslizar com o dedo/mouse, roda do mouse e teclado.
 
+/** diminui a fonte até o texto caber na largura (nunca corta nem quebra no meio da palavra) */
+export function fitText(el: HTMLElement | null, minPx = 10) {
+  if (!el || !el.clientWidth) return;
+  el.style.fontSize = '';
+  let size = parseFloat(getComputedStyle(el).fontSize) || 16;
+  let guard = 40;
+  while (el.scrollWidth > el.clientWidth + 1 && size > minPx && guard-- > 0) {
+    size -= 1;
+    el.style.fontSize = size + 'px';
+  }
+}
+
 export class Carousel {
   index = 0;
   private cards: HTMLElement[] = [];
@@ -11,6 +23,8 @@ export class Carousel {
   /** chamado quando o tamanho dos cards muda (para redesenhar sem esticar) */
   onResize: () => void = () => {};
   private sizeKey = '';
+  /** já foi posicionado uma vez (antes disso, nada de animação) */
+  private placed = false;
   /** proporção largura/altura do card */
   aspect = 0.7;
 
@@ -47,7 +61,9 @@ export class Carousel {
       const dx = this.dragDx;
       this.dragX = null;
       const step = this.stepPx();
-      if (Math.abs(dx) > 40) this.go(dx < 0 ? Math.max(1, Math.round(-dx / step)) : -Math.max(1, Math.round(dx / step)));
+      // um deslize normal anda 1 item; só um deslize bem longo pula mais de um
+      const n = Math.max(1, Math.round(Math.abs(dx) / (step * 1.8)));
+      if (Math.abs(dx) > 40) this.go(dx < 0 ? n : -n);
       else this.layout();
       setTimeout(() => (this.dragDx = 0), 0);
     };
@@ -72,7 +88,8 @@ export class Carousel {
 
   set(i: number, silent = false) {
     this.index = i;
-    this.layout();
+    // posição inicial (ao abrir a tela): vai direto ao lugar, sem animar (o card não "pula")
+    this.layout(0, silent);
     if (!silent) this.onChange(i);
   }
 
@@ -97,18 +114,22 @@ export class Carousel {
   }
 
   /** posiciona os cards; drag = deslocamento do dedo em px */
-  layout(drag = 0) {
+  layout(drag = 0, instant = false) {
     const { w, h, cw, ch } = this.dims();
     if (!w || !h) return;
     const step = this.stepPx();
     const key = `${Math.round(cw)}x${Math.round(ch)}`;
     const resized = key !== this.sizeKey;
     this.sizeKey = key;
+    // tamanho mudou (abriu a tela, girou o celular): reposiciona sem animação
+    const jump = instant || resized || !this.placed;
+    this.placed = true;
     this.cards.forEach((el, i) => {
       let d = i - this.index;
       if (d > this.count / 2) d -= this.count;
       if (d < -this.count / 2) d += this.count;
-      const pos = d + drag / step;
+      // o arrasto anda no mesmo ritmo da escolha ao soltar (1 item a cada ~1,8 card de dedo)
+      const pos = d + drag / (step * 1.8);
       const ad = Math.abs(pos);
       // escala uniforme (mesma proporção em todos os cards)
       const scale = ad < 1 ? 1 - ad * 0.36 : Math.max(0.4, 0.64 - (ad - 1) * 0.14);
@@ -121,8 +142,21 @@ export class Carousel {
       el.style.filter = ad > 0.5 ? 'brightness(0.75)' : '';
       el.style.pointerEvents = ad > 2.2 ? 'none' : '';
       el.classList.toggle('center', d === 0);
-      el.style.transition = drag ? 'none' : '';
+      // nome visível no card que está no meio AGORA (também enquanto o dedo arrasta)
+      const named = drag ? ad < 0.5 : d === 0;
+      if (named && !el.classList.contains('named')) {
+        el.classList.add('named');
+        fitText(el.querySelector<HTMLElement>('.car-label b'));
+      } else if (!named) el.classList.remove('named');
+      el.style.transition = drag || jump ? 'none' : '';
     });
+    if (jump && !drag) {
+      // aplica as posições já, e só então liga a animação de novo para as próximas trocas
+      void this.track.offsetWidth;
+      this.cards.forEach((el) => (el.style.transition = ''));
+    }
     if (resized) this.onResize();
+    // nome do card do meio sempre inteiro (só quando o tamanho muda ou o card acabou de virar o do meio)
+    if (resized) fitText(this.center?.querySelector<HTMLElement>('.car-label b') ?? null);
   }
 }
