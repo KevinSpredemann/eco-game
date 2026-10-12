@@ -20,7 +20,12 @@ export interface LobbyPlayer {
   host: boolean;
   logged: boolean;
   ready?: boolean;
+  /** caiu a conexão: a vaga fica guardada alguns segundos esperando a volta */
+  away?: boolean;
 }
+
+/** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
+export const PROTO = 3;
 
 export interface RoomInfo {
   code: string;
@@ -33,6 +38,8 @@ export interface RoomInfo {
   public?: boolean;
   /** segundos até começar sozinha (busca automática) */
   autoIn?: number;
+  /** máximo de pessoas no modo */
+  max?: number;
 }
 
 export interface StartInfo {
@@ -51,7 +58,8 @@ export interface EndInfo {
 }
 
 export type ClientMsg =
-  | { t: 'hello'; name: string; token?: string | null }
+  | { t: 'hello'; name: string; token?: string | null; sid?: string; v?: number }
+  | { t: 'nick'; name: string }
   | { t: 'create'; mode: GameMode; arena: string; bots: number }
   | { t: 'join'; code: string }
   | { t: 'set'; char: string; skin: string; trail: string }
@@ -66,12 +74,12 @@ export type ClientMsg =
   | { t: 'ping'; at: number };
 
 export type ServerMsg =
-  | { t: 'hello'; id: string; name: string }
+  | { t: 'hello'; id: string; name: string; v?: number; resumed?: boolean }
   | { t: 'room'; room: RoomInfo }
   | { t: 'start'; info: StartInfo }
   | { t: 's'; s: Snapshot; ev: unknown[] }
   | { t: 'end'; info: EndInfo }
-  | { t: 'left' }
+  | { t: 'left'; why?: string }
   | { t: 'error'; msg: string }
   | { t: 'pong'; at: number };
 
@@ -216,6 +224,11 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
       r1(p.skillCd),
       Math.floor(p.ultCharge),
       p.boss ? [r1(p.bossCd.impacto), r1(p.bossCd.barragem), r1(p.bossCd.chuva), r1(p.bossCd.obsidiana), r1(p.bossCd.avanco)] : 0,
+      // placar: quedas, dano causado e pontos de objetivo
+      p.deaths,
+      Math.round(p.stats.dmg),
+      p.stats.obj,
+      Math.ceil(p.portalCd),
     ]),
     F: g.fragments.map((f) => [f.id, r1(f.x), r1(f.y), f.golden ? 1 : 0]),
     W: g.powerups.map((w) => [w.id, w.kind, r1(w.x), r1(w.y), r1(w.age)]),

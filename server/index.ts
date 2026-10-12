@@ -9,7 +9,7 @@ import { BotBrain } from '../src/game/bot';
 import { Game, GameMode, Input, MIN_PLAYERS, MODE_RULES } from '../src/game/sim';
 import { Loadout, botLoadout, DEFAULT_LOADOUT, sanitizeLoadout } from '../src/game/balance';
 import { abilityLevel, buy, equip, matchReward, newProfile, owns, Profile, MatchMode, levelOf } from '../src/game/economy';
-import { BTN, ClientMsg, encodeSnapshot, echoSignature, EndInfo, LobbyPlayer, RoomInfo, ServerMsg, StartInfo } from '../src/net/protocol';
+import { BTN, ClientMsg, encodeSnapshot, echoSignature, EndInfo, LobbyPlayer, RoomInfo, ServerMsg, StartInfo, PROTO } from '../src/net/protocol';
 import { checkPassword, hashPassword, signToken, validPassword, validUsername, verifyToken } from './auth';
 import { FileStore, PgStore, Store, UserRecord } from './store';
 
@@ -64,7 +64,7 @@ const http = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   const url = new URL(req.url ?? '/', 'http://x');
   try {
-    if (url.pathname === '/' || url.pathname === '/api/health') return send(res, 200, { ok: true, db: process.env.DATABASE_URL ? 'postgres' : 'arquivo', rooms: rooms.size, players: clients.size });
+    if (url.pathname === '/' || url.pathname === '/api/health') return send(res, 200, { ok: true, db: process.env.DATABASE_URL ? 'postgres' : 'arquivo', rooms: rooms.size, players: [...clients.values()].filter((c) => !c.gone).length });
 
     if (url.pathname === '/api/register' && req.method === 'POST') {
       const { username, password, guest } = await readJson(req);
@@ -164,6 +164,12 @@ interface Client {
   ready: boolean;
   /** quantas vezes já foi o Chefe (rodízio justo) */
   bossTimes: number;
+  /** identificador da aba (volta para a mesma vaga se a conexão cair) */
+  sid: string;
+  /** quando a conexão caiu (0 = conectado); a vaga fica guardada por GRACE_MS */
+  gone: number;
+  /** versão do protocolo do aparelho */
+  v: number;
 }
 
 interface Room {
@@ -184,10 +190,17 @@ interface Room {
   public: boolean;
   /** quando começa sozinha (ms); 0 = só o dono começa */
   autoAt: number;
+  /** escalação da partida em andamento (para quem reconecta no meio) */
+  roster: RosterRow[];
 }
 
 const clients = new Map<string, Client>();
 const rooms = new Map<string, Room>();
+/** aba (sid) → jogador: evita jogador duplicado e permite voltar para a sala */
+const sessions = new Map<string, Client>();
+/** quanto tempo a vaga de quem caiu fica guardada */
+const GRACE_MS = 20_000;
+const OUTDATED = 'Seu jogo está desatualizado. Feche e abra o jogo de novo (ou recarregue a página) para atualizar e entrar na sala.';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const maxPlayers = (m: GameMode) => MODE_RULES[m].maxPlayers;
 const validMode = (m: unknown): m is GameMode => typeof m === 'string' && m in MODE_RULES;
@@ -204,6 +217,13 @@ function sendTo(c: Client, m: ServerMsg) {
   if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(m));
 }
 
+/** nomes iguais na mesma sala ganham número (dois "Convidado" viram "Convidado" e "Convidado 2") */
+function displayName(r: Room, c: Client) {
+  const same = r.members.filter((m) => m.name.toLowerCase() === c.name.toLowerCase());
+  const i = same.indexOf(c);
+  return i <= 0 ? c.name : `${c.name} ${i + 1}`;
+}
+
 function roomInfo(r: Room): RoomInfo {
   return {
     code: r.code,
@@ -211,7 +231,8 @@ function roomInfo(r: Room): RoomInfo {
     arena: r.arena,
     bots: r.bots,
     state: r.game ? 'playing' : 'lobby',
-    players: r.members.map<LobbyPlayer>((m) => ({ id: m.id, name: m.name, char: m.char, skin: m.skin, trail: m.trail, host: m.id === r.host, logged: !!m.userKey, ready: m.ready })),
+    players: r.members.map<LobbyPlayer>((m) => ({ id: m.id, name: displayName(r, m), char: m.char, skin: m.skin, trail: m.trail, host: m.id === r.host, logged: !!m.userKey, ready: m.ready, away: !!m.gone })),
+    max: maxPlayers(r.mode),
     public: r.public,
     autoIn: r.autoAt ? Math.max(0, Math.ceil((r.autoAt - Date.now()) / 1000)) : undefined,
   };
@@ -235,13 +256,66 @@ function leaveRoom(c: Client) {
       p.name = p.char.name + ' (bot)';
     }
   }
-  if (!r.members.length) {
+  if (!r.members.length || r.members.every((m) => m.gone)) {
+    // ninguém conectado: fecha a sala (quem estava caído perde a vaga)
     if (r.loop) clearInterval(r.loop);
     rooms.delete(r.code);
+    for (const m of r.members) m.room = null;
+    r.members = [];
     return;
   }
-  if (r.host === c.id) r.host = r.members[0].id;
+  if (r.host === c.id) pickHost(r);
   broadcastRoom(r);
+}
+
+/** novo dono: o primeiro que está conectado */
+function pickHost(r: Room) {
+  const h = r.members.find((m) => !m.gone) ?? r.members[0];
+  if (h) r.host = h.id;
+}
+
+/** a conexão caiu: guarda a vaga; na partida, um bot joga por ele até voltar */
+function markAway(c: Client) {
+  const r = c.room;
+  c.gone = Date.now();
+  c.input = { mx: 0, my: 0, dash: false, ability: false };
+  if (!r) return;
+  if (r.game) {
+    const p = r.game.players.find((p) => p.id === c.id);
+    if (p && !p.isBot) {
+      p.isBot = true;
+      p.brain = new BotBrain('normal');
+    }
+  }
+  if (r.host === c.id) pickHost(r);
+  if (r.members.every((m) => m.gone)) return; // ninguém para avisar; a limpeza fecha a sala depois
+  broadcastRoom(r);
+}
+
+/** voltou (mesma aba): reassume o personagem e recebe a sala / a partida de novo */
+function resumeSeat(c: Client) {
+  const r = c.room;
+  if (!r) return;
+  if (r.game) {
+    const p = r.game.players.find((p) => p.id === c.id);
+    if (p && p.isBot) {
+      p.isBot = false;
+      p.brain = null;
+    }
+    if (p) {
+      sendTo(c, { t: 'start', info: { you: c.id, mode: r.mode, arena: r.arena, roster: r.roster } });
+      r.echoSig = ''; // manda de novo os caminhos dos ecos para quem voltou
+    }
+  }
+  if (!r.members.some((m) => m.id === r.host && !m.gone)) pickHost(r);
+  broadcastRoom(r);
+}
+
+/** tira o jogador de vez (saiu, ou não voltou a tempo) */
+function dropClient(c: Client) {
+  leaveRoom(c);
+  clients.delete(c.id);
+  if (c.sid && sessions.get(c.sid) === c) sessions.delete(c.sid);
 }
 
 async function ownedChar(c: Client, char: string, skin: string, trail: string) {
@@ -273,7 +347,7 @@ function startGame(r: Room, fill = false) {
   }
   const humans = r.members.slice(0, maxPlayers(r.mode));
   const used = new Set(humans.map((h) => h.char));
-  const roster: RosterRow[] = humans.map((h) => ({ id: h.id, char: h.char, skin: h.skin, trail: h.trail, name: h.name, isBot: false, lv: h.lv || 1, loadout: h.loadout }));
+  const roster: RosterRow[] = humans.map((h) => ({ id: h.id, char: h.char, skin: h.skin, trail: h.trail, name: displayName(r, h), isBot: false, lv: h.lv || 1, loadout: h.loadout }));
   const want = plannedSize(r, fill);
   const pool = CHARACTERS.map((c) => c.id).filter((id) => !used.has(id));
   for (let i = 0; roster.length < want; i++) {
@@ -304,6 +378,15 @@ function startGame(r: Room, fill = false) {
     roster,
   });
   r.game = game;
+  r.roster = roster;
+  // quem está com a conexão caída começa com um bot no lugar (volta a jogar quando reconectar)
+  for (const m of humans) if (m.gone) {
+    const p = game.players.find((x) => x.id === m.id);
+    if (p) {
+      p.isBot = true;
+      p.brain = new BotBrain('normal');
+    }
+  }
   r.ticks = 0;
   r.pending = [];
   r.echoSig = '';
@@ -344,11 +427,14 @@ function tick(r: Room, dt: number) {
 
 /** busca automática: começa quando lota, quando todos estão prontos ou quando o tempo acaba (completa com bots) */
 setInterval(() => {
+  // quem caiu e não voltou a tempo sai da sala
+  const now = Date.now();
+  for (const c of [...clients.values()]) if (c.gone && now - c.gone > GRACE_MS) dropClient(c);
   for (const r of rooms.values()) {
     if (r.game || !r.members.length) continue;
     if (r.public) {
       const full = r.members.length >= maxPlayers(r.mode);
-      const allReady = r.members.length >= 2 && r.members.every((m) => m.ready);
+      const allReady = r.members.length >= 2 && r.members.every((m) => m.ready || m.gone);
       if (full || allReady || (r.autoAt && Date.now() >= r.autoAt)) {
         startGame(r, true);
         continue;
@@ -399,9 +485,15 @@ async function finishGame(r: Room) {
 const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: 16 * 1024 });
 
 wss.on('connection', (ws) => {
-  const c: Client = { id: 'u' + randomBytes(4).toString('hex'), ws, name: 'Jogador', userKey: null, char: 'kael', skin: 'padrao', trail: 'nenhum', lv: 1, room: null, input: { mx: 0, my: 0, dash: false, ability: false }, alive: true, loadout: { ...DEFAULT_LOADOUT }, ready: false, bossTimes: 0 };
+  let c: Client = { id: 'u' + randomBytes(4).toString('hex'), ws, name: 'Jogador', userKey: null, char: 'kael', skin: 'padrao', trail: 'nenhum', lv: 1, room: null, input: { mx: 0, my: 0, dash: false, ability: false }, alive: true, loadout: { ...DEFAULT_LOADOUT }, ready: false, bossTimes: 0, sid: '', gone: 0, v: 0 };
   clients.set(c.id, c);
   ws.on('pong', () => (c.alive = true));
+  const cleanName = (v: unknown) => String(v ?? '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16);
+  const canEnter = () => {
+    if (c.v === PROTO) return true;
+    sendTo(c, { t: 'error', msg: OUTDATED });
+    return false;
+  };
   ws.on('message', async (raw) => {
     let m: ClientMsg;
     try {
@@ -409,39 +501,82 @@ wss.on('connection', (ws) => {
     } catch {
       return;
     }
+    if (!m || typeof m !== 'object' || c.ws !== ws) return;
     switch (m.t) {
       case 'hello': {
+        const sid = typeof m.sid === 'string' && /^[a-z0-9]{8,40}$/i.test(m.sid) ? m.sid : '';
+        const old = sid ? sessions.get(sid) : undefined;
+        let resumed = false;
+        if (old && old !== c) {
+          // mesma aba de novo (a conexão caiu, recarregou a página ou abriu duas conexões):
+          // assume o lugar antigo em vez de virar um jogador duplicado
+          clients.delete(c.id);
+          const prev = old.ws;
+          old.ws = ws;
+          old.alive = true;
+          old.gone = 0;
+          if (prev !== ws) {
+            prev.removeAllListeners('close');
+            prev.removeAllListeners('message');
+            try {
+              prev.terminate();
+            } catch {
+              /* já fechada */
+            }
+          }
+          c = old;
+          resumed = !!old.room;
+        }
+        if (sid) {
+          c.sid = sid;
+          sessions.set(sid, c);
+        }
+        c.v = Number(m.v) || 0;
         const key = verifyToken(m.token, SECRET);
         const u = key ? await store.get(key) : null;
         c.userKey = u ? u.key : null;
-        c.name = u ? u.username : String(m.name ?? 'Convidado').replace(/[^\p{L}\p{N} _.-]/gu, '').slice(0, 16) || 'Convidado';
-        if (u) {
+        c.name = u ? u.username : cleanName(m.name) || 'Convidado';
+        if (u && !resumed) {
           c.char = u.profile.equipped.char;
           c.lv = abilityLevel(u.profile, c.char);
           c.skin = u.profile.equipped.skin;
           c.trail = u.profile.equipped.trail;
         }
-        sendTo(c, { t: 'hello', id: c.id, name: c.name });
+        sendTo(c, { t: 'hello', id: c.id, name: c.name, v: PROTO, resumed });
+        if (resumed) resumeSeat(c);
+        break;
+      }
+      case 'nick': {
+        // convidado escolhe o apelido que aparece na sala
+        if (c.userKey) break;
+        c.name = cleanName(m.name) || 'Convidado';
+        if (c.room && !c.room.game) broadcastRoom(c.room);
         break;
       }
       case 'create': {
+        if (!canEnter()) return;
         leaveRoom(c);
         const mode: GameMode = validMode(m.mode) ? m.mode : 'combate';
         const arena = ARENAS.some((a) => a.id === m.arena) ? m.arena : 'lab';
-        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0 };
+        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [] };
         rooms.set(r.code, r);
         c.room = r;
+        c.ready = false;
         broadcastRoom(r);
         break;
       }
       case 'join': {
-        const r = rooms.get(String(m.code ?? '').toUpperCase().trim());
-        if (!r) return sendTo(c, { t: 'error', msg: 'Sala não encontrada. Confira o código.' });
-        if (r.game) return sendTo(c, { t: 'error', msg: 'Essa sala já está jogando. Espere a partida acabar.' });
-        if (r.members.length >= maxPlayers(r.mode)) return sendTo(c, { t: 'error', msg: 'A sala está cheia.' });
+        if (!canEnter()) return;
+        const code = String(m.code ?? '').toUpperCase().trim();
+        const r = rooms.get(code);
+        if (!r) return sendTo(c, { t: 'error', msg: `Sala ${code || ''} não encontrada. Confira o código — ou a sala já foi fechada.`.replace('  ', ' ') });
+        if (c.room === r) return broadcastRoom(r); // já está nela: só manda a sala de novo
+        if (r.game) return sendTo(c, { t: 'error', msg: 'Essa sala já está no meio de uma partida. Espere acabar e tente de novo.' });
+        if (r.members.length >= maxPlayers(r.mode)) return sendTo(c, { t: 'error', msg: `A sala está cheia (${maxPlayers(r.mode)} de ${maxPlayers(r.mode)}).` });
         leaveRoom(c);
         r.members.push(c);
         c.room = r;
+        c.ready = false;
         broadcastRoom(r);
         break;
       }
@@ -465,7 +600,10 @@ wss.on('connection', (ws) => {
       }
       case 'start': {
         const r = c.room;
-        if (!r || r.host !== c.id || r.game) return;
+        if (!r) return sendTo(c, { t: 'error', msg: 'Você não está em nenhuma sala.' });
+        if (r.game) return; // já começou (toque duplo): ignora
+        if (r.host !== c.id) return sendTo(c, { t: 'error', msg: 'Só o dono da sala pode começar.' });
+        if (r.members.length > maxPlayers(r.mode)) return sendTo(c, { t: 'error', msg: `Gente demais para este modo (máximo ${maxPlayers(r.mode)}).` });
         startGame(r);
         break;
       }
@@ -482,7 +620,7 @@ wss.on('connection', (ws) => {
         const r = c.room;
         if (!r?.game || r.game.phase !== 'rewind') break;
         r.skipVotes.add(c.id);
-        if (r.members.every((x) => r.skipVotes.has(x.id))) r.game.skipRewind();
+        if (r.members.every((x) => x.gone || r.skipVotes.has(x.id))) r.game.skipRewind();
         break;
       }
       case 'ready': {
@@ -492,12 +630,13 @@ wss.on('connection', (ws) => {
       }
       case 'quick': {
         // busca automática: entra numa sala aberta do modo ou abre uma nova
+        if (!canEnter()) return;
         const mode: GameMode = validMode(m.mode) ? m.mode : 'chefe';
         leaveRoom(c);
         let r = [...rooms.values()].find((x) => x.public && !x.game && x.mode === mode && x.members.length < maxPlayers(mode));
         if (!r) {
           const arena = ARENAS[Math.floor(Math.random() * ARENAS.length)].id;
-          r = { code: newCode(), host: c.id, mode, arena, bots: 0, members: [], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: true, autoAt: Date.now() + 25_000 };
+          r = { code: newCode(), host: c.id, mode, arena, bots: 0, members: [], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: true, autoAt: Date.now() + 25_000, roster: [] };
           rooms.set(r.code, r);
         }
         r.members.push(c);
@@ -539,14 +678,17 @@ wss.on('connection', (ws) => {
     }
   });
   ws.on('close', () => {
-    leaveRoom(c);
-    clients.delete(c.id);
+    if (c.ws !== ws) return; // esta conexão já foi substituída por outra da mesma aba
+    // dentro de uma sala: guarda a vaga um pouco (pode ser só o 4G oscilando); fora: sai na hora
+    if (c.room && c.sid) markAway(c);
+    else dropClient(c);
   });
 });
 
 // derruba conexões mortas
 setInterval(() => {
   for (const c of clients.values()) {
+    if (c.gone || c.ws.readyState !== WebSocket.OPEN) continue;
     if (!c.alive) {
       c.ws.terminate();
       continue;

@@ -156,7 +156,7 @@ export class ClientGame {
     this.zones = s.Z;
 
     for (const row of s.P) {
-      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd] = row as any[];
+      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd] = row as any[];
       const p = this.players.find((q) => q.id === id);
       if (!p) continue;
       const wasAlive = p.alive;
@@ -202,6 +202,10 @@ export class ClientGame {
       p.itemN = itemN;
       p.kills = kills;
       p.roundWins = roundWins;
+      p.deaths = deaths ?? 0;
+      p.stats.dmg = dmg ?? 0;
+      p.stats.obj = objPts ?? 0;
+      p.portalCd = portalCd ?? 0;
       p.abilCd = abilCd;
       p.dashCd = dashCd;
       p.shieldHp = shieldHp;

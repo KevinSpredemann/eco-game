@@ -21,6 +21,8 @@ export interface Settings {
   rulesSeen: boolean;
   /** já escolheu entre conta e convidado na primeira abertura */
   welcomeSeen: boolean;
+  /** apelido de convidado no online */
+  nick: string;
   /** teclas (remapeáveis) */
   keys: KeyBinds;
   /** equipamento escolhido */
@@ -53,6 +55,7 @@ export const DEFAULTS: Settings = {
   tutorialDone: false,
   rulesSeen: false,
   welcomeSeen: false,
+  nick: '',
   keys: { ...DEFAULT_KEYS },
   loadout: { ...DEFAULT_LOADOUT },
   chefeRole: 'sorteio',

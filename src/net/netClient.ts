@@ -1,12 +1,33 @@
 // Conexão do aparelho com o servidor (WebSocket).
 import type { Input } from '../game/sim';
-import { BTN, ClientMsg, EndInfo, RoomInfo, ServerMsg, Snapshot, StartInfo } from './protocol';
+import { BTN, ClientMsg, EndInfo, PROTO, RoomInfo, ServerMsg, Snapshot, StartInfo } from './protocol';
+
+/** identificador desta aba: se a conexão cair (ou a página recarregar), o servidor devolve a mesma vaga na sala */
+export function sessionId(): string {
+  try {
+    let s = sessionStorage.getItem('eco-sid');
+    if (!s) {
+      s = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
+      sessionStorage.setItem('eco-sid', s);
+    }
+    return s;
+  } catch {
+    return (memSid ||= Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
+  }
+}
+let memSid = '';
 
 export class NetClient {
   private ws: WebSocket | null = null;
   id = '';
   name = '';
   room: RoomInfo | null = null;
+  /** última sala em que estava (para voltar depois de uma queda) */
+  lastRoom = '';
+  /** versão do servidor (diferente da nossa = jogo desatualizado de um dos lados) */
+  serverV = 0;
+  /** o servidor devolveu a vaga antiga na sala */
+  resumed = false;
   ping = 0;
   onRoom: (r: RoomInfo | null) => void = () => {};
   onStart: (s: StartInfo) => void = () => {};
@@ -32,7 +53,7 @@ export class NetClient {
           ws.close();
         }
       }, 70_000);
-      ws.onopen = () => this.send({ t: 'hello', name, token });
+      ws.onopen = () => this.send({ t: 'hello', name, token, sid: sessionId(), v: PROTO });
       ws.onmessage = (e) => {
         let m: ServerMsg;
         try {
@@ -44,6 +65,8 @@ export class NetClient {
           case 'hello':
             this.id = m.id;
             this.name = m.name;
+            this.serverV = m.v ?? 0;
+            this.resumed = !!m.resumed;
             if (!done) {
               done = true;
               clearTimeout(timeout);
@@ -52,6 +75,7 @@ export class NetClient {
             break;
           case 'room':
             this.room = m.room;
+            this.lastRoom = m.room.code;
             this.onRoom(m.room);
             break;
           case 'start':
@@ -65,6 +89,7 @@ export class NetClient {
             break;
           case 'left':
             this.room = null;
+            this.lastRoom = '';
             this.onRoom(null);
             break;
           case 'error':
@@ -83,10 +108,16 @@ export class NetClient {
         }
       };
       ws.onclose = () => {
+        if (this.ws !== ws) return;
         this.ws = null;
         this.room = null;
         clearInterval(this.pingTimer);
-        this.onClose();
+        if (!done) {
+          done = true;
+          clearTimeout(timeout);
+          reject(new Error('Não consegui conectar ao servidor online.'));
+        }
+        if (!this.closedByUs) this.onClose();
       };
       this.pingTimer = window.setInterval(() => this.send({ t: 'ping', at: performance.now() }), 3000);
     });
@@ -126,7 +157,10 @@ export class NetClient {
     this.pendCast = [null, null];
   }
 
+  private closedByUs = false;
   close() {
+    this.closedByUs = true;
+    clearInterval(this.pingTimer);
     this.ws?.close();
     this.ws = null;
   }
