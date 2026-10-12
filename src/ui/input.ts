@@ -72,6 +72,10 @@ export class InputManager {
   private touchCast: { ang: number; ratio: number } | null = null;
   private fireTouch = false;
   private fireMouse = false;
+  /** analógico direito (mira + tiro): arrasto atual em px a partir do centro, por dedo */
+  private aimStick = { active: false, id: -1, cx: 0, cy: 0, dx: 0, dy: 0, manual: false };
+  /** última direção mirada com o analógico direito (fica depois de soltar); null = mira automática */
+  lastAim: number | null = null;
   binds: KeyBinds = { ...DEFAULT_KEYS };
   /** posição do mouse na tela (para mirar no computador) */
   mouse = { x: 0, y: 0, at: 0 };
@@ -120,10 +124,14 @@ export class InputManager {
       const slot = this.slotOf(e.code);
       if (slot && this.aiming && this.aiming.slot === slot && !this.aiming.touch) this.release();
     });
-    window.addEventListener('blur', () => {
+    // trocou de app / aba: solta tudo (nada fica "preso" apertado)
+    const releaseAll = () => {
       this.keys.clear();
       this.cancelAim();
-    });
+      this.releaseSticks();
+    };
+    window.addEventListener('blur', releaseAll);
+    document.addEventListener('visibilitychange', () => document.hidden && releaseAll());
 
     const zone = touchRoot.querySelector<HTMLElement>('#stick-zone')!;
     const base = touchRoot.querySelector<HTMLElement>('#stick-base')!;
@@ -179,6 +187,12 @@ export class InputManager {
     };
     const end = (e: PointerEvent) => {
       if (e.pointerId !== this.stick.id) return;
+      this.stick.active = false;
+      this.stick.id = -1;
+      this.stick.x = this.stick.y = 0;
+      restBase();
+    };
+    this.resetMoveStick = () => {
       this.stick.active = false;
       this.stick.id = -1;
       this.stick.x = this.stick.y = 0;
@@ -245,7 +259,9 @@ export class InputManager {
         }
         const { dx, dy } = this.aiming.touch;
         const len = Math.hypot(dx, dy);
-        this.touchCast = len > 18 ? { ang: Math.atan2(dy, dx), ratio: Math.min(1, len / 90) } : null;
+        // arrastou o botão: mira do arrasto; só tocou: usa a mira do analógico direito (se tiver)
+        const stickAim = this.manualAim();
+        this.touchCast = len > 18 ? { ang: Math.atan2(dy, dx), ratio: Math.min(1, len / 90) } : stickAim !== null ? { ang: stickAim, ratio: 0.75 } : null;
         this.aiming = null;
         this.onAimChange?.(null);
         this.queued.add(slot);
@@ -263,20 +279,61 @@ export class InputManager {
     bindBtn('#btn-bonus', 'bonus');
     bindBtn('#btn-skill', 'skill');
     bindBtn('#btn-ult', 'ult');
-    // atirar: segurar o botão
+    // analógico direito (no lugar do ATIRAR): arrastar = mira em 360° e atira enquanto segura;
+    // só tocar = atira na mira automática. Ao soltar, a última direção arrastada continua valendo.
     const fireBtn = touchRoot.querySelector<HTMLElement>('#btn-fire')!;
+    const aknob = fireBtn.querySelector<HTMLElement>('.aknob');
+    const A = this.aimStick;
+    const AIM_DEAD = 14;
+    const setAKnob = () => {
+      if (!aknob) return;
+      const r = fireBtn.getBoundingClientRect().width * 0.32;
+      const d = Math.hypot(A.dx, A.dy);
+      const k = d > r ? r / d : 1;
+      aknob.style.transform = `translate(${A.dx * k}px, ${A.dy * k}px)`;
+    };
     fireBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      if (A.active) return;
       fireBtn.setPointerCapture(e.pointerId);
+      // o centro é onde o dedo tocou (a mira não pula para um lado ao encostar)
+      Object.assign(A, { active: true, id: e.pointerId, cx: e.clientX, cy: e.clientY, dx: 0, dy: 0, manual: false });
       this.fireTouch = true;
       fireBtn.classList.add('pressed');
+      setAKnob();
     });
-    const fireUp = () => {
+    fireBtn.addEventListener('pointermove', (e) => {
+      if (!A.active || e.pointerId !== A.id) return;
+      A.dx = e.clientX - A.cx;
+      A.dy = e.clientY - A.cy;
+      if (Math.hypot(A.dx, A.dy) > AIM_DEAD) {
+        A.manual = true;
+        this.lastAim = Math.atan2(A.dy, A.dx);
+      }
+      setAKnob();
+    });
+    const fireUp = (e: PointerEvent) => {
+      if (e.pointerId !== A.id) return;
+      // toque rápido sem arrastar: volta para a mira automática
+      if (!A.manual) this.lastAim = null;
+      A.active = false;
+      A.id = -1;
+      A.dx = A.dy = 0;
       this.fireTouch = false;
       fireBtn.classList.remove('pressed');
+      setAKnob();
     };
     fireBtn.addEventListener('pointerup', fireUp);
     fireBtn.addEventListener('pointercancel', fireUp);
+    fireBtn.addEventListener('lostpointercapture', fireUp);
+    this.resetAimStick = () => {
+      A.active = false;
+      A.id = -1;
+      A.dx = A.dy = 0;
+      this.fireTouch = false;
+      fireBtn.classList.remove('pressed');
+      setAKnob();
+    };
     // mouse no computador: mira e atira com o botão esquerdo sobre a arena
     const canvas = document.getElementById('game')!;
     window.addEventListener('mousemove', (e) => {
@@ -297,7 +354,6 @@ export class InputManager {
       }
     });
     window.addEventListener('mouseup', () => (this.fireMouse = false));
-    window.addEventListener('blur', () => (this.fireMouse = this.fireTouch = false));
 
     window.addEventListener(
       'touchstart',
@@ -310,6 +366,25 @@ export class InputManager {
       { passive: true },
     );
     if (window.matchMedia?.('(pointer: coarse)').matches) this.touchMode = true;
+  }
+
+  private resetMoveStick = () => {};
+  private resetAimStick = () => {};
+  /** solta os dois analógicos e o tiro (troca de app, fim de partida…) */
+  releaseSticks() {
+    this.fireMouse = false;
+    this.resetMoveStick();
+    this.resetAimStick();
+  }
+
+  /** mira manual do analógico direito: arrastando agora ou a última direção; null = automática */
+  manualAim(): number | null {
+    if (!this.touchMode) return null;
+    return this.lastAim;
+  }
+  /** o dedo está no analógico direito agora (para o indicador de mira) */
+  get aimHeld() {
+    return this.aimStick.active;
   }
 
   private slotOf(code: string): Slot | null {
@@ -388,7 +463,7 @@ export class InputManager {
     this.queued.clear();
     this.aiming = null;
     this.touchCast = null;
-    this.fireTouch = this.fireMouse = false;
-    this.stick.x = this.stick.y = 0;
+    this.lastAim = null;
+    this.releaseSticks();
   }
 }

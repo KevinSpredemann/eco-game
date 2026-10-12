@@ -42,6 +42,8 @@ function seeded(seed: number) {
 export class Renderer {
   /** prévia da habilidade sendo mirada pelo jogador local */
   aimPreview: AimPreview | null = null;
+  /** linha de mira do analógico direito (celular): direção e se o dedo está segurando */
+  aimGuide: { ang: number; held: boolean; color: string } | null = null;
   /** feixes disparados (efeito visual curto) */
   private beams: { x: number; y: number; ang: number; len: number; w: number; t: number; color: string }[] = [];
   /** animações de combate por jogador (recuo do tiro, pose de lançar) e do Chefe */
@@ -1476,11 +1478,17 @@ export class Renderer {
       ctx.restore();
     }
 
-    // portais
+    // portais (apagados com contagem enquanto VOCÊ ainda não pode usar de novo)
+    const meP = game.players.find((q) => q.id === this.meId(game));
+    const pcd = !this.showcase && meP ? meP.portalCd : 0;
     for (const pair of a.portals ?? []) {
       for (const p of pair) {
+        if (pcd > 0) {
+          ctx.save();
+          ctx.globalAlpha = 0.35;
+        }
         for (let i = 0; i < 3; i++) {
-          ctx.strokeStyle = hexA('#c77dff', 0.8 - i * 0.22);
+          ctx.strokeStyle = pcd > 0 ? hexA('#8a8aa0', 0.8 - i * 0.22) : hexA('#c77dff', 0.8 - i * 0.22);
           ctx.lineWidth = 3;
           ctx.beginPath();
           ctx.arc(p.x, p.y, 24 - i * 6, time * (2 + i) + i, time * (2 + i) + i + Math.PI * 1.4);
@@ -1493,6 +1501,17 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(p.x, p.y, 26, 0, Math.PI * 2);
         ctx.fill();
+        if (pcd > 0) {
+          ctx.restore();
+          ctx.fillStyle = '#fff';
+          ctx.font = '700 15px "Chakra Petch", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+          ctx.strokeText(String(Math.ceil(pcd)), p.x, p.y);
+          ctx.fillText(String(Math.ceil(pcd)), p.x, p.y);
+        }
       }
       ctx.strokeStyle = 'rgba(199,125,255,0.08)';
       ctx.setLineDash([3, 12]);
@@ -3354,8 +3373,10 @@ export class Renderer {
     const ex = sx + Math.cos(a) * len;
     const ey = sy + Math.sin(a) * len;
     ctx.save();
-    ctx.strokeStyle = hexA(w.color, 0.35);
-    ctx.lineWidth = 2;
+    // segurando o analógico direito (celular): a linha fica mais forte
+    const held = !!this.aimGuide?.held;
+    ctx.strokeStyle = hexA(w.color, held ? 0.75 : 0.35);
+    ctx.lineWidth = held ? 3 : 2;
     ctx.setLineDash([8, 8]);
     ctx.lineDashOffset = -time * 40;
     ctx.beginPath();
