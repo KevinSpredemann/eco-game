@@ -19,3 +19,6 @@ export const TOTAL_ROUNDS = 4;
 
 export const HAZARD_WARN = 1.6;
 export const HAZARD_ACTIVE = 2.6;
+
+/** espera para usar um portal de novo (s), por jogador */
+export const PORTAL_CD = 15;

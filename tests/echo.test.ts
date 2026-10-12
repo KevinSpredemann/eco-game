@@ -192,6 +192,38 @@ describe('Ecos numa partida', () => {
     expect(foe.lost).toBeGreaterThan(0);
   });
 
+  it('Eco não prende: depois do golpe dá para atravessar andando', () => {
+    const g = game('combate', [
+      { id: 'p0', char: 'kael', isBot: false },
+      { id: 'b0', char: 'nyx', isBot: false },
+    ]);
+    while (g.phase !== 'play') g.step(STEP, {});
+    const me = g.human;
+    // corredor livre de 220 px para andar
+    const free = (x: number, y: number) => (g as any).isFree(x, y, C.PLAYER_R + 2) as boolean;
+    let spot: [number, number] | null = null;
+    for (let y = 120; y < 600 && !spot; y += 20) for (let x = 120; x < 900 && !spot; x += 20) {
+      let ok = true;
+      for (let d = 0; d <= 220 && ok; d += 10) ok = free(x + d, y);
+      if (ok) spot = [x, y];
+    }
+    me.x = spot![0];
+    me.y = spot![1];
+    for (const o of g.players) if (o !== me) o.x = o.y = 30;
+    // Eco do rival parado no caminho, logo à direita
+    const r = new EchoRecorder('b0', 0, '#fff', 'nyx');
+    for (let t = 0; t <= 20000; t += 50) r.sample(t, me.x + 60, me.y, 0, false);
+    g.echoes.add(0, [r.finish(20000, me.x + 60, me.y, 0)]);
+    (g as any).refreshEchoViews();
+    me.invulnT = 0;
+    const hp0 = me.hp;
+    const x0 = me.x;
+    // anda para a direita por 2 s: leva UM golpe e depois passa para o outro lado do Eco
+    for (let i = 0; i < 120; i++) g.step(STEP, { mx: 1, my: 0 } as Input);
+    expect(me.hp).toBeLessThan(hp0);
+    expect(me.x).toBeGreaterThan(x0 + 60 + C.PLAYER_R + C.ECHO_R);
+  });
+
   it('Caça ao Chefe não grava Ecos nem rotas', () => {
     const g = game('chefe', [
       { id: 'h0', char: 'kael', isBot: true },

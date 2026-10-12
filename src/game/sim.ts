@@ -1472,7 +1472,7 @@ export class Game {
           p.x = to.x + ox;
           p.y = to.y + oy;
           this.collideWorld(p);
-          p.portalCd = 1.0;
+          p.portalCd = C.PORTAL_CD;
           this.events.push({ type: 'portal', x: to.x, y: to.y, pid: p.id });
           break;
         }
@@ -2171,13 +2171,17 @@ export class Game {
       if (this.rules.teams && (own || this.teamOf(e.rec.playerId) === p.team)) continue;
       const d = dist(p.x, p.y, e.x, e.y);
       if (d >= C.PLAYER_R + C.ECHO_R) continue;
-      // Ecos sempre bloqueiam/empurram
+      // Eco é fantasma: só empurra no instante em que acerta. Invulnerável (logo depois de levar
+      // o golpe) ou no seu próprio Eco sem dano, você atravessa — nada de ficar preso/arrastado nele.
       const nx = (p.x - e.x) / (d || 1);
       const ny = (p.y - e.y) / (d || 1);
-      p.x = e.x + nx * (C.PLAYER_R + C.ECHO_R);
-      p.y = e.y + ny * (C.PLAYER_R + C.ECHO_R);
-      this.collideWorld(p);
+      const pushOut = () => {
+        p.x = e.x + nx * (C.PLAYER_R + C.ECHO_R);
+        p.y = e.y + ny * (C.PLAYER_R + C.ECHO_R);
+        this.collideWorld(p);
+      };
       if (p.shieldT > 0) {
+        pushOut();
         this.disrupt(e, p);
         p.vx += nx * 300;
         p.vy += ny * 300;
@@ -2185,6 +2189,7 @@ export class Game {
       }
       if (p.invulnT > 0) continue;
       if (own && !this.cfg.ownEchoDamage) continue;
+      pushOut();
       p.vx = nx * 520;
       p.vy = ny * 520;
       if (own) p.stats.ownEchoHits++;
