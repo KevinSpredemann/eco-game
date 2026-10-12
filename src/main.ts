@@ -10,7 +10,7 @@ import { POWERS, getPower } from './game/powerups';
 import { WEAPONS, ITEMS, MAX_HP, GUN_Y, isPrimary } from './game/weapons';
 import { ClientGame } from './net/clientGame';
 import { NetClient } from './net/netClient';
-import type { EndInfo, RoomInfo } from './net/protocol';
+import { PROTO, type EndInfo, type RoomInfo } from './net/protocol';
 import { Renderer } from './render/renderer';
 import { drawCharacter } from './render/chars';
 import { drawMonster } from './render/monster';
@@ -18,6 +18,7 @@ import { account, serverUrl } from './ui/account';
 import { InputManager } from './ui/input';
 import { Settings, loadSettings, saveSettings } from './ui/settings';
 import { TitleShowcase } from './ui/titleShowcase';
+import { Scoreboard } from './ui/scoreboard';
 import { avatarURL, drawMapPreview, drawPortrait } from './ui/portraits';
 import { Carousel, fitText } from './ui/carousel';
 import { drawModeArt } from './ui/modeArt';
@@ -319,6 +320,7 @@ function go(action: string, el?: HTMLElement) {
       endMatch();
       if (net?.room) {
         net.send({ t: 'leave' });
+        net.lastRoom = '';
       }
       show('screen-title');
       audio.playMusic('menu');
@@ -345,6 +347,8 @@ function go(action: string, el?: HTMLElement) {
       break;
     case 'leave-room':
       net?.send({ t: 'leave' });
+      if (net) net.lastRoom = '';
+      lobbyPrev = null;
       show('screen-online');
       break;
     case 'share-room':
@@ -355,7 +359,19 @@ function go(action: string, el?: HTMLElement) {
       openSelect();
       break;
     case 'lobby-start':
+      // um toque só: o botão trava até o servidor responder (sem partida dupla)
+      if (startPending) break;
+      startPending = true;
+      startPendingT = performance.now();
+      $<HTMLButtonElement>('#lobby-start').disabled = true;
       net?.send({ t: 'start' });
+      break;
+    case 'online-retry':
+      if (retryRoom) {
+        const code = retryRoom;
+        retryRoom = '';
+        openOnline((n) => n.send({ t: 'join', code }));
+      } else openOnline();
       break;
   }
   void el;
@@ -843,7 +859,14 @@ function rewindPanel(g: AnyGame) {
   });
   const next = g.round < g.totalRounds ? `voltam como Ecos na rodada ${g.round + 1}` : 'última rodada';
   const gone = g.expiredRound !== null ? `<p class="rw-gone">Ecos da rodada ${g.expiredRound} se dissiparam</p>` : '';
-  el.innerHTML = `<p class="rw-h">GRAVADO NA RODADA ${g.round} · ${next}</p><ul>${rows.join('')}</ul>${gone}`;
+  // para que serve: o que você fez agora vira um fantasma que joga contra todos nas próximas rodadas
+  const last = g.round >= g.totalRounds;
+  const why = last
+    ? 'Última rodada: estes Ecos não voltam mais.'
+    : g.combat
+      ? `Na rodada ${g.round + 1}, cada um vira um Eco que repete a rota e os tiros de agora. Lembre por onde passou: ali vai ter um fantasma atirando. Desvie das rotas dos rivais e atraia-os para as suas.`
+      : `Na rodada ${g.round + 1}, cada um vira um Eco que refaz este caminho. Encostar num Eco tira 1 vida: lembre por onde todos passaram e evite essas rotas.`;
+  el.innerHTML = `<p class="rw-h">GRAVADO NA RODADA ${g.round} · ${next}</p><p class="rw-why">${why}</p><ul>${rows.join('')}</ul>${gone}`;
 }
 
 window.addEventListener('keydown', (e) => {
@@ -1061,38 +1084,125 @@ function drawTrailPreview(cv: HTMLCanvasElement, c: ReturnType<typeof getCharact
 }
 
 // ------------------------------------------------------------------ online
-async function ensureNet(): Promise<NetClient> {
-  if (net?.connected) return net;
+// Uma conexão só por aba (dois toques rápidos não abrem duas), e se ela cair o jogo tenta voltar
+// sozinho para a mesma sala: o servidor guarda a vaga por alguns segundos.
+let netPromise: Promise<NetClient> | null = null;
+let reconnecting = false;
+
+function ensureNet(): Promise<NetClient> {
+  if (net?.connected) return Promise.resolve(net);
+  if (!netPromise) netPromise = connectNet().finally(() => (netPromise = null));
+  return netPromise;
+}
+
+/** apelido de convidado (fica salvo); conta logada usa o nome da conta */
+function guestName(): string {
+  if (!settings.nick) {
+    settings.nick = 'Convidado ' + (10 + Math.floor(Math.random() * 90));
+    saveSettings(settings);
+  }
+  return settings.nick;
+}
+
+async function connectNet(): Promise<NetClient> {
   const base = serverUrl();
   if (!base) throw new Error('O servidor online ainda não foi publicado. Ele entra no ar junto com a próxima atualização no Render.');
   const n = new NetClient();
   n.onRoom = (r) => {
-    if (r) renderLobby(r);
-    else if (currentScreen() === 'screen-lobby') show('screen-online');
-  };
-  n.onError = (msg) => {
-    const box = $('#online-error');
-    box.textContent = msg;
-    box.hidden = false;
-    toast(msg);
-  };
-  n.onStart = (info) => startOnline(info);
-  n.onSnap = (s, ev) => {
-    if (game instanceof ClientGame) game.applySnapshot(s, ev);
-  };
-  n.onEnd = (info) => showOnlineResults(info);
-  n.onClose = () => {
-    if (game instanceof ClientGame) {
-      endMatch();
-      show('screen-online');
-      toast('A conexão com o servidor caiu.');
+    if (n !== net) return;
+    if (r) renderLobby(r, n.id);
+    else {
+      lobbyPrev = null;
+      if (currentScreen() === 'screen-lobby') show('screen-online');
     }
   };
-  await n.connect(base, account.logged ? account.profile.username : 'Convidado', account.token);
+  n.onError = (msg) => {
+    if (n !== net) return;
+    startPending = false;
+    $<HTMLButtonElement>('#lobby-start').disabled = false;
+    showOnlineError(msg);
+    toast(msg);
+  };
+  n.onStart = (info) => n === net && startOnline(info);
+  n.onSnap = (s, ev) => {
+    if (n === net && game instanceof ClientGame) game.applySnapshot(s, ev);
+  };
+  n.onEnd = (info) => n === net && showOnlineResults(info);
+  n.onClose = () => {
+    if (n !== net) return;
+    const room = n.lastRoom;
+    if (room || game instanceof ClientGame) reconnect(room);
+    else $('#online-status').textContent = 'Sem conexão';
+  };
+  const old = net;
+  await n.connect(base, account.logged ? account.profile.username : guestName(), account.token);
+  if (old && old !== n) old.close();
   net = n;
+  if (n.serverV !== PROTO) {
+    // app velho (ou servidor ainda atualizando): avisa em vez de entrar e ficar tudo estranho
+    const msg = n.serverV > PROTO
+      ? 'Seu jogo está desatualizado. Feche e abra o jogo de novo (ou recarregue a página) para atualizar.'
+      : 'O servidor está atualizando. Tente de novo em 1 minuto.';
+    showOnlineError(msg);
+    navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {});
+  }
   sendLobbyLook();
   return n;
 }
+
+function showOnlineError(msg: string, retry = false) {
+  const box = $('#online-error');
+  box.textContent = msg;
+  box.hidden = false;
+  $('#online-retry').hidden = !retry;
+}
+
+function setNetBanner(text: string | null) {
+  const b = $('#net-banner');
+  b.hidden = !text;
+  if (text) b.textContent = text;
+}
+
+/** a conexão caiu: tenta voltar algumas vezes (o servidor guarda a vaga por ~20 s) */
+async function reconnect(room: string) {
+  if (reconnecting) return;
+  reconnecting = true;
+  const inMatch = game instanceof ClientGame;
+  setNetBanner('Conexão perdida — reconectando…');
+  const waits = [400, 1000, 1500, 2500, 3500, 5000, 6000];
+  for (let i = 0; i < waits.length; i++) {
+    await new Promise((r) => setTimeout(r, waits[i]));
+    setNetBanner(`Conexão perdida — reconectando… (tentativa ${i + 1} de ${waits.length})`);
+    try {
+      const n = await ensureNet();
+      reconnecting = false;
+      setNetBanner(null);
+      if (n.resumed) {
+        toast('Reconectado! Você voltou para a sala.');
+        return;
+      }
+      // a vaga não existe mais: se era o saguão, tenta entrar de novo pelo código
+      if (inMatch && game instanceof ClientGame) {
+        endMatch();
+        show('screen-online');
+        showOnlineError('Você ficou fora tempo demais e a partida seguiu sem você. Entre de novo na sala quando ela acabar.');
+      }
+      if (room) n.send({ t: 'join', code: room });
+      return;
+    } catch {
+      /* tenta de novo */
+    }
+  }
+  reconnecting = false;
+  setNetBanner(null);
+  if (game instanceof ClientGame) endMatch();
+  lobbyPrev = null;
+  show('screen-online');
+  $('#online-status').textContent = 'Sem conexão';
+  showOnlineError('Sem conexão com o servidor. Confira a internet e toque em Tentar de novo.', true);
+  retryRoom = room;
+}
+let retryRoom = '';
 
 function sendLobbyLook() {
   const p = account.profile;
@@ -1148,31 +1258,40 @@ function openLoadout(ctx: 'pre' | 'pause' | 'lobby') {
 async function quickMatch(mode: GameMode) {
   try {
     const n = await ensureNet();
-    lobbyReady = false;
     n.send({ t: 'quick', mode });
     toast('Procurando jogadores…');
   } catch (e) {
-    toast((e as Error).message);
+    showOnlineError((e as Error).message, true);
   }
 }
 
-async function openOnline() {
+async function openOnline(then?: (n: NetClient) => void) {
   $('#online-error').hidden = true;
+  $('#online-retry').hidden = true;
   $('#online-status').textContent = 'Conectando…';
   $('#online-note').textContent = account.logged
     ? 'Partidas online dão 50% a mais de moedas.'
     : 'Você está como convidado: dá para jogar, mas só ganha moedas quem entra na conta (toque no seu nome lá em cima).';
+  $('#nick-row').hidden = account.logged;
+  $<HTMLInputElement>('#nick').value = account.logged ? '' : guestName();
   show('screen-online');
   try {
     const n = await ensureNet();
     $('#online-status').textContent = `Conectado como ${n.name}`;
+    then?.(n);
   } catch (e) {
     $('#online-status').textContent = 'Sem conexão';
-    const box = $('#online-error');
-    box.textContent = (e as Error).message;
-    box.hidden = false;
+    showOnlineError((e as Error).message, true);
   }
 }
+$('#nick').addEventListener('change', () => {
+  const v = $<HTMLInputElement>('#nick').value.replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 14);
+  if (!v) return;
+  settings.nick = v;
+  saveSettings(settings);
+  net?.send({ t: 'nick', name: v });
+  if (net) $('#online-status').textContent = `Conectado como ${v}`;
+});
 document.querySelectorAll<HTMLElement>('#online-modes .pill').forEach((p) =>
   p.addEventListener('click', () => {
     onlineMode = p.dataset.omode as GameMode;
@@ -1183,22 +1302,25 @@ document.querySelectorAll<HTMLElement>('#online-modes .pill').forEach((p) =>
 async function createRoom() {
   try {
     const n = await ensureNet();
-    lobbyReady = false;
     n.send({ t: 'create', mode: onlineMode, arena: settings.arena, bots: onlineMode === 'duelo' ? 0 : onlineMode === 'bandeira' || onlineMode === 'royale' || onlineMode === 'chefe' ? 3 : 1 });
   } catch (e) {
-    toast((e as Error).message);
+    showOnlineError((e as Error).message, true);
   }
 }
-$('#join-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const code = $<HTMLInputElement>('#join-code').value.trim().toUpperCase();
-  if (code.length !== 4) return toast('O código tem 4 letras.');
+async function joinRoom(code: string) {
+  code = code.trim().toUpperCase();
+  if (!/^[A-Z0-9]{4}$/.test(code)) return toast('O código tem 4 letras/números.');
+  $('#online-error').hidden = true;
   try {
     const n = await ensureNet();
     n.send({ t: 'join', code });
   } catch (err) {
-    toast((err as Error).message);
+    showOnlineError((err as Error).message, true);
   }
+}
+$('#join-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  joinRoom($<HTMLInputElement>('#join-code').value);
 });
 
 const arenaSel = $<HTMLSelectElement>('#lobby-arena');
@@ -1209,24 +1331,47 @@ for (const sel of ['#lobby-mode', '#lobby-arena', '#lobby-bots']) {
   });
 }
 
-function renderLobby(r: RoomInfo) {
-  const me = net!.id;
-  const host = r.players.find((p) => p.host)?.id === me;
+/** sala que estava na tela (para avisar quem entrou, saiu ou virou dono) */
+let lobbyPrev: RoomInfo | null = null;
+let startPending = false;
+let startPendingT = 0;
+
+function renderLobby(r: RoomInfo, me: string) {
+  const prev = lobbyPrev && lobbyPrev.code === r.code ? lobbyPrev : null;
+  lobbyPrev = r;
+  const hostP = r.players.find((p) => p.host);
+  const host = hostP?.id === me;
+  const mine = r.players.find((p) => p.id === me);
+  // avisos do que mudou
+  if (!prev) {
+    if (!host && hostP && r.state === 'lobby') toast(`Você entrou na sala de ${hostP.name}.`);
+  } else if (r.state === 'lobby' || prev.state === 'lobby') {
+    for (const p of r.players) if (p.id !== me && !prev.players.some((q) => q.id === p.id)) toast(`${p.name} entrou na sala.`);
+    for (const q of prev.players) if (!r.players.some((p) => p.id === q.id)) toast(`${q.name} saiu da sala.`);
+    const ph = prev.players.find((p) => p.host);
+    if (hostP && ph && ph.id !== hostP.id) toast(host ? 'Você agora é o dono da sala.' : `${hostP.name} agora é o dono da sala.`);
+  }
   $('#room-code').textContent = r.code;
-  const max = MODE_RULES[r.mode].maxPlayers;
+  const max = r.max ?? MODE_RULES[r.mode].maxPlayers;
+  $('#lobby-count').textContent = `${r.players.length} de ${max} pessoas na sala · ${MODE_LABEL[r.mode]}`;
   const list = $('#lobby-list');
   list.innerHTML = '';
   for (const p of r.players) {
     const c = withSkin(getCharacter(p.char), p.skin);
     const li = document.createElement('li');
     li.style.setProperty('--c', c.color);
-    li.innerHTML = `<img src="${avatarURL(c, 44)}" alt="" /><span class="ln">${escapeHtml(p.name)}${p.id === me ? ' (você)' : ''}${p.ready ? ' <span class="rdy">✓ pronto</span>' : ''}</span><span class="lt">${r.public ? 'Busca automática' : p.host ? 'Dono da sala' : p.logged ? 'Conta' : 'Convidado'} · ${c.name}</span>`;
+    li.classList.toggle('me', p.id === me);
+    li.classList.toggle('away', !!p.away);
+    li.dataset.pid = p.id;
+    const tags = `${p.id === me ? '<i class="tag you">Você</i>' : ''}${p.host ? '<i class="tag host">Dono</i>' : ''}`;
+    const state = p.away ? 'reconectando…' : p.ready ? '<span class="rdy">✓ pronto</span>' : r.public ? 'na fila' : p.logged ? 'conta' : 'convidado';
+    li.innerHTML = `<img src="${avatarURL(c, 44)}" alt="" /><span class="ln"><b class="pn">${escapeHtml(p.name)}</b>${tags}</span><span class="lt">${c.name} · ${state}</span>`;
     list.appendChild(li);
   }
   for (let i = r.players.length; i < max; i++) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = r.bots > i - r.players.length && r.mode !== 'duelo' ? 'Vaga — um bot entra se ninguém vier' : 'Vaga livre — mande o código para um amigo';
+    li.textContent = r.bots > i - r.players.length && r.mode !== 'duelo' ? 'Vaga — um bot entra se ninguém vier' : 'Vaga livre — mande o convite para um amigo';
     list.appendChild(li);
   }
   $<HTMLSelectElement>('#lobby-mode').value = r.mode;
@@ -1236,8 +1381,14 @@ function renderLobby(r: RoomInfo) {
   $('#lobby-bots').closest('label')!.hidden = r.mode === 'duelo';
   $('#lobby-start').hidden = !host || !!r.public;
   $('#lobby-config').hidden = !!r.public;
+  // "pronto" vem do servidor (não fica preso de uma sala para outra)
+  lobbyReady = !!mine?.ready;
+  $('#lobby-ready').textContent = lobbyReady ? 'Pronto ✓' : 'Estou pronto';
+  $('#lobby-ready').classList.toggle('primary', lobbyReady);
   const total = Math.min(max, r.mode === 'duelo' ? 2 : r.players.length + r.bots);
   const min = MIN_PLAYERS[r.mode] ?? 2;
+  const others = r.players.filter((p) => p.id !== me && !p.host);
+  const readyN = others.filter((p) => p.ready).length;
   $('#lobby-note').textContent = r.public
     ? `Busca automática · ${MODE_LABEL[r.mode]}: começa quando lotar, quando todos estiverem prontos ou em ${r.autoIn ?? 0}s (bots completam as vagas).`
     : r.mode === 'chefe' && total < min
@@ -1245,19 +1396,23 @@ function renderLobby(r: RoomInfo) {
       : host
         ? r.players.length < 2 && r.mode === 'duelo'
           ? 'Sozinho? Pode começar: um bot entra no lugar do amigo.'
-          : r.mode === 'chefe'
-            ? 'O Chefe é sorteado em rodízio: quem foi Chefe menos vezes tem a vez. Toque em Começar.'
-            : 'Quando todo mundo entrar, toque em Começar.'
-        : 'Esperando o dono da sala começar a partida.';
-  $<HTMLButtonElement>('#lobby-start').disabled = r.mode === 'chefe' && total < min;
-  if (!game && !['screen-select', 'screen-lobby'].includes(currentScreen() ?? '')) show('screen-lobby');
+          : others.length
+            ? `${readyN} de ${others.length} ${others.length === 1 ? 'amigo pronto' : 'amigos prontos'}. Quando quiser, toque em Começar.`
+            : r.mode === 'chefe'
+              ? 'O Chefe é sorteado em rodízio: quem foi Chefe menos vezes tem a vez. Toque em Começar.'
+              : 'Mande o convite para os amigos. Quando todo mundo entrar, toque em Começar.'
+        : `Você está na sala de ${hostP?.name ?? 'outro jogador'}. Esperando ${hostP?.name ?? 'o dono'} começar a partida.`;
+  if (r.state === 'playing' || performance.now() - startPendingT > 5000) startPending = false;
+  $<HTMLButtonElement>('#lobby-start').disabled = startPending || (r.mode === 'chefe' && total < min);
+  if (!game && !['screen-select', 'screen-lobby', 'screen-loadout'].includes(currentScreen() ?? '')) show('screen-lobby');
   if (currentScreen() === 'screen-online') show('screen-lobby');
 }
 
 async function shareRoom() {
   const code = net?.room?.code;
   if (!code) return;
-  const text = `Bora jogar ECO comigo! Abra ${location.origin}${location.pathname} → Jogar online → código ${code}`;
+  const link = `${location.origin}${location.pathname}?sala=${code}`;
+  const text = `Bora jogar ECO comigo! Toque no link para entrar na minha sala: ${link} (ou abra o jogo → Jogar online → Entrar → código ${code})`;
   try {
     if (navigator.share) await navigator.share({ title: 'ECO', text });
     else {
@@ -1415,22 +1570,36 @@ function monsterAvatar() {
   monsterAva = cv.toDataURL();
   return monsterAva;
 }
-let sbRows: Record<string, HTMLElement> = {};
+const scoreboard = new Scoreboard($('#scoreboard'), {
+  avatar: (p) => (p.boss ? monsterAvatar() : avatarURL(p.char, 44)),
+  esc: escapeHtml,
+  notify: (text, mine) => leadNote(text, mine),
+  compact: () => input.touchMode || innerHeight < 520,
+});
 function buildScoreboard() {
-  const sb = $('#scoreboard');
-  sb.innerHTML = '';
-  sbRows = {};
-  if (!game) return;
-  for (const p of game.players) {
-    const row = document.createElement('div');
-    const mine = p.id === game.human.id;
-    row.className = 'sb-row' + (mine ? ' me' : '');
-    row.style.setProperty('--c', p.color);
-    row.innerHTML = `<span class="bar"></span><img class="ava" src="${p.boss ? monsterAvatar() : avatarURL(p.char, 44)}" alt="" /><span class="name">${mine ? 'Você' : escapeHtml(p.name)}</span><span class="score">0</span><span class="hearts"></span>`;
-    sb.appendChild(row);
-    sbRows[p.id] = row;
-  }
+  scoreboard.build(game);
 }
+/** aviso curto embaixo do cronômetro (ex.: "Fulano assumiu a liderança") */
+let leadNoteT = 0;
+function leadNote(text: string, mine: boolean) {
+  const el = $('#lead-note');
+  el.textContent = text;
+  el.classList.toggle('mine', mine);
+  el.hidden = false;
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = '';
+  clearTimeout(leadNoteT);
+  leadNoteT = window.setTimeout(() => (el.hidden = true), 2600);
+}
+// computador: segurar Tab mostra o placar completo
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Tab' && game && !e.repeat && !input.capture) scoreboard.toggle(true);
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Tab') scoreboard.toggle(false);
+});
+window.addEventListener('blur', () => scoreboard.toggle(false));
 
 const hudCache: Record<string, string> = {};
 function setText(sel: string, v: string) {
@@ -1616,6 +1785,7 @@ function deniedReason(slot: Slot): string {
   if (!game) return '';
   const me = game.human;
   if (game.phase !== 'play') return 'Espere começar';
+  if (!me.alive) return 'Você caiu — espere voltar';
   if (me.stunT > 0) return 'Atordoado';
   if (me.boss) {
     const map: Partial<Record<Slot, keyof typeof BOSS.skills>> = { ability: 'impacto', skill: 'barragem', ult: 'chuva', bonus: 'obsidiana', dash: 'avanco' };
@@ -1699,18 +1869,7 @@ function updateHud() {
   const obj = objectiveHud(g);
   setText('#hud-objective', obj);
   $('#hud-objective').hidden = !obj;
-  for (const p of g.players) {
-    const row = sbRows[p.id];
-    if (!row) continue;
-    const sc = row.querySelector('.score')!;
-    const scoreTxt = g.mode === 'duelo' ? String(p.roundWins) : String(p.score);
-    if (sc.textContent !== scoreTxt) sc.textContent = scoreTxt;
-    const h = !p.playing ? '—' : g.combat ? `${Math.max(0, Math.ceil(p.hp))}♥` : '♥'.repeat(Math.max(0, p.hearts)) + '♡'.repeat(Math.max(0, C.HEARTS - p.hearts));
-    const he = row.querySelector('.hearts')!;
-    if (he.textContent !== h) he.textContent = h;
-    row.classList.toggle('out', !p.alive || !p.playing);
-    if (p.team >= 0 && g.mode === 'bandeira') row.style.setProperty('--team', TEAM_COLORS[p.team]);
-  }
+  scoreboard.update(g);
   const me = g.human;
   const ab = me.char.ability;
   const bonusOwner = me.bonusAb ? CHARACTERS.find((c) => c.ability.id === me.bonusAb) : null;
@@ -2252,6 +2411,9 @@ function readInput(): Input {
     const me = game.human;
     i.aim = Math.atan2(w.y - (me.y - GUN_Y), w.x - me.x);
   }
+  // celular: o analógico direito mira (independente do movimento); solto, a última direção continua
+  const stickAim = input.manualAim();
+  if (game && game.combat && stickAim !== null) i.aim = stickAim;
   // mira das habilidades: mouse (computador) ou arrasto do botão (toque)
   const pressed = (['ability', 'skill', 'ult', 'bonus', 'dash', 'item'] as Slot[]).find((k) => (i as any)[k]);
   if (game && pressed) {
@@ -2338,6 +2500,9 @@ input.onAimChange = (a) => {
   if (!a) renderer.aimPreview = null;
 };
 function updateAimPreview() {
+  // linha de mira do analógico direito (celular)
+  const ma = game && game.combat && game.phase === 'play' && game.human.alive ? input.manualAim() : null;
+  renderer.aimGuide = ma === null ? null : { ang: ma, held: input.aimHeld, color: game!.human.char.color };
   const a = input.aiming;
   if (!game || !a) {
     renderer.aimPreview = null;
@@ -2361,9 +2526,17 @@ function updateAimPreview() {
   renderer.aimPreview = { shape: info.shape, x: me.x, y: me.y, ang, dist: info.shape === 'wall' && info.kind === 'direction' ? Math.max(50, Math.min(info.range, 70)) : Math.min(dist, info.range || dist), range: info.range, r: info.r, w: info.w, color: info.color, label: `${info.name} · solte para usar` };
 }
 
+let laidW = 0;
+let laidH = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  // girou a tela e o aviso de "resize" veio cedo demais (comum no iPhone): reajusta aqui
+  if (innerWidth !== laidW || innerHeight !== laidH) {
+    laidW = innerWidth;
+    laidH = innerHeight;
+    layout();
+  }
   if (game) {
     const g = game;
     if (g instanceof ClientGame) {
@@ -2513,8 +2686,16 @@ applySettings();
 renderChip();
 account.refresh();
 layout();
+// convite (link ?sala=CODE): vai direto para a sala do amigo
+const invite = (new URLSearchParams(location.search).get('sala') ?? '').toUpperCase();
+if (/^[A-Z0-9]{4}$/.test(invite)) {
+  history.replaceState(null, '', location.pathname);
+  openOnline(() => joinRoom(invite));
+  $<HTMLInputElement>('#join-code').value = invite;
+  ($('[data-tabset=onl] [data-tab=entrar]') as HTMLElement).click();
+}
 // primeira vez: pergunta se quer entrar/criar conta ou jogar como convidado
-if (!account.logged && !settings.welcomeSeen) openAccount('choice');
+else if (!account.logged && !settings.welcomeSeen) openAccount('choice');
 else show('screen-title');
 requestAnimationFrame(frame);
 
@@ -2528,6 +2709,9 @@ requestAnimationFrame(frame);
   account,
   get game() {
     return game;
+  },
+  get net() {
+    return net;
   },
   start: (char: string, arena: string, mode: MatchMode = 'nucleo') => {
     settings.char = char;

@@ -68,7 +68,8 @@ export class TitleShowcase {
 
   /** tamanho da tela: só ajusta o canvas; o zoom é calculado a cada quadro em place() */
   private fit() {
-    const rect = this.cv.getBoundingClientRect();
+    // mede a TELA (o pai), não o canvas: o canvas guarda o tamanho antigo em px e não cresceria ao girar
+    const rect = (this.cv.parentElement ?? this.cv).getBoundingClientRect();
     this.w = rect.width;
     this.h = rect.height;
     if (!this.w || !this.h) return;
@@ -135,6 +136,10 @@ export class TitleShowcase {
   private tick(dt: number, time: number) {
     const g = this.g;
     if (!g) return;
+    // girou o celular (ou mudou a janela): o iPhone às vezes avisa antes de mudar o tamanho de verdade,
+    // então confere a cada quadro e reajusta quando a tela mudou
+    const box = this.cv.parentElement ?? this.cv;
+    if (Math.abs(box.clientWidth - this.w) > 1 || Math.abs(box.clientHeight - this.h) > 1) this.fit();
     // rodada acabou (alguém caiu ou o tempo acabou): segura a última imagem, escurece e troca de duelo
     if (g.phase !== 'play') {
       this.endT += dt;

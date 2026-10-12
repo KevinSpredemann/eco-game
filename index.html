@@ -24,6 +24,7 @@
         <div class="round" id="hud-round">RODADA 1/4</div>
         <div class="timer" id="hud-timer">30</div>
         <div class="objective" id="hud-objective"></div>
+        <div class="lead-note" id="lead-note" role="status" hidden></div>
       </div>
       <div class="hud-right">
         <button class="icon-btn" id="btn-mute" aria-label="Silenciar">🔊</button>
@@ -37,6 +38,7 @@
         <div class="bh-info" id="bh-info"></div>
       </div>
     </div>
+    <div id="sb-full" class="sb-full" hidden></div>
     <div id="banner" hidden><div class="banner-main"></div><div class="banner-sub"></div></div>
     <div id="hint" hidden></div>
     <div id="rw-sum" hidden></div>
@@ -47,7 +49,7 @@
       <div id="buttons">
         <button id="btn-ability" class="tbtn ability"><canvas class="ticon"></canvas><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">HAB</span><span class="tcd"></span></button>
         <button id="btn-dash" class="tbtn dash"><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">IMPULSO</span></button>
-        <button id="btn-fire" class="tbtn fire" hidden><span class="tlabel">ATIRAR</span></button>
+        <button id="btn-fire" class="tbtn fire" hidden aria-label="Mirar e atirar: arraste para mirar"><span class="aring"></span><span class="aknob"></span><span class="tlabel">ATIRAR</span></button>
         <button id="btn-item" class="tbtn item" hidden><canvas class="ticon"></canvas><span class="tlabel">ITEM</span></button>
         <button id="btn-bonus" class="tbtn bonus empty"><span class="bicon"></span><span class="tlabel">PODER</span></button>
         <button id="btn-skill" class="tbtn skill" hidden><canvas class="ticon"></canvas><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">HAB 2</span><span class="tcd"></span></button>
@@ -180,6 +182,7 @@
           <button class="tab" data-tab="entrar" role="tab">Entrar</button>
           <button class="tab" data-tab="buscar" role="tab">Buscar partida</button>
         </div>
+        <label class="nick-row" id="nick-row">Seu apelido <input id="nick" maxlength="14" autocomplete="off" spellcheck="false" aria-label="Seu apelido" /></label>
         <div class="online-box">
           <div class="pane" data-pane-of="onl" data-pane="criar">
           <h3 class="section-label">Escolha o modo e chame os amigos</h3>
@@ -208,12 +211,14 @@
           <button class="btn quick-btn" data-action="quick-chefe">Buscar partida · Caça ao Chefe</button>
           </div>
           <p class="form-error" id="online-error" role="alert" hidden></p>
+          <button class="btn small" data-action="online-retry" id="online-retry" hidden>Tentar de novo</button>
           <p class="form-note" id="online-note"></p>
         </div>
       </div>
     </section>
 
     <!-- Sala -->
+    <div id="net-banner" class="net-banner" role="status" hidden></div>
     <section id="screen-lobby" class="screen scroll" hidden>
       <div class="sheet narrow">
         <header class="sheet-head">
@@ -221,6 +226,7 @@
           <div class="head-title"><span class="step-tag">Código da sala</span><h2 class="room-code" id="room-code">----</h2></div>
           <button class="btn small" data-action="share-room">Convidar</button>
         </header>
+        <p class="lobby-count" id="lobby-count"></p>
         <ul class="lobby-list" id="lobby-list"></ul>
         <div class="lobby-config" id="lobby-config">
           <label class="opt">Modo
@@ -388,7 +394,7 @@
           </div>
           <div class="card">
             <h4>Controles</h4>
-            <p><b>Computador:</b> WASD anda · mouse mira, clique atira · <b>Q</b> habilidade do personagem · <b>E</b> habilidade do equipamento · <b>R</b> ultimate · <b>Shift</b> impulso · <b>Espaço</b> item · <b>F</b> poder do cristal · <b>Esc</b> cancela a mira ou pausa. Segure Q, E ou R para ver a prévia e solte para usar. Dá para trocar as teclas em Opções.<br /><b>Celular:</b> analógico à esquerda. Toque num botão de habilidade para usar na hora, ou arraste para mirar e solte. Para cancelar, solte em cima do "✕".</p>
+            <p><b>Computador:</b> WASD anda · mouse mira, clique atira · <b>Q</b> habilidade do personagem · <b>E</b> habilidade do equipamento · <b>R</b> ultimate · <b>Shift</b> impulso · <b>Espaço</b> item · <b>F</b> poder do cristal · <b>Esc</b> cancela a mira ou pausa. Segure Q, E ou R para ver a prévia e solte para usar. Dá para trocar as teclas em Opções.<br /><b>Celular:</b> analógico da esquerda anda. O da direita (ATIRAR) mira em qualquer direção e atira enquanto você segura; só tocar atira na mira automática. Toque numa habilidade para usar na direção da mira, ou arraste o botão para ver a área e solte. Para cancelar, solte em cima do "✕".</p>
           </div>
           <div class="card">
             <h4>Caça ao Chefe</h4>
