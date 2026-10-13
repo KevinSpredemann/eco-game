@@ -1,6 +1,6 @@
 import type { Difficulty } from '../game/sim';
 import { DEFAULT_LOADOUT, type Loadout } from '../game/balance';
-import { DEFAULT_KEYS, type KeyBinds } from './input';
+import { DEFAULT_KEYS, type ControlStyle, type KeyBinds } from './input';
 
 export interface Settings {
   master: number;
@@ -25,6 +25,10 @@ export interface Settings {
   nick: string;
   /** teclas (remapeáveis) */
   keys: KeyBinds;
+  /** clássico ou notebook (WASD + mouse). O remap fica por cima do estilo. */
+  control: ControlStyle;
+  /** 100 = padrão. Só o notebook usa, para o trackpad não pular a mira. */
+  aimSens: number;
   /** equipamento escolhido */
   loadout: Loadout;
   /** Caça ao Chefe contra bots: papel preferido */
@@ -57,6 +61,8 @@ export const DEFAULTS: Settings = {
   welcomeSeen: false,
   nick: '',
   keys: { ...DEFAULT_KEYS },
+  control: 'classic',
+  aimSens: 100,
   loadout: { ...DEFAULT_LOADOUT },
   chefeRole: 'sorteio',
   bossTurns: 0,

@@ -16,6 +16,36 @@ export const DEFAULT_KEYS: KeyBinds = {
   bonus: 'KeyF',
   fire: 'KeyJ',
 };
+/** Notebook: o mouse mira e atira. F usa o item. O cursor não é capturado. */
+export const NOTEBOOK_KEYS: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyE',
+  ult: 'KeyR',
+  dash: 'ShiftLeft',
+  item: 'KeyF',
+  bonus: 'Space',
+  fire: 'KeyJ',
+};
+export type ControlStyle = 'classic' | 'notebook';
+export function presetKeys(style: ControlStyle): KeyBinds {
+  return { ...(style === 'notebook' ? NOTEBOOK_KEYS : DEFAULT_KEYS) };
+}
+
+/** A mira acompanha o cursor sem pular: cada quadro anda no máximo um pedaço. */
+export function stepAim(current: number, target: number, sens: number): number {
+  let d = target - current;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  const cap = 0.45 * Math.max(0.35, Math.min(2, sens));
+  if (Math.abs(d) > cap) d = Math.sign(d) * cap;
+  return current + d;
+}
+
+/** Clique curto no notebook liga ou desliga o tiro. Segurar continua atirando sem trocar o modo. */
+export function clickFireLatch(latch: boolean, heldMs: number, toggle: boolean): boolean {
+  if (!toggle || heldMs >= 280) return latch;
+  return !latch;
+}
 export const ACTION_LABEL: Record<Action, string> = {
   ability: 'Habilidade do personagem',
   skill: 'Habilidade do equipamento',
@@ -83,6 +113,15 @@ export class InputManager {
   /** última direção mirada com o analógico direito (fica depois de soltar); null = mira automática */
   lastAim: number | null = null;
   binds: KeyBinds = { ...DEFAULT_KEYS };
+  control: ControlStyle = 'classic';
+  /** 1 = padrão; só o modo notebook suaviza a mira */
+  aimSens = 1;
+  /** tiro contínuo sem segurar o botão (notebook) */
+  fireLatch = false;
+  private mouseDownAt = 0;
+  private ateClick = false;
+  private rmbAim = false;
+  private aimAng: number | null = null;
   /** posição do mouse na tela (para mirar no computador) */
   mouse = { x: 0, y: 0, at: 0 };
   /** modo combate: Espaço vira item e o clique atira */
@@ -116,7 +155,8 @@ export class InputManager {
       }
       this.keys.add(e.code);
       if (e.code === 'Escape' || e.code === 'KeyP') {
-        // Esc primeiro cancela a mira; depois pausa
+        // Esc primeiro cancela a mira; depois pausa. O tiro travado solta.
+        this.fireLatch = false;
         if (this.aiming) this.cancelAim();
         else this.onPause?.();
         return;
@@ -133,6 +173,8 @@ export class InputManager {
     // trocou de app / aba: solta tudo (nada fica "preso" apertado)
     const releaseAll = () => {
       this.keys.clear();
+      this.fireLatch = false;
+      this.rmbAim = false;
       this.cancelAim();
       this.releaseSticks();
     };
@@ -356,16 +398,29 @@ export class InputManager {
       this.mouse = { x: e.clientX, y: e.clientY, at: performance.now() };
       if (e.button === 0) {
         // clique confirma a mira (habilidades de área)
-        if (this.aiming && !this.aiming.touch) this.release();
-        else this.fireMouse = true;
+        if (this.aiming && !this.aiming.touch) {
+          this.release();
+          this.ateClick = true;
+        } else {
+          this.fireMouse = true;
+          this.mouseDownAt = performance.now();
+          this.ateClick = false;
+        }
       }
       if (e.button === 2) {
-        // botão direito: cancela a mira; sem mira, usa o poder do cristal
         if (this.aiming) this.cancelAim();
+        else if (this.control === 'notebook') this.rmbAim = true;
         else this.press('bonus');
       }
     });
-    window.addEventListener('mouseup', () => (this.fireMouse = false));
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) {
+        const held = performance.now() - this.mouseDownAt;
+        if (!this.ateClick) this.fireLatch = clickFireLatch(this.fireLatch, held, this.control === 'notebook');
+        this.fireMouse = false;
+      }
+      if (e.button === 2) this.rmbAim = false;
+    });
 
     window.addEventListener(
       'touchstart',
@@ -385,8 +440,16 @@ export class InputManager {
   /** solta os dois analógicos e o tiro (troca de app, fim de partida…) */
   releaseSticks() {
     this.fireMouse = false;
+    this.rmbAim = false;
     this.resetMoveStick();
     this.resetAimStick();
+  }
+
+  /** Mira do notebook: segue o cursor e limita o giro para o trackpad não pular. */
+  smoothAim(target: number): number {
+    if (this.aimAng === null) this.aimAng = target;
+    this.aimAng = stepAim(this.aimAng, target, this.aimSens);
+    return this.aimAng;
   }
 
   /** mira manual do analógico direito: arrastando agora ou a última direção; null = automática */
@@ -450,7 +513,7 @@ export class InputManager {
       mx = this.stick.x;
       my = this.stick.y;
     }
-    const fire = this.fireTouch || this.fireMouse || k.has(this.binds.fire);
+    const fire = (this.fireTouch || this.fireMouse || this.fireLatch || k.has(this.binds.fire)) && !this.rmbAim;
     const q = this.queued;
     const out = {
       mx,
@@ -476,6 +539,9 @@ export class InputManager {
     this.aiming = null;
     this.touchCast = null;
     this.lastAim = null;
+    this.fireLatch = false;
+    this.rmbAim = false;
+    this.aimAng = null;
     this.releaseSticks();
   }
 }
