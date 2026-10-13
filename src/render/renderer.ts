@@ -839,8 +839,9 @@ export class Renderer {
             this.flashColor = '#ff2a4a';
           }
           const from = e.from ? pc(e.from) : null;
-          const label = e.by === 'own' ? 'SEU ECO!' : e.by === 'echo' ? (from ? `ECO DE ${(from.name || from.char.name).replace(/ \(bot\)$/, '').toUpperCase()}` : 'ECO!') : e.by === 'fall' ? 'QUEDA!' : '';
-          this.text(e.x, e.y - 40, label ? `-1 ♥ ${label}` : '-1 ♥', '#ff6b6b', 20);
+          const who = from ? (from.name || from.char.name).replace(/ \(bot\)$/, '').toUpperCase() : '';
+          const label = e.by === 'own' ? 'SEU ECO' : e.by === 'echo' ? 'ECO DA RODADA ANTERIOR' : e.by === 'fall' ? 'QUEDA!' : '';
+          this.text(e.x, e.y - 40, label ? `-1 ♥ ${label}${who && e.by === 'echo' ? ` · ${who}` : ''}` : '-1 ♥', e.by === 'echo' || e.by === 'own' ? '#9fdcff' : '#ff6b6b', 16);
           // perda do coração bem visível (anel vermelho em volta)
           this.ring(e.x, e.y - 30, '#ff4a6a', 56);
           if (e.lost) {
@@ -1038,6 +1039,10 @@ export class Renderer {
             const h = game.human;
             this.hitDirs.push({ ang: Math.atan2(e.sy - h.y, e.sx - h.x), t: 0.9, src: e.src ?? 'arma' });
             if (this.hitDirs.length > 6) this.hitDirs.shift();
+          }
+          if (e.note && e.pid === this.meId(game) && e.k === 'hp') {
+            this.text(e.x, e.y - 86, `${e.note}: −${e.n}`, '#9fdcff', 13);
+            this.ring(e.x, e.y - 20, '#9fdcff', 48);
           }
           // golpes rápidos no mesmo alvo viram UM número que vai somando (não empilha dezenas de números)
           if (e.k === 'hp' || e.k === 'shield' || e.k === 'heal') {
@@ -2038,6 +2043,18 @@ export class Renderer {
       ctx.globalCompositeOperation = 'lighter';
       this.sprites.draw(ctx, img, e.x, e.y + 4, flip, SPRITE_SCALE);
       ctx.globalCompositeOperation = 'source-over';
+      // contorno holográfico: o Eco não se confunde com um jogador ou um bot
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, alpha + 0.25);
+      ctx.strokeStyle = e.iced ? '#b8e6ff' : '#d7f7ff';
+      ctx.shadowColor = e.rec.color;
+      ctx.shadowBlur = 12;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(e.x, e.y - 28, 16, 30, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
       if (e.iced) {
         ctx.strokeStyle = 'rgba(200,240,255,0.9)';
         ctx.lineWidth = 2;
@@ -2196,9 +2213,9 @@ export class Renderer {
     const rk = an.recoil * an.recoil * 3;
     const rx = -Math.cos(p.aim) * rk;
     const ry = -Math.sin(p.aim) * rk * 0.5;
+    if (game.combat && human && p.alive) this.drawAimGuide(game, p, time);
     ctx.save();
     ctx.translate(rx, ry);
-    if (game.combat && human && p.alive) this.drawAimGuide(game, p, time);
     if (gunBehind) this.drawGun(p);
     // vida: inclina ao correr, pula de alegria, amassa ao levar dano
     const sp = Math.hypot(p.vx, p.vy);
@@ -2596,6 +2613,12 @@ export class Renderer {
       drawPowerIcon(ctx, pw.kind, 0, 0, 1, def.color);
       ctx.restore();
       label(ctx, pw.x, pw.y - 52 + bob, def.short.toUpperCase(), def.color, 13);
+      const me = game.human;
+      if (me?.alive && Math.hypot(me.x - pw.x, me.y - pw.y) < 110) {
+        label(ctx, pw.x, pw.y - 70 + bob, def.name, '#ffffff', 12);
+        const hint = def.desc.length > 46 ? def.desc.slice(0, 44) + '…' : def.desc;
+        label(ctx, pw.x, pw.y - 86 + bob, hint, def.color, 11);
+      }
     }
   }
 
@@ -2652,6 +2675,10 @@ export class Renderer {
     // tom azul por cima da arena (o passado)
     ctx.fillStyle = 'rgba(30,60,120,0.22)';
     ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    if (game.phaseT < 1.35) {
+      label(ctx, WORLD_W / 2, 48, 'REBOBINANDO', '#e7f8ff', 22);
+      label(ctx, WORLD_W / 2, 74, 'as ações desta rodada vão se repetir', '#9fdcff', 14);
+    }
     for (const d of digests) {
       const col = d.color;
       // parte já rebobinada (de agora até o fim): tracejado claro
