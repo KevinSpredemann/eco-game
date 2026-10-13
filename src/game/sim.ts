@@ -26,7 +26,7 @@ import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, KITS, Loadout, S
 import * as C from './constants';
 import { botCombat, botThink, BotBrain, NavGrid } from './bot';
 import { PowerId, getPower, randomPower } from './powerups';
-import { BOMB_DAMAGE, BOMB_FUSE, BOMB_RADIUS, ECHO_DAMAGE_MULT, GUN_Y, ICE_DAMAGE, ICE_RADIUS, ITEMS, ItemId, KIT_HEAL, MINE_DAMAGE, MINE_RADIUS, WEAPONS, WeaponId, isPrimary, loadoutPrimary } from './weapons';
+import { BOMB_DAMAGE, BOMB_FUSE, BOMB_RADIUS, ECHO_DAMAGE_MULT, GUN_Y, ICE_DAMAGE, ICE_RADIUS, ITEMS, ItemId, KIT_HEAL, MINE_DAMAGE, MINE_RADIUS, PULSE_DAMAGE, PULSE_FUSE, PULSE_RADIUS, WEAPONS, WeaponId, isPrimary, loadoutPrimary } from './weapons';
 import { withSkin } from './characters';
 import { choosePortalExit, portalPairAt } from './portals';
 import { DUEL, duelTiebreak, type DuelReason } from './duel';
@@ -233,6 +233,8 @@ export interface Cast {
   life: number;
   fired: boolean;
   acc: number;
+  /** dano deste golpe, quando a ultimate não usa o valor padrão do tipo */
+  dmg?: number;
 }
 export interface Trap {
   id: number;
@@ -402,6 +404,8 @@ export interface Bomb {
   fromEcho: boolean;
   /** granada de gelo */
   ice?: boolean;
+  /** pulso: explosão curta que atordoa */
+  pulse?: boolean;
 }
 
 export interface Mine {
@@ -983,8 +987,22 @@ export class Game {
     }
   }
 
-  private endRound() {
+  /** Grava a rodada que acabou. O placar já foi decidido antes; o Eco só vale na rodada seguinte. */
+  private sealEchoes() {
     const recs: EchoRecording[] = [];
+    for (const p of this.players) {
+      if (!p.playing || !p.recorder || this.mode === 'chefe') continue;
+      recs.push(p.recorder.finish(this.roundDur * 1000, p.x, p.y, p.dir));
+    }
+    this.lastRecordings = recs;
+    this.lastDigests = recs.filter((r) => r.frames.length > 1).map((r) => digestRecording(r));
+    this.roundEchoLines = summarizeRound(this.lastDigests, this.roundDur * 1000);
+    const removed = this.echoes.add(this.round, recs);
+    this.expiredRound = removed.length ? removed[0].round : null;
+    if (this.expiredRound !== null) this.events.push({ type: 'echoExpired', round: this.expiredRound });
+  }
+
+  private endRound() {
     let anyAlive = false;
     if (this.mode === 'duelo' || this.mode === 'combate' || this.mode === 'royale') {
       // vence a rodada quem sobrou (ou quem tem mais vida no fim do tempo)
@@ -1021,12 +1039,7 @@ export class Game {
       this.enemies = [];
     }
     for (const p of this.players) {
-      if (!p.playing) continue;
-      if (this.combat) {
-        // Caça ao Chefe tem uma rodada só: não grava Ecos (o Chefe não vira fantasma humano)
-        if (p.recorder && this.mode !== 'chefe') recs.push(p.recorder.finish(this.roundDur * 1000, p.x, p.y, p.dir));
-        continue;
-      }
+      if (!p.playing || this.combat) continue;
       if (p.alive) {
         anyAlive = true;
         this.award(p, POINTS.survive);
@@ -1036,15 +1049,9 @@ export class Game {
           this.events.push({ type: 'objective', pid: p.id, text: 'Intocável +1' });
         }
       }
-      if (p.recorder) recs.push(p.recorder.finish(this.roundDur * 1000, p.x, p.y, p.dir));
     }
     void anyAlive;
-    this.lastRecordings = recs;
-    this.lastDigests = recs.filter((r) => r.frames.length > 1).map((r) => digestRecording(r));
-    this.roundEchoLines = summarizeRound(this.lastDigests, this.roundDur * 1000);
-    const removed = this.echoes.add(this.round, recs);
-    this.expiredRound = removed.length ? removed[0].round : null;
-    if (this.expiredRound !== null) this.events.push({ type: 'echoExpired', round: this.expiredRound });
+    this.sealEchoes();
     this.phase = 'rewind';
     this.phaseT = 0;
     this.events.push({ type: 'phase', phase: 'rewind' });
@@ -1056,10 +1063,21 @@ export class Game {
   }
 
   private afterRewind() {
+    if (this.mode === 'duelo') {
+      const best = Math.max(0, ...this.players.map((p) => p.roundWins));
+      const done = best >= DUEL.wins || this.round >= this.totalRounds;
+      if (done) {
+        this.winners = this.players.filter((p) => p.roundWins === best && best > 0).map((p) => p.id);
+        if (!this.winners.length) this.winners = this.players.map((p) => p.id);
+        this.finishMatch();
+        return;
+      }
+      this.nextRound();
+      return;
+    }
     const lines = this.players.map((p) => ({ id: p.id, score: p.score }));
-    const duelDone = this.mode === 'duelo' && this.players.some((p) => p.roundWins >= 3);
     const wavesDone = this.mode === 'ondas' && this.gameWon !== null;
-    if (this.round < this.totalRounds && !this.tiebreak && !duelDone && !wavesDone) {
+    if (this.round < this.totalRounds && !this.tiebreak && !wavesDone) {
       this.nextRound();
       return;
     }
@@ -1206,7 +1224,7 @@ export class Game {
       if (!p.playing || !p.alive) continue;
       this.checkHazards(p);
       if (!p.alive) continue;
-      if (this.mode !== 'duelo') this.checkEchoes(p);
+      this.checkEchoes(p);
       if (!p.alive) continue;
       if (!this.combat) {
         this.checkPickups(p);
@@ -1220,7 +1238,7 @@ export class Game {
     }
     this.updateClones(dt);
     this.updateTurrets(dt);
-    if (this.mode !== 'duelo') this.replayEchoActions(tms);
+    this.replayEchoActions(tms);
     this.updatePowerups(dt);
     this.updateAbilityOrbs(dt);
     this.updateAbilities(dt);
@@ -1281,7 +1299,7 @@ export class Game {
     this.closeDuel(r.winner ? (this.players.find((p) => p.id === r.winner) ?? null) : null, r.reason);
   }
 
-  /** um round do X1 fecha uma vez: placar, banner e, se acabou, a partida. Sem Rebobinando. */
+  /** um round do X1 fecha uma vez. O placar sai agora; o Rebobinando vem depois e não muda o ponto. */
   private closeDuel(winner: Player | null, reason: DuelReason) {
     if (this.duelClosedRound === this.round || this.phase !== 'play') return;
     this.duelClosedRound = this.round;
@@ -1289,6 +1307,7 @@ export class Game {
       winner.roundWins++;
       this.award(winner, 1);
     }
+    this.sealEchoes();
     this.callWinner = winner?.id ?? null;
     this.callReason = reason;
     this.phase = 'call';
@@ -1298,15 +1317,9 @@ export class Game {
   }
 
   private afterDuelCall() {
-    const best = Math.max(0, ...this.players.map((p) => p.roundWins));
-    const done = best >= DUEL.wins || this.round >= this.totalRounds;
-    if (done) {
-      this.winners = this.players.filter((p) => p.roundWins === best && best > 0).map((p) => p.id);
-      if (!this.winners.length) this.winners = this.players.map((p) => p.id);
-      this.finishMatch();
-      return;
-    }
-    this.nextRound();
+    this.phase = 'rewind';
+    this.phaseT = 0;
+    this.events.push({ type: 'phase', phase: 'rewind' });
   }
 
   private updateRoundEvents() {
@@ -2702,7 +2715,7 @@ export class Game {
     }
   }
 
-  private throwBomb(x: number, y: number, ang: number, owner: string, fromEcho: boolean, tx?: number, ty?: number, ice = false) {
+  private throwBomb(x: number, y: number, ang: number, owner: string, fromEcho: boolean, tx?: number, ty?: number, ice = false, pulse = false) {
     let ex = tx ?? x + Math.cos(ang) * 210;
     let ey = ty ?? y + Math.sin(ang) * 210;
     // não atravessa paredes: para no primeiro obstáculo
@@ -2717,7 +2730,7 @@ export class Game {
         break;
       }
     }
-    this.bombs.push({ id: this.fragId++, x, y, sx: x, sy: y, tx: ex, ty: ey, t: 0, owner, fromEcho, ice });
+    this.bombs.push({ id: this.fragId++, x, y, sx: x, sy: y, tx: ex, ty: ey, t: 0, owner, fromEcho, ice, pulse });
     return { tx: ex, ty: ey };
   }
 
@@ -2731,6 +2744,9 @@ export class Game {
       p.recorder?.event(t, 'mine');
     } else if (p.item === 'gelo') {
       this.throwBomb(p.x, p.y, p.aim, p.id, false, undefined, undefined, true);
+    } else if (p.item === 'pulso') {
+      const target = this.throwBomb(p.x, p.y, p.aim, p.id, false, undefined, undefined, false, true);
+      p.recorder?.event(t, 'bomb', { tx: Math.round(target.tx), ty: Math.round(target.ty), w: 'pulso' });
     } else if (p.item === 'kit') {
       this.heal(p, p, KIT_HEAL);
       this.events.push({ type: 'heal', x: p.x, y: p.y, pid: p.id });
@@ -2770,6 +2786,17 @@ export class Game {
     this.hitTurrets(x, y, r, owner, dmg);
     this.damageCover(x, y, r, dmg * 0.8);
     for (const e of this.echoViews) if (e.active && !e.disrupted && dist(e.x, e.y, x, y) < r) this.disrupted.set(e.key, this.roundT + 2.5);
+  }
+
+  /** pulso: explosão menor que atordoa rivais na área */
+  private pulseBlast(x: number, y: number, owner: string, fromEcho: boolean) {
+    this.explode(x, y, PULSE_RADIUS, PULSE_DAMAGE, owner, fromEcho);
+    const op = this.players.find((q) => q.id === owner);
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || o.id === owner || dist(o.x, o.y, x, y) > PULSE_RADIUS) continue;
+      if (op && !this.hostile(op, o)) continue;
+      this.stun(o, 0.4);
+    }
   }
 
   /** granada de gelo: pouco dano, deixa todos na área lentos */
@@ -3006,8 +3033,10 @@ export class Game {
       const k = Math.min(1, bm.t / 0.35);
       bm.x = bm.sx + (bm.tx - bm.sx) * k;
       bm.y = bm.sy + (bm.ty - bm.sy) * k;
-      if (bm.t >= 0.35 + BOMB_FUSE) {
-        if (bm.ice) this.iceBlast(bm.x, bm.y, bm.owner);
+      const fuse = bm.pulse ? PULSE_FUSE : BOMB_FUSE;
+      if (bm.t >= 0.35 + fuse) {
+        if (bm.pulse) this.pulseBlast(bm.x, bm.y, bm.owner, bm.fromEcho);
+        else if (bm.ice) this.iceBlast(bm.x, bm.y, bm.owner);
         else this.explode(bm.x, bm.y, BOMB_RADIUS, BOMB_DAMAGE, bm.owner, bm.fromEcho);
         bm.t = -1;
       }
@@ -3077,7 +3106,7 @@ export class Game {
           echoShots++;
           this.spawnBullets(e.x, e.y, ev.a, (ev.w as WeaponId) ?? 'blaster', e.rec.playerId, true);
         } else if (ev.action === 'bomb' && ev.tx !== undefined && ev.ty !== undefined) {
-          this.throwBomb(e.x, e.y, 0, e.rec.playerId, true, ev.tx, ev.ty);
+          this.throwBomb(e.x, e.y, 0, e.rec.playerId, true, ev.tx, ev.ty, ev.w === 'gelo', ev.w === 'pulso');
         } else if (ev.action === 'mine') {
           this.mines.push({ id: this.fragId++, x: e.x, y: e.y, owner: this.rules.teams ? e.rec.playerId : 'eco', armT: 0.7 });
         }
@@ -3174,12 +3203,19 @@ export class Game {
         p.overT = u.duration ?? 5;
         p.shieldHp = Math.max(p.shieldHp, 30);
         break;
+      case 'onda':
+        this.addCast('meteoro', p, p.x, p.y, ang, { r: u.radius, windup: u.windup, dmg: u.damage });
+        break;
+      case 'lanca':
+        this.addCast('feixe', p, p.x, p.y, ang, { len: u.range, w: u.width, windup: u.windup, dmg: u.damage });
+        p.castT = u.windup;
+        break;
     }
     this.events.push({ type: 'ult', pid: p.id, x: p.x, y: p.y, ult: u.id });
   }
 
-  private addCast(kind: CastKind, p: Player, x: number, y: number, ang: number, o: { r?: number; len?: number; w?: number; windup?: number; life?: number }) {
-    this.casts.push({ id: this.fragId++, kind, owner: p.id, team: p.team, x, y, ang, r: o.r ?? 0, len: o.len ?? 0, w: o.w ?? 0, t: 0, windup: o.windup ?? 0, life: o.life ?? 0, fired: false, acc: 0 });
+  private addCast(kind: CastKind, p: Player, x: number, y: number, ang: number, o: { r?: number; len?: number; w?: number; windup?: number; life?: number; dmg?: number }) {
+    this.casts.push({ id: this.fragId++, kind, owner: p.id, team: p.team, x, y, ang, r: o.r ?? 0, len: o.len ?? 0, w: o.w ?? 0, t: 0, windup: o.windup ?? 0, life: o.life ?? 0, fired: false, acc: 0, dmg: o.dmg });
     this.events.push({ type: 'cast', pid: p.id, kind, x, y });
   }
 
@@ -3224,7 +3260,7 @@ export class Game {
     const hostileTo = (o: Player) => o.alive && o.playing && (!owner ? o.team !== c.team : this.hostile(owner, o));
     switch (c.kind) {
       case 'meteoro':
-        this.explode(c.x, c.y, c.r, ULTS.meteoro.damage, c.owner, false);
+        this.explode(c.x, c.y, c.r, c.dmg ?? ULTS.meteoro.damage, c.owner, false);
         break;
       case 'chuva':
         this.explode(c.x, c.y, c.r, BOSS.skills.chuva.damage ?? 30, c.owner, false);
@@ -3249,12 +3285,13 @@ export class Game {
         }
         const x1 = c.x + Math.cos(c.ang) * len;
         const y1 = c.y + Math.sin(c.ang) * len;
+        const beam = c.dmg ?? ULTS.feixe.damage;
         for (const o of this.players) if (hostileTo(o) && distToSegment(o.x, o.y, c.x, c.y, x1, y1) < c.w / 2 + this.hitR(o)) {
-          this.hurt(o, ULTS.feixe.damage, c.owner, 'pulse', c.ang);
+          this.hurt(o, beam, c.owner, 'pulse', c.ang);
           this.knock(o, Math.cos(c.ang) * 300, Math.sin(c.ang) * 300);
         }
-        if (!owner || this.enemyHostileTo(owner)) for (const e of this.enemies) if (distToSegment(e.x, e.y, c.x, c.y, x1, y1) < c.w / 2 + ENEMY_STATS[e.kind].r) this.hurtEnemy(e, ULTS.feixe.damage, c.owner);
-        this.hitTurrets((c.x + x1) / 2, (c.y + y1) / 2, len / 2, c.owner, ULTS.feixe.damage);
+        if (!owner || this.enemyHostileTo(owner)) for (const e of this.enemies) if (distToSegment(e.x, e.y, c.x, c.y, x1, y1) < c.w / 2 + ENEMY_STATS[e.kind].r) this.hurtEnemy(e, beam, c.owner);
+        this.hitTurrets((c.x + x1) / 2, (c.y + y1) / 2, len / 2, c.owner, beam);
         this.events.push({ type: 'castHit', kind: 'feixe', x: c.x, y: c.y, r: 0, ang: c.ang, len });
         return;
       }

@@ -279,7 +279,7 @@ export class ClientGame {
     this.powerups = s.W.map(([id, kind, x, y, age]) => ({ id: id as number, kind: kind as PowerId, x: x as number, y: y as number, age: age as number }));
     this.clones = s.C.map(([owner, x, y, dir]) => ({ owner, x, y, dir, t: 1 }));
     this.bullets = s.B.map(([id, x, y, vx, vy, wi, fe, life, en]) => ({ id, x, y, vx, vy, weapon: WEAPON_IDS[wi] ?? 'blaster', fromEcho: !!fe, life, owner: en ? 'enemy' : '' }));
-    this.bombs = s.BM.map(([id, x, y, tx, ty, t]) => ({ id, x, y, tx, ty, t, sx: x, sy: y }));
+    this.bombs = s.BM.map(([id, x, y, tx, ty, t, pulse, ice]) => ({ id, x, y, tx, ty, t, sx: x, sy: y, pulse: !!pulse, ice: !!ice }));
     this.mines = s.M.map(([id, x, y, armed]) => ({ id, x, y, armT: armed ? 0 : 1 }));
     this.turrets = s.T.map(([id, owner, x, y, aim, hp]) => ({ id, owner, x, y, aim, t: 1, cd: 0, hp: hp ?? COMBAT.turret.hp }));
     this.teamScore = s.ts ?? [0, 0];

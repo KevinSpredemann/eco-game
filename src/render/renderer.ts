@@ -4,7 +4,7 @@ import * as C from '../game/constants';
 import { ENEMY_STATS, TEAM_COLORS } from '../game/sim';
 import type { EchoView, Game, GameEvent, Player } from '../game/sim';
 import { PowerId, getPower } from '../game/powerups';
-import { WEAPONS, BOMB_FUSE, BOMB_RADIUS, MAX_HP, GUN_Y } from '../game/weapons';
+import { WEAPONS, BOMB_FUSE, BOMB_RADIUS, MAX_HP, GUN_Y, PULSE_FUSE, PULSE_RADIUS } from '../game/weapons';
 import { TRAILS } from '../game/economy';
 import { sampleRecording } from '../systems/echo/recorder';
 import { BOSS, SKILLS, ULTS } from '../game/balance';
@@ -2414,15 +2414,17 @@ export class Renderer {
     }
     for (const bm of game.bombs) {
       if (bm.t < 0.35) continue;
-      const k = (bm.t - 0.35) / BOMB_FUSE;
-      ctx.strokeStyle = `rgba(255,90,60,${0.25 + k * 0.5})`;
+      const fuse = bm.pulse ? PULSE_FUSE : BOMB_FUSE;
+      const k = (bm.t - 0.35) / fuse;
+      const rad = bm.pulse ? PULSE_RADIUS : bm.ice ? 110 : BOMB_RADIUS;
+      ctx.strokeStyle = bm.pulse ? `rgba(190,140,255,${0.3 + k * 0.5})` : `rgba(255,90,60,${0.25 + k * 0.5})`;
       ctx.lineWidth = 2;
       ctx.setLineDash([8, 6]);
       ctx.beginPath();
-      ctx.arc(bm.tx, bm.ty, BOMB_RADIUS, 0, Math.PI * 2);
+      ctx.arc(bm.tx, bm.ty, rad, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = `rgba(255,90,60,${0.08 + k * 0.12})`;
+      ctx.fillStyle = bm.pulse ? `rgba(180,120,255,${0.1 + k * 0.14})` : `rgba(255,90,60,${0.08 + k * 0.12})`;
       ctx.fill();
     }
   }
@@ -2569,7 +2571,7 @@ export class Renderer {
       ctx.fill();
       ctx.stroke();
       const lit = bm.t > 0.35 && Math.sin(time * (14 + bm.t * 30)) > 0;
-      ctx.fillStyle = lit ? '#ff3a1e' : '#ffb347';
+      ctx.fillStyle = bm.pulse ? (lit ? '#d7b4ff' : '#7a5cff') : lit ? '#ff3a1e' : '#ffb347';
       ctx.beginPath();
       ctx.arc(x + 4, y - 7, 3, 0, Math.PI * 2);
       ctx.fill();
@@ -2673,12 +2675,14 @@ export class Renderer {
     // começo do Rebobinando: some com os textos que sobraram da rodada (não cobrem a arena)
     if (game.phaseT < 0.1) for (const p of this.particles) if (p.kind === 'text' && p.life < p.max - 0.15) p.life = p.max - 0.15;
     // tom azul por cima da arena (o passado)
-    ctx.fillStyle = 'rgba(30,60,120,0.22)';
+    ctx.fillStyle = 'rgba(20,40,110,0.4)';
     ctx.fillRect(0, 0, WORLD_W, WORLD_H);
-    if (game.phaseT < 1.35) {
-      label(ctx, WORLD_W / 2, 48, 'REBOBINANDO', '#e7f8ff', 22);
-      label(ctx, WORLD_W / 2, 74, 'as ações desta rodada vão se repetir', '#9fdcff', 14);
-    }
+    const pulse = 0.85 + Math.sin(time * 6) * 0.15;
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    label(ctx, WORLD_W / 2, 58, 'REBOBINANDO', '#f4fbff', 32);
+    label(ctx, WORLD_W / 2, 96, 'ECO GRAVADO · volta na próxima rodada', '#b7ecff', 16);
+    ctx.restore();
     for (const d of digests) {
       const col = d.color;
       // parte já rebobinada (de agora até o fim): tracejado claro
@@ -2781,7 +2785,7 @@ export class Renderer {
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     ctx.fillStyle = Math.sin(time * 8) > -0.3 ? '#7ff0ff' : 'rgba(127,240,255,0.5)';
-    ctx.fillText('◀◀ REBOBINANDO', bx, by - 13);
+    ctx.fillText('◀◀ ECO', bx, by - 13);
     const sec = Math.ceil(tms / 1000);
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffffff';

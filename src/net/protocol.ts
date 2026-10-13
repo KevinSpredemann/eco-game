@@ -7,7 +7,7 @@ import { WEAPONS, type WeaponId, type ItemId } from '../game/weapons';
 
 export const WEAPON_IDS: WeaponId[] = Object.keys(WEAPONS) as WeaponId[];
 export const ENEMY_KINDS = ['drone', 'brute', 'boss', 'pylon', 'rastejador', 'carapaca', 'cuspidor', 'xama', 'semeador'] as const;
-export const ITEM_IDS: (ItemId | null)[] = [null, 'bomba', 'mina', 'gelo', 'kit'];
+export const ITEM_IDS: (ItemId | null)[] = [null, 'bomba', 'mina', 'gelo', 'kit', 'pulso'];
 export const CAST_KINDS: CastKind[] = ['meteoro', 'feixe', 'estase', 'impacto', 'chuva', 'barragem', 'avanco', 'obsidiana', 'fissura'];
 export const WALL_KINDS = ['gelo', 'barreira', 'obsidiana', 'caixa'] as const;
 
@@ -25,7 +25,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 5;
+export const PROTO = 6;
 
 export interface RoomInfo {
   code: string;
@@ -249,7 +249,7 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     RL: withRoutes && g.phase === 'rewind' ? g.roundEchoLines : undefined,
     Z: g.arena.zones.map((_, i) => ({ off: '0', warn: '1', on: '2' })[g.zoneState(i)]).join(''),
     B: g.bullets.map((b) => [b.id, r1(b.x), r1(b.y), Math.round(b.vx), Math.round(b.vy), WEAPON_IDS.indexOf(b.weapon), b.fromEcho ? 1 : 0, r2(b.life), b.owner === 'enemy' ? 1 : 0]),
-    BM: g.bombs.map((b) => [b.id, r1(b.x), r1(b.y), r1(b.tx), r1(b.ty), r2(b.t)]),
+    BM: g.bombs.map((b) => [b.id, r1(b.x), r1(b.y), r1(b.tx), r1(b.ty), r2(b.t), b.pulse ? 1 : 0, b.ice ? 1 : 0]),
     M: g.mines.map((m) => [m.id, r1(m.x), r1(m.y), m.armT <= 0 ? 1 : 0]),
     T: g.turrets.map((t) => [t.id, t.owner, r1(t.x), r1(t.y), r2(t.aim), Math.ceil(t.hp)]),
     ts: g.teamScore,
