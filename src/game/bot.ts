@@ -159,11 +159,18 @@ function octile(ax: number, ay: number, bx: number, by: number) {
  * Perfis de dificuldade. aim = erro de mira (rad) que muda devagar; lead = quanto antecipa o movimento;
  * react = tempo até atirar num alvo novo; burst/pause = rajadas e pausas (ninguém atira sem parar).
  */
-export const PROFILES: Record<Difficulty, { speedMul: number; avoid: number; think: number; dash: number; ability: number; sloppy: number; aim: number; lead: number; react: number; burst: number; pause: number }> = {
-  facil: { speedMul: 0.72, avoid: 0.55, think: 0.6, dash: 0.25, ability: 0.3, sloppy: 0.35, aim: 0.3, lead: 0.2, react: 0.75, burst: 0.8, pause: 0.9 },
-  normal: { speedMul: 0.86, avoid: 1.0, think: 0.4, dash: 0.6, ability: 0.7, sloppy: 0.12, aim: 0.15, lead: 0.6, react: 0.45, burst: 1.1, pause: 0.55 },
-  dificil: { speedMul: 0.97, avoid: 1.45, think: 0.25, dash: 0.9, ability: 1, sloppy: 0, aim: 0.09, lead: 0.85, react: 0.25, burst: 1.5, pause: 0.3 },
+export const PROFILES: Record<Difficulty, { speedMul: number; avoid: number; think: number; dash: number; ability: number; sloppy: number; aim: number; lead: number; react: number; burst: number; pause: number; focus: number }> = {
+  facil: { speedMul: 0.72, avoid: 0.55, think: 0.6, dash: 0.25, ability: 0.3, sloppy: 0.35, aim: 0.3, lead: 0.2, react: 0.75, burst: 0.8, pause: 0.9, focus: 1 },
+  normal: { speedMul: 0.86, avoid: 1.0, think: 0.4, dash: 0.6, ability: 0.7, sloppy: 0.12, aim: 0.15, lead: 0.6, react: 0.45, burst: 1.1, pause: 0.55, focus: 1 },
+  dificil: { speedMul: 0.97, avoid: 1.45, think: 0.25, dash: 0.9, ability: 1, sloppy: 0, aim: 0.09, lead: 0.85, react: 0.25, burst: 1.5, pause: 0.3, focus: 2 },
 };
+
+/** quem pode atirar no mesmo alvo: os mais perto primeiro, empate pelo id. Os outros só se posicionam. */
+export function fireSlot(ids: { id: string; d: number }[], me: string, cap: number): boolean {
+  const ranked = [...ids].sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : 1));
+  const i = ranked.findIndex((x) => x.id === me);
+  return i >= 0 && i < cap;
+}
 
 export class BotBrain {
   speedMul: number;
@@ -184,6 +191,7 @@ export class BotBrain {
   react: number;
   burst: number;
   pauseLen: number;
+  focus: number;
   /** alvo atual (para dividir alvos entre bots e para o tempo de reação) */
   targetId = '';
   seenT = 0;
@@ -199,6 +207,7 @@ export class BotBrain {
     this.react = p.react;
     this.burst = p.burst;
     this.pauseLen = p.pause;
+    this.focus = p.focus;
     this.speedMul = p.speedMul;
     this.avoid = p.avoid;
     this.thinkEvery = p.think;
@@ -487,7 +496,8 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
   } else b.seenT += dt;
   // pouca vida: recua para pegar cura (ou usa o kit)
   const lowHp = p.hp < p.maxHp * 0.35;
-  const want = RANGE[p.weapon] ?? WEAPONS[p.weapon]?.range ?? 280;
+  const roleDist: Record<string, number> = { investida: -50, escudo: -24, explosao: -36, cura: 36, teleporte: 48, fase: 20, muralha: -12, torreta: 16 };
+  const want = (RANGE[p.weapon] ?? WEAPONS[p.weapon]?.range ?? 280) + (roleDist[p.char.ability.id] ?? 0);
   const obj = objectiveGoal(game, p);
   const dTarget = target ? Math.hypot(target.x - p.x, target.y - p.y) : Infinity;
 
@@ -674,7 +684,11 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
           b.restT = b.pauseLen * (0.6 + Math.random() * 0.8);
         }
       }
-      out.fire = b.seenT >= b.react && b.restT <= 0;
+      const crew = game.players
+        .filter((q) => q.alive && q.brain && q.brain.targetId === tid)
+        .map((q) => ({ id: q.id, d: Math.hypot(q.x - target.x, q.y - target.y) }));
+      if (!crew.some((q) => q.id === p.id)) crew.push({ id: p.id, d });
+      out.fire = fireSlot(crew, p.id, b.focus) && b.seenT >= b.react && b.restT <= 0;
       if (p.item === 'kit' && p.hp < p.maxHp * 0.5) out.item = true;
       if (p.item === 'bomba' && d < 240 && Math.random() < 0.04) out.item = true;
       void WEAPONS;
