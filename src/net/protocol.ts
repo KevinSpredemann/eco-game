@@ -25,7 +25,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 3;
+export const PROTO = 4;
 
 export interface RoomInfo {
   code: string;
@@ -71,7 +71,8 @@ export type ClientMsg =
   | { t: 'ready'; on: boolean }
   | { t: 'skip' }
   | { t: 'leave' }
-  | { t: 'ping'; at: number };
+  | { t: 'ping'; at: number }
+  | { t: 'rematch'; on: boolean };
 
 export type ServerMsg =
   | { t: 'hello'; id: string; name: string; v?: number; resumed?: boolean }
@@ -79,6 +80,7 @@ export type ServerMsg =
   | { t: 'start'; info: StartInfo }
   | { t: 's'; s: Snapshot; ev: unknown[] }
   | { t: 'end'; info: EndInfo }
+  | { t: 'rematch'; state: 'wait' | 'no' | 'go'; by?: string }
   | { t: 'left'; why?: string }
   | { t: 'error'; msg: string }
   | { t: 'pong'; at: number };

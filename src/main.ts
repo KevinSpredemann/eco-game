@@ -307,11 +307,23 @@ function go(action: string, el?: HTMLElement) {
       break;
     case 'restart':
       if (isOnline()) {
+        const btn = $<HTMLButtonElement>('#screen-results .btn[data-action=restart]');
+        if (game?.mode === 'duelo' && btn.dataset.rematch === '1') {
+          net?.send({ t: 'rematch', on: true });
+          rematchPending = true;
+          $('#res-rematch').hidden = false;
+          $('#res-rematch').textContent = 'Revanche pedida. Esperando o outro jogador aceitar…';
+          return;
+        }
         endMatch();
         show('screen-lobby');
       } else startMatch();
       break;
     case 'select':
+      if (isOnline() && rematchPending) {
+        net?.send({ t: 'rematch', on: false });
+        rematchPending = false;
+      }
       endMatch();
       if (net?.room) show('screen-lobby');
       else openSelect();
@@ -1087,6 +1099,7 @@ function drawTrailPreview(cv: HTMLCanvasElement, c: ReturnType<typeof getCharact
 // Uma conexão só por aba (dois toques rápidos não abrem duas), e se ela cair o jogo tenta voltar
 // sozinho para a mesma sala: o servidor guarda a vaga por alguns segundos.
 let netPromise: Promise<NetClient> | null = null;
+let rematchPending = false;
 let reconnecting = false;
 
 function ensureNet(): Promise<NetClient> {
@@ -1128,6 +1141,19 @@ async function connectNet(): Promise<NetClient> {
     if (n === net && game instanceof ClientGame) game.applySnapshot(s, ev);
   };
   n.onEnd = (info) => n === net && showOnlineResults(info);
+  n.onRematch = (state, by) => {
+    if (n !== net) return;
+    const el = $('#res-rematch');
+    el.hidden = false;
+    if (state === 'wait') {
+      rematchPending = true;
+      el.textContent = by && by === n.id ? 'Você pediu revanche. Esperando o outro jogador aceitar…' : 'O adversário pediu revanche. Toque em Revanche para aceitar.';
+    } else if (state === 'no') {
+      rematchPending = false;
+      el.textContent = 'Revanche cancelada. Vocês continuam na sala.';
+    } else el.textContent = 'Revanche aceita. Começando…';
+    if (state !== 'go') toast(el.textContent);
+  };
   n.onClose = () => {
     if (n !== net) return;
     const room = n.lastRoom;
@@ -2286,6 +2312,10 @@ async function showResults() {
   const meWon = g.winners.includes(me.id);
   const shared = g.winners.length > 1;
   $('#res-eyebrow').textContent = training() ? 'Treino concluído' : g.tiebreak ? 'Fim do desempate' : `${MODE_LABEL[matchMode]} · fim da partida`;
+  $('#res-rematch').hidden = true;
+  $('#screen-results .btn[data-action=restart]').textContent = 'Revanche';
+  delete ($('#screen-results .btn[data-action=restart]') as HTMLButtonElement).dataset.rematch;
+  $('#screen-results .btn[data-action=select]').textContent = 'Trocar personagem';
   $('#res-title').textContent = training()
     ? `${me.score} pontos`
     : g.mode === 'chefe'
@@ -2392,7 +2422,20 @@ function showOnlineResults(info: EndInfo) {
   if (meWon) audio.victory();
   else audio.defeat();
   audio.stopMusic();
-  $('#screen-results .btn[data-action=restart]').textContent = 'Voltar para a sala';
+  rematchPending = false;
+  $('#res-rematch').hidden = true;
+  $('#res-rematch').textContent = '';
+  const restart = $<HTMLButtonElement>('#screen-results .btn[data-action=restart]');
+  const back = $('#screen-results .btn[data-action=select]');
+  if (g.mode === 'duelo') {
+    restart.textContent = 'Revanche';
+    restart.dataset.rematch = '1';
+    back.textContent = 'Voltar ao lobby';
+  } else {
+    restart.textContent = 'Voltar para a sala';
+    delete restart.dataset.rematch;
+    back.textContent = 'Trocar personagem';
+  }
   setTimeout(() => {
     if (game === g) show('screen-results');
   }, 900);

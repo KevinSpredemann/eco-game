@@ -10,6 +10,7 @@ import { Game, GameMode, Input, MIN_PLAYERS, MODE_RULES } from '../src/game/sim'
 import { Loadout, botLoadout, DEFAULT_LOADOUT, sanitizeLoadout } from '../src/game/balance';
 import { abilityLevel, buy, equip, matchReward, newProfile, owns, Profile, MatchMode, levelOf } from '../src/game/economy';
 import { BTN, ClientMsg, encodeSnapshot, echoSignature, EndInfo, LobbyPlayer, RoomInfo, ServerMsg, StartInfo, PROTO } from '../src/net/protocol';
+import { rematchStatus, RematchVote } from '../src/net/rematch';
 import { checkPassword, hashPassword, signToken, validPassword, validUsername, verifyToken } from './auth';
 import { FileStore, PgStore, Store, UserRecord } from './store';
 
@@ -192,6 +193,9 @@ interface Room {
   autoAt: number;
   /** escalação da partida em andamento (para quem reconecta no meio) */
   roster: RosterRow[];
+  /** votos de revanche do X1 (só os dois jogadores conectados) */
+  rematchVotes: Map<string, RematchVote>;
+  rematchAt: number;
 }
 
 const clients = new Map<string, Client>();
@@ -390,6 +394,8 @@ function startGame(r: Room, fill = false) {
   r.ticks = 0;
   r.pending = [];
   r.echoSig = '';
+  r.rematchVotes = new Map();
+  r.rematchAt = 0;
   for (const m of humans) m.input = { mx: 0, my: 0, dash: false, ability: false };
   for (const m of r.members) {
     const info: StartInfo = { you: m.id, mode: r.mode, arena: r.arena, roster };
@@ -441,6 +447,7 @@ setInterval(() => {
       }
     }
     if (r.autoAt) broadcastRoom(r);
+    if (!r.game && r.rematchAt && rematchStatus(rematchHumans(r), votesOf(r), Date.now(), r.rematchAt) === 'no') pushRematch(r);
   }
 }, 1000);
 
@@ -479,7 +486,41 @@ async function finishGame(r: Room) {
     rewards,
   };
   for (const m of r.members) sendTo(m, { t: 'end', info });
+  r.rematchVotes = new Map();
+  r.rematchAt = 0;
   broadcastRoom(r);
+}
+
+function rematchHumans(r: Room) {
+  return r.members.filter((m) => !m.gone).map((m) => m.id);
+}
+
+function votesOf(r: Room): Record<string, RematchVote | undefined> {
+  const o: Record<string, RematchVote | undefined> = {};
+  for (const [id, v] of r.rematchVotes) o[id] = v;
+  return o;
+}
+
+function pushRematch(r: Room) {
+  if (r.mode !== 'duelo' || r.game) return;
+  const humans = rematchHumans(r);
+  const status = rematchStatus(humans, votesOf(r), Date.now(), r.rematchAt);
+  if (status === 'idle') return;
+  if (status === 'go') {
+    for (const m of r.members) sendTo(m, { t: 'rematch', state: 'go' });
+    r.rematchVotes = new Map();
+    r.rematchAt = 0;
+    startGame(r, false);
+    return;
+  }
+  if (status === 'no') {
+    for (const m of r.members) sendTo(m, { t: 'rematch', state: 'no' });
+    r.rematchVotes = new Map();
+    r.rematchAt = 0;
+    return;
+  }
+  const by = [...r.rematchVotes.entries()].find(([, v]) => v === 'yes')?.[0];
+  for (const m of r.members) sendTo(m, { t: 'rematch', state: 'wait', by });
 }
 
 const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: 16 * 1024 });
@@ -558,7 +599,7 @@ wss.on('connection', (ws) => {
         leaveRoom(c);
         const mode: GameMode = validMode(m.mode) ? m.mode : 'combate';
         const arena = ARENAS.some((a) => a.id === m.arena) ? m.arena : 'lab';
-        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [] };
+        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [], rematchVotes: new Map(), rematchAt: 0 };
         rooms.set(r.code, r);
         c.room = r;
         c.ready = false;
@@ -615,6 +656,14 @@ wss.on('connection', (ws) => {
         if (c.room?.game) c.room.game.setLoadout(c.id, c.loadout);
         break;
       }
+      case 'rematch': {
+        const r = c.room;
+        if (!r || r.game || r.mode !== 'duelo') break;
+        if (!r.rematchAt) r.rematchAt = Date.now();
+        r.rematchVotes.set(c.id, m.on ? 'yes' : 'no');
+        pushRematch(r);
+        break;
+      }
       case 'skip': {
         // pular o Rebobinando: só quando todos os jogadores da sala pedem
         const r = c.room;
@@ -636,7 +685,7 @@ wss.on('connection', (ws) => {
         let r = [...rooms.values()].find((x) => x.public && !x.game && x.mode === mode && x.members.length < maxPlayers(mode));
         if (!r) {
           const arena = ARENAS[Math.floor(Math.random() * ARENAS.length)].id;
-          r = { code: newCode(), host: c.id, mode, arena, bots: 0, members: [], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: true, autoAt: Date.now() + 25_000, roster: [] };
+          r = { code: newCode(), host: c.id, mode, arena, bots: 0, members: [], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: true, autoAt: Date.now() + 25_000, roster: [], rematchVotes: new Map(), rematchAt: 0 };
           rooms.set(r.code, r);
         }
         r.members.push(c);

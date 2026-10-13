@@ -33,6 +33,7 @@ export class NetClient {
   onStart: (s: StartInfo) => void = () => {};
   onSnap: (s: Snapshot, ev: unknown[]) => void = () => {};
   onEnd: (e: EndInfo) => void = () => {};
+  onRematch: (state: 'wait' | 'no' | 'go', by?: string) => void = () => {};
   onError: (msg: string) => void = () => {};
   onClose: () => void = () => {};
   private pending = { dash: false, ability: false, item: false, bonus: false, skill: false, ult: false };
@@ -86,6 +87,9 @@ export class NetClient {
             break;
           case 'end':
             this.onEnd(m.info);
+            break;
+          case 'rematch':
+            this.onRematch(m.state, m.by);
             break;
           case 'left':
             this.room = null;
