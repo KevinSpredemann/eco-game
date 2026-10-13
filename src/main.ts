@@ -3,12 +3,12 @@ import { audio } from './audio/audio';
 import { ARENAS, WORLD_W, getArena } from './game/arenas';
 import { CHARACTERS, getCharacter, withLevel, withSkin } from './game/characters';
 import * as C from './game/constants';
-import { CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, owns, upgradePrice } from './game/economy';
+import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, canEquipWeapon, owns, upgradePrice } from './game/economy';
 import { roundBanner, type DuelReason } from './game/duel';
 import type { RoundEchoLine } from './systems/echo/digest';
 import { Game, GameEvent, GameMode, Input, MIN_PLAYERS, MINION_INFO, MinionKind, MODE_RULES, OBJECTIVES, RosterEntry, TEAM_COLORS } from './game/sim';
 import { POWERS, getPower } from './game/powerups';
-import { WEAPONS, ITEMS, MAX_HP, GUN_Y, isPrimary } from './game/weapons';
+import { WEAPONS, ITEMS, MAX_HP, GUN_Y, isPrimary, primaryOf } from './game/weapons';
 import { ClientGame } from './net/clientGame';
 import { NetClient } from './net/netClient';
 import { PROTO, type EndInfo, type RoomInfo } from './net/protocol';
@@ -18,14 +18,14 @@ import { drawMonster } from './render/monster';
 import { account, serverUrl } from './ui/account';
 import { InputManager, assistAim, nearestAim } from './ui/input';
 import { Settings, loadSettings, saveSettings } from './ui/settings';
-import { TitleShowcase } from './ui/titleShowcase';
+import { HomeHero } from './ui/homeHero';
+import { drawGear } from './ui/gearArt';
 import { Scoreboard } from './ui/scoreboard';
 import { avatarURL, drawMapPreview, drawPortrait } from './ui/portraits';
 import { Carousel, fitText } from './ui/carousel';
-import { drawModeArt } from './ui/modeArt';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
-import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, ULTS, sanitizeLoadout } from './game/balance';
+import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
 import { ACTION_LABEL, Action, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { SkillBar, SlotView, drawSlotArt, slotReady } from './ui/skillbar';
@@ -204,20 +204,23 @@ const SCREENS = [
   'screen-options',
   'screen-account',
   'screen-shop',
+  'screen-cosmetics',
   'screen-online',
   'screen-lobby',
   'screen-pause',
   'screen-results',
 ];
 const CHIP_ON = new Set(['screen-title']);
-const titleScene = new TitleShowcase($<HTMLCanvasElement>('#title-canvas'));
+const homeHero = new HomeHero($<HTMLCanvasElement>('#title-canvas'));
 // herói em destaque na tela inicial: começa pelo seu personagem e vai trocando
 function show(id: string | null) {
   for (const s of SCREENS) $('#' + s).hidden = s !== id;
   if (id === 'screen-title') {
-    titleScene.start();
+    fillHomeModes();
+    refreshHomeLook();
+    homeHero.start();
   } else {
-    titleScene.stop();
+    homeHero.stop();
   }
   if (id !== 'screen-select') heroScene.stop();
   if (id !== 'screen-map') mapScene.stop();
@@ -370,6 +373,9 @@ function go(action: string, el?: HTMLElement) {
       backFromShop = currentScreen() ?? 'screen-title';
       openShop('char');
       break;
+    case 'cosmetics':
+      openCosmetics(cosTab);
+      break;
     case 'account':
       openAccount();
       break;
@@ -431,7 +437,11 @@ function renderChip() {
   chip.classList.toggle('guest', !account.logged);
   chip.querySelector('.cv')!.textContent = String(p.coins);
   $('#shop-coins').textContent = `${p.coins} moedas`;
+  const cosCoins = document.getElementById('cos-coins');
+  if (cosCoins) cosCoins.textContent = `${p.coins} moedas`;
   settings.char = p.equipped.char;
+  refreshHomeLook();
+  if (currentScreen() === 'screen-cosmetics') paintCosmetics();
 }
 account.onChange(renderChip);
 
@@ -603,38 +613,145 @@ const MAIN_MODES: { id: MatchMode; name: string; line: string; tag: string; colo
 ];
 const EXTRA_MODES: MatchMode[] = ['nucleo', 'bandeira', 'rei', 'royale', 'treino'];
 
-function openModes() {
-  const g = $('#mode-grid');
-  g.innerHTML = '';
-  const pick = (id: MatchMode) => {
-    audio.click();
-    matchMode = id;
-    selectCtx = 'local';
-    openSelect();
-  };
+function pickMode(id: MatchMode) {
+  audio.click();
+  matchMode = id;
+  selectCtx = 'local';
+  openSelect();
+}
+
+function modePickButton(id: MatchMode, name: string, line: string, tag: string, color: string, icon: string): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'mode-pick';
+  b.style.setProperty('--c', color);
+  b.innerHTML = `<span class="mode-ico">${icon}</span><span class="mbody"><span class="mtag">${tag}</span><span class="mt">${name}</span><span class="md">${line}</span></span>`;
+  b.addEventListener('click', () => pickMode(id));
+  return b;
+}
+
+function fillModeLists(grid: HTMLElement, more: HTMLElement) {
+  grid.innerHTML = '';
   for (const m of MAIN_MODES) {
-    const b = document.createElement('button');
-    b.className = 'mode-card';
-    b.style.setProperty('--c', m.color);
-    b.innerHTML = `<canvas class="mode-art" aria-hidden="true"></canvas><span class="mtag">${m.tag}</span><span class="mbody"><span class="mt">${m.name}</span><span class="md">${m.line}</span></span>`;
-    b.addEventListener('click', () => pick(m.id));
-    g.appendChild(b);
+    const info = MODE_INFO.find((x) => x.id === m.id)!;
+    grid.appendChild(modePickButton(m.id, m.name, m.line, m.tag, m.color, info.icon));
   }
-  const row = $('#more-modes');
-  row.innerHTML = '';
+  more.innerHTML = '';
   for (const id of EXTRA_MODES) {
     const info = MODE_INFO.find((x) => x.id === id)!;
-    const b = document.createElement('button');
-    b.className = 'mm-chip';
-    b.style.setProperty('--c', info.color);
-    b.innerHTML = `${info.icon}<span>${id === 'bandeira' ? 'Bandeira 2x2' : info.name}</span>`;
-    b.title = info.desc;
-    b.addEventListener('click', () => pick(id));
-    row.appendChild(b);
+    const name = id === 'bandeira' ? 'Bandeira 2x2' : info.name;
+    more.appendChild(modePickButton(id, name, info.desc, info.tag, info.color, info.icon));
   }
-  show('screen-modes');
-  requestAnimationFrame(() => g.querySelectorAll<HTMLCanvasElement>('canvas.mode-art').forEach((cv, i) => drawModeArt(cv, MAIN_MODES[i].id, MAIN_MODES[i].color)));
 }
+
+function fillHomeModes() {
+  const grid = document.getElementById('home-mode-grid');
+  const more = document.getElementById('home-more-modes');
+  if (grid && more) fillModeLists(grid, more);
+}
+
+function openModes() {
+  fillModeLists($('#mode-grid'), $('#more-modes'));
+  show('screen-modes');
+}
+
+function refreshHomeLook() {
+  const p = account.profile;
+  homeHero.set(withSkin(getCharacter(p.equipped.char), p.equipped.skin), p.equipped.acc || 'nenhum', p.equipped.weapon || 'assinatura');
+}
+
+type CosTab = 'skin' | 'acc' | 'weapon';
+let cosTab: CosTab = 'skin';
+
+function openCosmetics(tab: CosTab = cosTab) {
+  cosTab = tab;
+  document.querySelectorAll<HTMLButtonElement>('#cos-tabs .tab').forEach((b) => b.classList.toggle('on', b.dataset.cosTab === tab));
+  paintCosmetics();
+  show('screen-cosmetics');
+}
+
+function paintCosmetics() {
+  const grid = document.getElementById('cos-grid');
+  if (!grid) return;
+  const p = account.profile;
+  const char = withSkin(getCharacter(p.equipped.char), p.equipped.skin);
+  const cards: { id: string; name: string; price: number; owned: boolean; on: boolean; kind: CosTab; color: string }[] = [];
+  if (cosTab === 'skin') {
+    for (const s of SKINS) cards.push({ id: s.id, name: s.name, price: s.price, owned: owns(p, 'skin:' + s.id), on: p.equipped.skin === s.id, kind: 'skin', color: s.glow ?? char.color });
+  } else if (cosTab === 'acc') {
+    for (const a of ACCESSORIES) cards.push({ id: a.id, name: a.name, price: a.price, owned: owns(p, 'acc:' + a.id), on: (p.equipped.acc || 'nenhum') === a.id, kind: 'acc', color: a.color });
+  } else {
+    const sign = WEAPONS[primaryOf(p.equipped.char)];
+    cards.push({ id: 'assinatura', name: 'Do personagem', price: 0, owned: true, on: (p.equipped.weapon || 'assinatura') === 'assinatura', kind: 'weapon', color: sign.color });
+    for (const id of STANDARD_PRIMARIES) {
+      const w = WEAPONS[id];
+      const price = gearPrice(id) ?? 0;
+      cards.push({ id, name: w.name, price, owned: canEquipWeapon(p, id), on: p.equipped.weapon === id, kind: 'weapon', color: w.color });
+    }
+  }
+  grid.replaceChildren();
+  for (const it of cards) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cos-card' + (it.on ? ' on' : '') + (it.owned ? '' : ' locked');
+    const need = it.owned ? (it.on ? 'Equipado' : 'Toque para usar') : `Libera com ${it.price} moedas`;
+    b.innerHTML = `<canvas class="pv"></canvas><span class="car-label"><b style="color:${it.color}">${it.name}</b><span>${need}</span></span>`;
+    b.addEventListener('click', () => void chooseCosmetic(it.kind, it.id));
+    grid.appendChild(b);
+  }
+  requestAnimationFrame(() => {
+    grid.querySelectorAll<HTMLCanvasElement>('canvas.pv').forEach((cv, i) => {
+      const it = cards[i];
+      if (it.kind === 'weapon') drawGear(cv, 'primary', it.id === 'assinatura' ? primaryOf(p.equipped.char) : it.id, it.color, { locked: !it.owned });
+      else drawPortrait(cv, it.kind === 'skin' ? withSkin(getCharacter(p.equipped.char), it.id) : char, { acc: it.kind === 'acc' ? it.id : p.equipped.acc, locked: !it.owned });
+    });
+  });
+}
+
+async function chooseCosmetic(kind: CosTab, id: string) {
+  audio.click();
+  const p = account.profile;
+  const owned = kind === 'weapon' ? canEquipWeapon(p, id) : owns(p, `${kind}:${id}`);
+  if (!owned) {
+    const err = await account.buy(`${kind === 'weapon' ? 'gear' : kind}:${id}`);
+    if (err) return toast(err);
+    toast('Liberado!');
+  }
+  const err = await account.equip(kind, id);
+  if (err) return toast(err);
+  if (kind === 'weapon') {
+    settings.loadout = sanitizeLoadout({ ...settings.loadout, primary: id }, (k) => owns(account.profile, k));
+    saveSettings(settings);
+  }
+  paintCosmetics();
+  refreshHomeLook();
+}
+
+function syncFavoriteWeapon() {
+  const local = settings.loadout?.primary || 'assinatura';
+  const saved = account.profile.equipped.weapon || 'assinatura';
+  if (!account.logged) {
+    const next = canEquipWeapon(account.profile, local) ? local : 'assinatura';
+    if (saved !== next) void account.equip('weapon', next);
+    return;
+  }
+  if (saved === 'assinatura' && local !== 'assinatura' && canEquipWeapon(account.profile, local)) {
+    void account.equip('weapon', local);
+    return;
+  }
+  if (settings.loadout.primary !== saved) {
+    settings.loadout = sanitizeLoadout({ ...settings.loadout, primary: saved }, (k) => owns(account.profile, k));
+    saveSettings(settings);
+    refreshHomeLook();
+  }
+}
+
+$('#cos-tabs')?.addEventListener('click', (e) => {
+  const t = (e.target as HTMLElement).closest<HTMLElement>('[data-cos-tab]');
+  if (!t?.dataset.cosTab) return;
+  audio.click();
+  openCosmetics(t.dataset.cosTab as CosTab);
+});
 
 const MODE_LABEL: Record<string, string> = {
   nucleo: 'Núcleo de Energia',
@@ -1295,6 +1412,7 @@ function openLoadout(ctx: 'pre' | 'pause' | 'lobby') {
     onConfirm: (l) => {
       settings.loadout = l;
       saveSettings(settings);
+      if (l.primary !== account.profile.equipped.weapon) void account.equip('weapon', l.primary);
       audio.click();
       if (ctx === 'pre') {
         startMatch();
@@ -2746,7 +2864,7 @@ function frame(now: number) {
 // fundo animado atrás dos menus
 let idleGame: Game | null = null;
 function drawIdle(time: number) {
-  if (titleScene.running) return;
+  if (homeHero.running) return;
   if (!idleGame) {
     const arena = ARENAS[Math.floor(Math.random() * ARENAS.length)];
     idleGame = new Game({ arena, humanChar: 'kael', bots: 4, difficulty: 'normal', ownEchoDamage: true, training: false, spectator: true, mode: Math.random() < 0.5 ? 'combate' : 'nucleo' });
@@ -2858,6 +2976,7 @@ $('#rules-powers').innerHTML = POWERS.filter((p) => p.modes.includes('nucleo')).
 bindOptions();
 applySettings();
 renderChip();
+syncFavoriteWeapon();
 account.refresh();
 layout();
 // convite (link ?sala=CODE): vai direto para a sala do amigo

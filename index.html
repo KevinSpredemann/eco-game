@@ -69,19 +69,33 @@
     <section id="screen-title" class="screen">
       <canvas class="title-art" id="title-canvas" aria-hidden="true"></canvas>
       <div class="title-shade" aria-hidden="true"></div>
-      <div class="title-cast" id="title-cast" aria-hidden="true"></div>
-      <div class="title-inner">
-        <h1 class="logo" data-text="ECO">ECO</h1>
-        <p class="tagline">O passado também joga</p>
-        <button class="btn primary play-btn" data-action="play"><span class="chev">«</span><span>Jogar</span><span class="chev">»</span></button>
-        <div class="menu-tiles">
-          <button class="tile online-btn" data-action="online"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3.2" /><circle cx="16.5" cy="9" r="3.2" /><path d="M2.5 19c.6-3.2 3-5 5.5-5s4.9 1.8 5.5 5M11 19c.6-3.2 3-5 5.5-5s4.9 1.8 5.5 5" /></svg><span>Online</span></button>
-          <button class="tile" data-action="shop"><svg viewBox="0 0 24 24"><path d="M4 8h16l-1.5 11.5a2 2 0 0 1-2 1.5h-9a2 2 0 0 1-2-1.5z" /><path d="M8.5 8V6.5a3.5 3.5 0 0 1 7 0V8" /></svg><span>Loja</span></button>
-          <button class="tile" data-action="howto"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1.9-1.1 1.8M12 17h.01" /></svg><span>Como jogar</span></button>
-          <button class="tile" data-action="options"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" /></svg><span>Opções</span></button>
+      <div class="home-col">
+        <header class="home-brand">
+          <h1 class="logo" data-text="ECO">ECO</h1>
+          <p class="tagline">O passado também joga</p>
+          <button class="btn primary play-btn" data-action="play"><span class="chev">«</span><span>Jogar</span><span class="chev">»</span></button>
+          <button class="btn small home-edit" type="button" data-action="cosmetics">Personalizar</button>
+        </header>
+        <div class="home-stage" id="home-stage">
+          <div class="title-cast" id="title-cast"></div>
         </div>
-        <button class="btn ghost small" data-action="install" id="btn-install" hidden>Instalar app</button>
-        <p class="title-foot" id="title-foot">Toque ou clique para ativar o som.</p>
+        <div class="home-modes" id="home-modes">
+          <div class="mode-grid" id="home-mode-grid"></div>
+          <div class="more-modes">
+            <span class="mm-label">Mais modos</span>
+            <div class="mm-row" id="home-more-modes"></div>
+          </div>
+        </div>
+        <div class="home-bar">
+          <div class="menu-tiles">
+            <button class="tile online-btn" data-action="online"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3.2" /><circle cx="16.5" cy="9" r="3.2" /><path d="M2.5 19c.6-3.2 3-5 5.5-5s4.9 1.8 5.5 5M11 19c.6-3.2 3-5 5.5-5s4.9 1.8 5.5 5" /></svg><span>Online</span></button>
+            <button class="tile" data-action="shop"><svg viewBox="0 0 24 24"><path d="M4 8h16l-1.5 11.5a2 2 0 0 1-2 1.5h-9a2 2 0 0 1-2-1.5z" /><path d="M8.5 8V6.5a3.5 3.5 0 0 1 7 0V8" /></svg><span>Loja</span></button>
+            <button class="tile" data-action="howto"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1.9-1.1 1.8M12 17h.01" /></svg><span>Como jogar</span></button>
+            <button class="tile" data-action="options"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" /></svg><span>Opções</span></button>
+          </div>
+          <button class="btn ghost small" data-action="install" id="btn-install" hidden>Instalar app</button>
+          <p class="title-foot" id="title-foot">Toque ou clique para ativar o som.</p>
+        </div>
       </div>
     </section>
 
@@ -168,6 +182,24 @@
         <div class="carousel shop-car" id="shop-car"></div>
         <div class="shop-act" id="shop-act"></div>
         <p class="form-note shop-note">Ganhe moedas jogando: cada partida dá moedas, vitórias e partidas online dão mais.</p>
+      </div>
+    </section>
+
+    <!-- Personalizar -->
+    <section id="screen-cosmetics" class="screen fit" hidden>
+      <div class="sheet fit">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="back">‹ Voltar</button>
+          <div class="head-title"><span class="step-tag" id="cos-coins">0 moedas</span><h2>Personalizar</h2></div>
+          <span></span>
+        </header>
+        <div class="tabs" id="cos-tabs" role="tablist">
+          <button class="tab on" type="button" data-cos-tab="skin">Roupas</button>
+          <button class="tab" type="button" data-cos-tab="acc">Acessórios</button>
+          <button class="tab" type="button" data-cos-tab="weapon">Arma favorita</button>
+        </div>
+        <div class="cos-grid" id="cos-grid"></div>
+        <p class="form-note">Seu personagem na tela inicial usa a roupa, o acessório e a arma escolhidos aqui. Itens pagos mostram quantas moedas faltam.</p>
       </div>
     </section>
 

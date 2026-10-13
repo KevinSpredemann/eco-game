@@ -1,6 +1,8 @@
 import { ArenaDef } from '../game/arenas';
 import { CharacterDef } from '../game/characters';
+import { accessoryById } from '../game/economy';
 import { drawCharacter, shade } from '../render/chars';
+import { accessoryBehind, drawAccessory } from '../render/accessories';
 import { Renderer } from '../render/renderer';
 
 // Retratos e miniaturas desenhados em vetor, na densidade real da tela (nítidos até em 4K).
@@ -10,7 +12,7 @@ export function dpr(): number {
 }
 
 /** Desenha o personagem de corpo inteiro num canvas de card. */
-export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { locked?: boolean; time?: number } = {}) {
+export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { locked?: boolean; time?: number; acc?: string } = {}) {
   const w = cv.clientWidth || cv.width;
   const h = cv.clientHeight || cv.height;
   if (!w || !h) return;
@@ -47,10 +49,13 @@ export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { loc
   g.fill();
   // personagem (altura ≈ 62 unidades)
   const s = Math.min((h * 0.8) / 64, (w * 0.9) / 34);
+  const acc = opts.acc ? accessoryById(opts.acc) : null;
   g.save();
   g.translate(w / 2, floorY);
   g.scale(s, s);
+  if (acc && accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
   drawCharacter(g, c, 'down', opts.time ?? 0, false);
+  if (acc && !accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
   g.restore();
 }
 
