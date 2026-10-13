@@ -55,12 +55,15 @@ export class ClientGame {
   coreNext: { x: number; y: number } | null = null;
   goldenSpot: { x: number; y: number } | null = null;
   goldenDone = false;
-  phase: 'prep' | 'play' | 'rewind' | 'results' = 'prep';
+  phase: 'prep' | 'play' | 'rewind' | 'call' | 'results' = 'prep';
   phaseT = 0;
   round = 1;
   totalRounds = 4;
   tiebreak = false;
   roundDur = 30;
+  sudden = false;
+  suddenLeft = 0;
+  callWinner: string | null = null;
   roundT = 0;
   worldT = 0;
   objective: any = 'dourado';
@@ -127,6 +130,7 @@ export class ClientGame {
     return c === '2' ? 'on' : c === '1' ? 'warn' : 'off';
   }
   timeLeft() {
+    if (this.sudden) return Math.max(0, this.suddenLeft);
     return Math.max(0, this.roundDur - this.roundT);
   }
   drainEvents(): GameEvent[] {
@@ -148,6 +152,9 @@ export class ClientGame {
     this.tiebreak = s.tb;
     this.roundDur = s.rd;
     this.roundT = s.rt;
+    this.sudden = s.sd === 1;
+    this.suddenLeft = s.sl ?? 0;
+    this.callWinner = s.ph === 'call' ? (s.cw ? s.cw : null) : null;
     this.worldT = s.wt;
     this.core = { x: s.core[0], y: s.core[1] };
     this.coreNext = s.cn ? { x: s.cn[0], y: s.cn[1] } : null;
@@ -318,6 +325,7 @@ export class ClientGame {
       this.aimLock = true;
     } else this.aimLock = false;
     if (this.phase === 'play') this.roundT += dt;
+    if (this.sudden && this.phase === 'play') this.suddenLeft = Math.max(0, this.suddenLeft - dt);
     this.worldT += dt;
     this.phaseT += dt;
     const k = 1 - Math.exp(-dt * 14);

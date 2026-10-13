@@ -25,7 +25,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 4;
+export const PROTO = 5;
 
 export interface RoomInfo {
   code: string;
@@ -96,6 +96,10 @@ export interface Snapshot {
   tb: boolean;
   rd: number;
   rt: number;
+  /** X1: morte súbita ligada e segundos que faltam; vencedor do round ('') */
+  sd?: 0 | 1;
+  sl?: number;
+  cw?: string;
   wt: number;
   core: [number, number];
   cn: [number, number] | 0;
@@ -183,6 +187,9 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     tb: g.tiebreak,
     rd: g.roundDur,
     rt: r2(g.roundT),
+    sd: g.sudden ? 1 : 0,
+    sl: r2(g.mode === 'duelo' && g.sudden ? Math.max(0, g.suddenLimit - g.suddenT) : 0),
+    cw: g.phase === 'call' ? (g.callWinner ?? '') : '',
     wt: r2(g.worldT),
     core: [g.core.x, g.core.y],
     cn: g.coreNext ? [g.coreNext.x, g.coreNext.y] : 0,

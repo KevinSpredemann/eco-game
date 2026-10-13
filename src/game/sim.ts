@@ -29,6 +29,7 @@ import { PowerId, getPower, randomPower } from './powerups';
 import { BOMB_DAMAGE, BOMB_FUSE, BOMB_RADIUS, ECHO_DAMAGE_MULT, GUN_Y, ICE_DAMAGE, ICE_RADIUS, ITEMS, ItemId, KIT_HEAL, MINE_DAMAGE, MINE_RADIUS, WEAPONS, WeaponId, isPrimary, loadoutPrimary } from './weapons';
 import { withSkin } from './characters';
 import { choosePortalExit, portalPairAt } from './portals';
+import { DUEL, duelTiebreak, type DuelReason } from './duel';
 
 export type Difficulty = 'facil' | 'normal' | 'dificil';
 export type ObjectiveId = 'dourado' | 'tripla' | 'intocavel';
@@ -44,7 +45,7 @@ export type GameMode = 'nucleo' | 'duelo' | 'combate' | 'bandeira' | 'rei' | 'on
 /** regras de cada modo */
 export const MODE_RULES: Record<GameMode, { rounds: number; dur: number; respawn: boolean; teams: boolean; maxPlayers: number }> = {
   nucleo: { rounds: C.TOTAL_ROUNDS, dur: C.ROUND_TIME, respawn: false, teams: false, maxPlayers: 4 },
-  duelo: { rounds: 5, dur: 40, respawn: false, teams: false, maxPlayers: 2 },
+  duelo: { rounds: 5, dur: DUEL.roundSec, respawn: false, teams: false, maxPlayers: 2 },
   combate: { rounds: 4, dur: 45, respawn: false, teams: false, maxPlayers: 4 },
   bandeira: { rounds: 3, dur: 70, respawn: true, teams: true, maxPlayers: 4 },
   rei: { rounds: 3, dur: 50, respawn: true, teams: false, maxPlayers: 4 },
@@ -85,6 +86,9 @@ export interface MatchConfig {
   training: boolean;
   /** fundo animado do menu: sem jogador humano */
   spectator?: boolean;
+  /** X1: duração da rodada e da morte súbita (testes e salas podem encurtar) */
+  roundSec?: number;
+  suddenSec?: number;
 }
 
 export interface Input {
@@ -498,7 +502,8 @@ export type GameEvent =
   | { type: 'explode'; x: number; y: number; r: number }
   | { type: 'kill'; pid: string; by: string | null; x: number; y: number }
   | { type: 'heal'; x: number; y: number; pid: string }
-  | { type: 'roundWin'; pid: string | null }
+  | { type: 'roundWin'; pid: string | null; reason?: DuelReason }
+  | { type: 'sudden' }
   | { type: 'zap'; pid: string; pts: number[] }
   | { type: 'capture'; pid: string; team: number }
   | { type: 'flagTake'; pid: string; team: number }
@@ -530,7 +535,7 @@ export type GameEvent =
   | { type: 'block'; x: number; y: number }
   | { type: 'stunned'; x: number; y: number; pid: string };
 
-export type Phase = 'prep' | 'play' | 'rewind' | 'results';
+export type Phase = 'prep' | 'play' | 'rewind' | 'call' | 'results';
 /** de onde veio o dano (para o indicador de direção e a cor do número) */
 export type DmgSrc = 'arma' | 'eco' | 'perigo' | 'golpe' | 'explosao' | 'criatura';
 
@@ -598,6 +603,14 @@ export class Game {
   totalRounds = C.TOTAL_ROUNDS;
   tiebreak = false;
   roundDur = C.ROUND_TIME;
+  /** X1: morte súbita ligada (o dano base passa a valer o dobro, uma vez) */
+  sudden = false;
+  suddenT = 0;
+  suddenLimit = DUEL.suddenSec;
+  /** vencedor do round em exibição; null com phase call = empate */
+  callWinner: string | null = null;
+  callReason: DuelReason | null = null;
+  private duelClosedRound = 0;
   roundT = 0; // segundos de rodada ativa
   worldT = 0; // relógio contínuo para pontes/pistões/feixes
   core: Pt = { x: 640, y: 360 };
@@ -632,6 +645,7 @@ export class Game {
     this.mode = cfg.training ? 'nucleo' : cfg.mode ?? 'nucleo';
     this.rules = MODE_RULES[this.mode];
     this.nav = new NavGrid(this.arena);
+    this.suddenLimit = cfg.suddenSec ?? DUEL.suddenSec;
     this.totalRounds = this.rules.rounds;
     const pve = this.mode === 'ondas';
     if (cfg.roster) {
@@ -808,7 +822,11 @@ export class Game {
     this.phaseT = 0;
     this.roundT = 0;
     this.lastTick = -1;
-    this.roundDur = this.tiebreak ? C.TIEBREAK_TIME : this.rules.dur;
+    this.roundDur = this.tiebreak ? C.TIEBREAK_TIME : this.mode === 'duelo' ? (this.cfg.roundSec ?? this.rules.dur) : this.rules.dur;
+    this.sudden = false;
+    this.suddenT = 0;
+    this.callWinner = null;
+    this.callReason = null;
     this.bullets = [];
     this.bombs = [];
     this.mines = [];
@@ -1153,10 +1171,16 @@ export class Game {
       return;
     }
 
+    if (this.phase === 'call') {
+      if (this.phaseT >= DUEL.callSec) this.afterDuelCall();
+      return;
+    }
+
     // ---- rodada ativa
     this.roundT += dt;
+    if (this.mode === 'duelo' && this.sudden) this.suddenT += dt;
     const tms = this.roundT * 1000;
-    const left = Math.ceil(this.roundDur - this.roundT);
+    const left = this.mode === 'duelo' && this.sudden ? Math.ceil(this.suddenLimit - this.suddenT) : Math.ceil(this.roundDur - this.roundT);
     if (left <= 5 && left !== this.lastTick && left > 0) {
       this.lastTick = left;
       this.events.push({ type: 'tick', n: left });
@@ -1182,7 +1206,7 @@ export class Game {
       if (!p.playing || !p.alive) continue;
       this.checkHazards(p);
       if (!p.alive) continue;
-      this.checkEchoes(p);
+      if (this.mode !== 'duelo') this.checkEchoes(p);
       if (!p.alive) continue;
       if (!this.combat) {
         this.checkPickups(p);
@@ -1196,7 +1220,7 @@ export class Game {
     }
     this.updateClones(dt);
     this.updateTurrets(dt);
-    this.replayEchoActions(tms);
+    if (this.mode !== 'duelo') this.replayEchoActions(tms);
     this.updatePowerups(dt);
     this.updateAbilityOrbs(dt);
     this.updateAbilities(dt);
@@ -1221,7 +1245,68 @@ export class Game {
       const hunters = this.players.some((p) => !p.boss && p.playing && (p.alive || p.respawnT > 0));
       bossDone = !b || !b.alive || !hunters;
     }
+    this.maybeEndRound(alive, lastStanding, waveCleared, bossDone);
+  }
+
+  /** X1 não usa o relógio do cliente: só este passo, no servidor ou na partida local, muda de fase. */
+  private maybeEndRound(alive: number, lastStanding: boolean, waveCleared: boolean, bossDone: boolean) {
+    if (this.mode === 'duelo') {
+      if (alive === 0 || lastStanding) {
+        const living = this.players.filter((p) => p.playing && p.alive);
+        if (living.length === 1) this.closeDuel(living[0], 'kill');
+        else this.closeDuelTie();
+        return;
+      }
+      if (!this.sudden && this.roundT >= this.roundDur) {
+        this.enterSudden();
+        return;
+      }
+      if (this.sudden && this.suddenT >= this.suddenLimit) this.closeDuelTie();
+      return;
+    }
     if (this.roundT >= this.roundDur || alive === 0 || lastStanding || waveCleared || bossDone) this.endRound();
+  }
+
+  private enterSudden() {
+    if (this.sudden || this.phase !== 'play') return;
+    this.sudden = true;
+    this.suddenT = 0;
+    this.lastTick = -1;
+    this.events.push({ type: 'sudden' });
+  }
+
+  private closeDuelTie() {
+    const rows = this.players.filter((p) => p.playing).map((p) => ({ id: p.id, hp: p.hp, dmg: p.stats.dmg }));
+    const r = duelTiebreak(rows);
+    this.closeDuel(r.winner ? (this.players.find((p) => p.id === r.winner) ?? null) : null, r.reason);
+  }
+
+  /** um round do X1 fecha uma vez: placar, banner e, se acabou, a partida. Sem Rebobinando. */
+  private closeDuel(winner: Player | null, reason: DuelReason) {
+    if (this.duelClosedRound === this.round || this.phase !== 'play') return;
+    this.duelClosedRound = this.round;
+    if (winner) {
+      winner.roundWins++;
+      this.award(winner, 1);
+    }
+    this.callWinner = winner?.id ?? null;
+    this.callReason = reason;
+    this.phase = 'call';
+    this.phaseT = 0;
+    this.events.push({ type: 'roundWin', pid: winner?.id ?? null, reason });
+    this.events.push({ type: 'phase', phase: 'call' });
+  }
+
+  private afterDuelCall() {
+    const best = Math.max(0, ...this.players.map((p) => p.roundWins));
+    const done = best >= DUEL.wins || this.round >= this.totalRounds;
+    if (done) {
+      this.winners = this.players.filter((p) => p.roundWins === best && best > 0).map((p) => p.id);
+      if (!this.winners.length) this.winners = this.players.map((p) => p.id);
+      this.finishMatch();
+      return;
+    }
+    this.nextRound();
   }
 
   private updateRoundEvents() {
@@ -2721,6 +2806,8 @@ export class Game {
     // invulnT > 1 = proteção de início de rodada/renascer (o resto só evita repetir dano de Eco/perigo)
     if (!p.alive || dmg <= 0) return;
     if (p.phaseT > 0 || p.invulnT > 1) return;
+    // morte súbita: o dano base dobra uma vez. Não acumula a cada passo.
+    if (this.mode === 'duelo' && this.sudden) dmg *= DUEL.mult;
     if (p.dodgeT > 0) {
       this.events.push({ type: 'dmg', pid: p.id, x: p.x, y: p.y, n: 0, k: 'dodge' });
       return;
@@ -4070,6 +4157,7 @@ export class Game {
   }
 
   timeLeft(): number {
+    if (this.mode === 'duelo' && this.sudden) return Math.max(0, this.suddenLimit - this.suddenT);
     return Math.max(0, this.roundDur - this.roundT);
   }
 }
