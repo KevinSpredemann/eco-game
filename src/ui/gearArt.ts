@@ -682,7 +682,6 @@ export function drawGear(cv: HTMLCanvasElement, kind: GearKind, id: string, colo
   g.save();
   g.translate((w - 120 * s) / 2, (h - bh * s) / 2 - by * s);
   g.scale(s, s);
-  if (opts.locked) g.filter = 'grayscale(0.85) brightness(0.65)';
   g.lineJoin = 'round';
   if (kind === 'primary') drawWeapon(g, id as WeaponId);
   else if (kind === 'kit') drawKit(g, id);

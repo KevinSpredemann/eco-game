@@ -1968,7 +1968,7 @@ input[type='checkbox'] {
   display: block;
 }
 .car-thumbs button.locked img {
-  filter: grayscale(0.9) brightness(0.55);
+  filter: saturate(0.72) brightness(0.96);
 }
 .car-thumbs button.on {
   border-color: var(--c);
@@ -4460,7 +4460,7 @@ body.rewinding #hud-status {
   box-shadow: none;
 }
 .sk.cool .sk-art {
-  filter: grayscale(1) brightness(0.5);
+  filter: saturate(0.7) brightness(0.82);
 }
 .sk.cool .sk-name {
   color: #7d8099;
@@ -4502,7 +4502,7 @@ body.rewinding #hud-status {
   transition: filter 0.15s, box-shadow 0.15s;
 }
 .tbtn.cool {
-  filter: grayscale(1) brightness(0.55);
+  filter: saturate(0.65) brightness(0.82);
   border-color: rgba(255, 255, 255, 0.18);
 }
 .tbtn.is-ready {
@@ -4525,13 +4525,13 @@ body.rewinding #hud-status {
 .lo-card.locked canvas,
 .shop-card.locked canvas,
 .lo-opt.locked canvas {
-  filter: grayscale(1) brightness(0.55);
+  filter: saturate(0.72) brightness(0.96);
 }
 .car-card.locked .car-label b {
   color: #b8bad0 !important;
 }
 .car-card.locked canvas.stage {
-  filter: grayscale(0.9) brightness(0.65);
+  filter: saturate(0.8) brightness(0.98);
 }
 /* aviso de indisponível ("vazio", "FASE 2", "TONTO") no meio do ícone, sem encostar na tecla */
 .sk.off .sk-num {

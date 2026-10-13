@@ -50,10 +50,8 @@ export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { loc
   g.save();
   g.translate(w / 2, floorY);
   g.scale(s, s);
-  if (opts.locked) g.filter = 'grayscale(0.85) brightness(0.55)';
   drawCharacter(g, c, 'down', opts.time ?? 0, false);
   g.restore();
-  g.filter = 'none';
 }
 
 const urlCache = new Map<string, string>();
