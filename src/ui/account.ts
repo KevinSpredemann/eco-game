@@ -1,5 +1,5 @@
 // Conta do jogador: convidado (salvo no aparelho) ou logado (salvo no servidor).
-import { buy, equip, grantStarters, matchReward, newProfile, MatchResult, Profile, levelOf } from '../game/economy';
+import { buy, equip, matchReward, newProfile, normalizeProfile, MatchResult, Profile, levelOf, EquipSlot } from '../game/economy';
 
 const PKEY = 'eco.profile.v1';
 const TKEY = 'eco.token.v1';
@@ -45,7 +45,7 @@ class Account {
       this.token = null;
     }
     // quem já jogou ganha os novos iniciais sem perder moedas nem compras
-    if (grantStarters(this.profile) && !this.logged) store(PKEY, this.profile);
+    if (normalizeProfile(this.profile) && !this.logged) store(PKEY, this.profile);
   }
 
   get logged() {
@@ -97,20 +97,24 @@ class Account {
     this.token = null;
     store(TKEY, null);
     this.profile = load(PKEY, newProfile());
-    grantStarters(this.profile);
+    normalizeProfile(this.profile);
     this.changed();
+  }
+  private take(profile: Profile) {
+    this.profile = profile;
+    normalizeProfile(this.profile);
   }
   private setSession(token: string, profile: Profile) {
     this.token = token;
     store(TKEY, token);
-    this.profile = profile;
+    this.take(profile);
     this.changed();
   }
   async refresh() {
     if (!this.logged) return;
     try {
       const d = await this.api('/api/me');
-      this.profile = d.profile;
+      this.take(d.profile);
       this.changed();
     } catch {
       /* fica com o que tem */
@@ -121,7 +125,7 @@ class Account {
     if (this.logged) {
       try {
         const d = await this.api('/api/buy', { item });
-        this.profile = d.profile;
+        this.take(d.profile);
         this.changed();
         return null;
       } catch (e) {
@@ -133,11 +137,11 @@ class Account {
     return err;
   }
 
-  async equip(slot: 'char' | 'skin' | 'trail', id: string): Promise<string | null> {
+  async equip(slot: EquipSlot, id: string): Promise<string | null> {
     if (this.logged) {
       try {
         const d = await this.api('/api/equip', { slot, id });
-        this.profile = d.profile;
+        this.take(d.profile);
         this.changed();
         return null;
       } catch (e) {
@@ -154,7 +158,7 @@ class Account {
     if (this.logged) {
       try {
         const d = await this.api('/api/reward', r);
-        this.profile = d.profile;
+        this.take(d.profile);
         this.changed();
         return d.coins;
       } catch {

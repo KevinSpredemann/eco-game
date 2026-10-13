@@ -8,7 +8,7 @@ import { CHARACTERS } from '../src/game/characters';
 import { BotBrain } from '../src/game/bot';
 import { Game, GameMode, Input, MIN_PLAYERS, MODE_RULES } from '../src/game/sim';
 import { Loadout, botLoadout, DEFAULT_LOADOUT, sanitizeLoadout } from '../src/game/balance';
-import { abilityLevel, buy, equip, grantStarters, matchReward, newProfile, owns, Profile, MatchMode, levelOf } from '../src/game/economy';
+import { abilityLevel, buy, canEquipWeapon, equip, matchReward, newProfile, normalizeProfile, owns, Profile, EquipSlot, MatchMode, levelOf } from '../src/game/economy';
 import { BTN, ClientMsg, encodeSnapshot, echoSignature, EndInfo, LobbyPlayer, RoomInfo, ServerMsg, StartInfo, PROTO } from '../src/net/protocol';
 import { rematchStatus, RematchVote } from '../src/net/rematch';
 import { checkPassword, hashPassword, signToken, validPassword, validUsername, verifyToken } from './auth';
@@ -55,8 +55,11 @@ function importGuest(p: Profile, guest: any) {
   p.xp = Math.min(20000, Number(guest.xp) || 0);
   p.wins = Math.min(5000, Number(guest.wins) || 0);
   p.matches = Math.min(20000, Number(guest.matches) || 0);
-  if (Array.isArray(guest.owned)) for (const it of guest.owned.slice(0, 60)) if (typeof it === 'string' && !p.owned.includes(it) && /^(char|skin|trail|gear):[a-z]+$/.test(it)) p.owned.push(it);
-  if (guest.equipped) for (const slot of ['char', 'skin', 'trail'] as const) if (owns(p, `${slot}:${guest.equipped[slot]}`)) p.equipped[slot] = guest.equipped[slot];
+  if (Array.isArray(guest.owned)) for (const it of guest.owned.slice(0, 80)) if (typeof it === 'string' && !p.owned.includes(it) && /^(char|skin|trail|gear|acc):[a-z0-9]+$/.test(it)) p.owned.push(it);
+  if (guest.equipped) {
+    for (const slot of ['char', 'skin', 'trail', 'acc'] as const) if (owns(p, `${slot}:${guest.equipped[slot]}`)) p.equipped[slot] = guest.equipped[slot];
+    if (canEquipWeapon(p, guest.equipped.weapon)) p.equipped.weapon = guest.equipped.weapon;
+  }
 }
 
 const loginAttempts = new Map<string, { n: number; at: number }>();
@@ -75,7 +78,7 @@ const http = createServer(async (req, res) => {
       const { hash, salt } = hashPassword(password);
       const profile = newProfile(username);
       importGuest(profile, guest);
-      grantStarters(profile);
+      normalizeProfile(profile);
       const u: UserRecord = { username, key, hash, salt, profile, lastRewardAt: 0, createdAt: Date.now() };
       if (!(await store.create(u))) return send(res, 409, { error: 'Esse apelido já existe. Escolha outro.' });
       return send(res, 200, { token: signToken(key, SECRET), profile: publicProfile(u) });
@@ -95,14 +98,14 @@ const http = createServer(async (req, res) => {
         return send(res, 401, { error: 'Apelido ou senha errados.' });
       }
       loginAttempts.delete(ip + key);
-      if (grantStarters(u.profile)) await store.save(u);
+      if (normalizeProfile(u.profile)) await store.save(u);
       return send(res, 200, { token: signToken(key, SECRET), profile: publicProfile(u) });
     }
 
     if (url.pathname === '/api/me') {
       const u = await userFrom(req);
       if (!u) return send(res, 401, { error: 'Entre de novo na sua conta.' });
-      if (grantStarters(u.profile)) await store.save(u);
+      if (normalizeProfile(u.profile)) await store.save(u);
       return send(res, 200, { profile: publicProfile(u) });
     }
 
@@ -120,8 +123,9 @@ const http = createServer(async (req, res) => {
       const u = await userFrom(req);
       if (!u) return send(res, 401, { error: 'Entre na sua conta.' });
       const { slot, id } = await readJson(req);
-      if (!['char', 'skin', 'trail'].includes(slot)) return send(res, 400, { error: 'Inválido.' });
-      const e = equip(u.profile, slot, String(id));
+      if (!['char', 'skin', 'trail', 'acc', 'weapon'].includes(slot)) return send(res, 400, { error: 'Inválido.' });
+      normalizeProfile(u.profile);
+      const e = equip(u.profile, slot as EquipSlot, String(id));
       if (e) return send(res, 400, { error: e });
       await store.save(u);
       return send(res, 200, { profile: publicProfile(u) });
@@ -578,7 +582,7 @@ wss.on('connection', (ws) => {
         c.v = Number(m.v) || 0;
         const key = verifyToken(m.token, SECRET);
         const u = key ? await store.get(key) : null;
-        if (u && grantStarters(u.profile)) await store.save(u);
+        if (u && normalizeProfile(u.profile)) await store.save(u);
         c.userKey = u ? u.key : null;
         c.name = u ? u.username : cleanName(m.name) || 'Convidado';
         if (u && !resumed) {

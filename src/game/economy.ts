@@ -1,4 +1,4 @@
-import { gearPrice } from './balance';
+import { STANDARD_PRIMARIES, gearPrice } from './balance';
 // Moedas, preços e itens de personalização. Usado pelo jogo e pelo servidor.
 
 export const START_COINS = 150;
@@ -25,15 +25,18 @@ export const CHAR_PRICES: Record<string, number> = {
 };
 
 /** Soma os iniciais que faltam. Não mexe em moedas, xp nem no que já foi comprado. */
+function grantKey(p: Profile, key: string): boolean {
+  if (p.owned.includes(key)) return false;
+  p.owned.push(key);
+  return true;
+}
+
 export function grantStarters(p: Profile): boolean {
   let changed = false;
-  for (const id of STARTER_CHARS) {
-    const key = 'char:' + id;
-    if (!p.owned.includes(key)) {
-      p.owned.push(key);
-      changed = true;
-    }
-  }
+  for (const id of STARTER_CHARS) if (grantKey(p, 'char:' + id)) changed = true;
+  for (const s of SKINS) if (s.price === 0 && grantKey(p, 'skin:' + s.id)) changed = true;
+  for (const a of ACCESSORIES) if (a.price === 0 && grantKey(p, 'acc:' + a.id)) changed = true;
+  if (grantKey(p, 'trail:nenhum')) changed = true;
   return changed;
 }
 
@@ -49,7 +52,7 @@ export interface Skin {
 
 export const SKINS: Skin[] = [
   { id: 'padrao', name: 'Padrão', price: 0 },
-  { id: 'noturno', name: 'Noturno', price: 150, suit: '#22222c', suitDark: '#0e0e14', glow: '#e8e8ff' },
+  { id: 'noturno', name: 'Noturno', price: 0, suit: '#22222c', suitDark: '#0e0e14', glow: '#e8e8ff' },
   { id: 'gelo', name: 'Gelo', price: 200, suit: '#cfeeff', suitDark: '#7fb2d6', glow: '#7ff0ff' },
   { id: 'neon', name: 'Neon', price: 250, suit: '#1a0d33', suitDark: '#0b0618', glow: '#39ff88' },
   { id: 'lava', name: 'Lava', price: 300, suit: '#4a1208', suitDark: '#220604', glow: '#ff7a1e' },
@@ -70,6 +73,30 @@ export interface Trail {
   colors: string[];
 }
 
+export type AccessoryKind = 'none' | 'cap' | 'goggles' | 'halo' | 'cape' | 'wings';
+
+export interface Accessory {
+  id: string;
+  name: string;
+  price: number;
+  kind: AccessoryKind;
+  color: string;
+}
+
+/** Acessórios. Os de preço 0 já vêm liberados; o resto fica trancado até comprar. */
+export const ACCESSORIES: Accessory[] = [
+  { id: 'nenhum', name: 'Nenhum', price: 0, kind: 'none', color: '#9aa3c7' },
+  { id: 'bone', name: 'Boné', price: 0, kind: 'cap', color: '#3ee8ff' },
+  { id: 'oculos', name: 'Óculos', price: 0, kind: 'goggles', color: '#e8ecff' },
+  { id: 'halo', name: 'Halo', price: 250, kind: 'halo', color: '#ffe14a' },
+  { id: 'capa', name: 'Capa', price: 400, kind: 'cape', color: '#ff4fc3' },
+  { id: 'asas', name: 'Asas', price: 700, kind: 'wings', color: '#9fe8ff' },
+];
+
+export function accessoryById(id: string | undefined): Accessory {
+  return ACCESSORIES.find((a) => a.id === id) ?? ACCESSORIES[0];
+}
+
 export const TRAILS: Trail[] = [
   { id: 'nenhum', name: 'Nenhum', price: 0, colors: [] },
   { id: 'faiscas', name: 'Faíscas', price: 150, colors: ['#fff6a0', '#ffd23e'] },
@@ -88,8 +115,8 @@ export interface Profile {
   xp: number;
   wins: number;
   matches: number;
-  owned: string[]; // ids: "char:zoe", "skin:ouro", "trail:fogo"
-  equipped: { char: string; skin: string; trail: string };
+  owned: string[]; // ids: "char:zoe", "skin:ouro", "trail:fogo", "acc:capa"
+  equipped: { char: string; skin: string; trail: string; acc: string; weapon: string };
   /** nível da habilidade de cada personagem (ausente = 1) */
   abilityLv?: Record<string, number>;
 }
@@ -112,8 +139,13 @@ export function newProfile(username = 'Convidado'): Profile {
     xp: 0,
     wins: 0,
     matches: 0,
-    owned: [...STARTER_CHARS.map((c) => 'char:' + c), 'skin:padrao', 'trail:nenhum'],
-    equipped: { char: 'kael', skin: 'padrao', trail: 'nenhum' },
+    owned: [
+      ...STARTER_CHARS.map((c) => 'char:' + c),
+      ...SKINS.filter((s) => s.price === 0).map((s) => 'skin:' + s.id),
+      ...ACCESSORIES.filter((a) => a.price === 0).map((a) => 'acc:' + a.id),
+      'trail:nenhum',
+    ],
+    equipped: { char: 'kael', skin: 'padrao', trail: 'nenhum', acc: 'nenhum', weapon: 'assinatura' },
     abilityLv: {},
   };
 }
@@ -122,6 +154,7 @@ export function itemPrice(item: string): number | null {
   const [kind, id] = item.split(':');
   if (kind === 'char') return id in CHAR_PRICES ? CHAR_PRICES[id] : null;
   if (kind === 'skin') return SKINS.find((s) => s.id === id)?.price ?? null;
+  if (kind === 'acc') return ACCESSORIES.find((a) => a.id === id)?.price ?? null;
   if (kind === 'trail') return TRAILS.find((t) => t.id === id)?.price ?? null;
   // equipamentos (armas, itens, habilidades, ultimates): opções diferentes, não mais fortes
   if (kind === 'gear') return gearPrice(id);
@@ -155,10 +188,69 @@ export function buy(p: Profile, item: string): string | null {
   return null;
 }
 
-export function equip(p: Profile, slot: 'char' | 'skin' | 'trail', id: string): string | null {
+export type EquipSlot = 'char' | 'skin' | 'trail' | 'acc' | 'weapon';
+
+/** Arma favorita: a do personagem, ou uma arma padrão que você já pode usar. */
+export function canEquipWeapon(p: Profile, id: string | undefined): boolean {
+  if (!id) return false;
+  if (id === 'assinatura') return true;
+  if (!(STANDARD_PRIMARIES as readonly string[]).includes(id)) return false;
+  const price = gearPrice(id);
+  return price === 0 || owns(p, 'gear:' + id);
+}
+
+export function equip(p: Profile, slot: EquipSlot, id: string): string | null {
+  if (slot === 'weapon') {
+    if (!canEquipWeapon(p, id)) return 'Compre essa arma primeiro.';
+    p.equipped.weapon = id;
+    return null;
+  }
   if (!owns(p, `${slot}:${id}`)) return 'Compre esse item primeiro.';
   p.equipped[slot] = id;
   return null;
+}
+
+/** Completa perfis antigos (sem acessório ou arma favorita) sem mexer em moedas nem compras. */
+export function normalizeProfile(p: Profile): boolean {
+  let changed = false;
+  if (!Array.isArray(p.owned)) {
+    p.owned = [];
+    changed = true;
+  }
+  if (!p.equipped) {
+    p.equipped = { char: 'kael', skin: 'padrao', trail: 'nenhum', acc: 'nenhum', weapon: 'assinatura' };
+    changed = true;
+  }
+  if (!p.equipped.acc) {
+    p.equipped.acc = 'nenhum';
+    changed = true;
+  }
+  if (!p.equipped.weapon) {
+    p.equipped.weapon = 'assinatura';
+    changed = true;
+  }
+  if (grantStarters(p)) changed = true;
+  if (!owns(p, 'char:' + p.equipped.char)) {
+    p.equipped.char = 'kael';
+    changed = true;
+  }
+  if (!owns(p, 'skin:' + p.equipped.skin)) {
+    p.equipped.skin = 'padrao';
+    changed = true;
+  }
+  if (!owns(p, 'trail:' + p.equipped.trail)) {
+    p.equipped.trail = 'nenhum';
+    changed = true;
+  }
+  if (!owns(p, 'acc:' + p.equipped.acc)) {
+    p.equipped.acc = 'nenhum';
+    changed = true;
+  }
+  if (!canEquipWeapon(p, p.equipped.weapon)) {
+    p.equipped.weapon = 'assinatura';
+    changed = true;
+  }
+  return changed;
 }
 
 export type MatchMode = 'nucleo' | 'duelo' | 'combate' | 'bandeira' | 'rei' | 'ondas' | 'royale' | 'chefe' | 'treino';
