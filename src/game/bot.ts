@@ -160,9 +160,9 @@ function octile(ax: number, ay: number, bx: number, by: number) {
  * react = tempo até atirar num alvo novo; burst/pause = rajadas e pausas (ninguém atira sem parar).
  */
 export const PROFILES: Record<Difficulty, { speedMul: number; avoid: number; think: number; dash: number; ability: number; sloppy: number; aim: number; lead: number; react: number; burst: number; pause: number; focus: number }> = {
-  facil: { speedMul: 0.72, avoid: 0.55, think: 0.6, dash: 0.25, ability: 0.3, sloppy: 0.35, aim: 0.3, lead: 0.2, react: 0.75, burst: 0.8, pause: 0.9, focus: 1 },
-  normal: { speedMul: 0.86, avoid: 1.0, think: 0.4, dash: 0.6, ability: 0.7, sloppy: 0.12, aim: 0.15, lead: 0.6, react: 0.45, burst: 1.1, pause: 0.55, focus: 1 },
-  dificil: { speedMul: 0.97, avoid: 1.45, think: 0.25, dash: 0.9, ability: 1, sloppy: 0, aim: 0.09, lead: 0.85, react: 0.25, burst: 1.5, pause: 0.3, focus: 2 },
+  facil: { speedMul: 0.6, avoid: 0.32, think: 0.8, dash: 0.12, ability: 0.14, sloppy: 0.55, aim: 0.62, lead: 0.05, react: 1.25, burst: 0.5, pause: 1.5, focus: 1 },
+  normal: { speedMul: 0.72, avoid: 0.62, think: 0.55, dash: 0.3, ability: 0.36, sloppy: 0.28, aim: 0.38, lead: 0.28, react: 0.85, burst: 0.7, pause: 1.05, focus: 1 },
+  dificil: { speedMul: 0.84, avoid: 0.9, think: 0.4, dash: 0.48, ability: 0.52, sloppy: 0.12, aim: 0.22, lead: 0.48, react: 0.55, burst: 0.95, pause: 0.72, focus: 1 },
 };
 
 /** quem pode atirar no mesmo alvo: os mais perto primeiro, empate pelo id. Os outros só se posicionam. */
