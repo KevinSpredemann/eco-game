@@ -51,12 +51,16 @@ export class AudioEngine {
   vol = { master: 0.8, music: 0.55, sfx: 0.85, muted: false };
 
   unlock() {
+    const live = this.ctx as AudioContext | null;
+    if (live && live.state === 'closed') this.ctx = null;
     if (!this.ctx) {
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       if (!AC) return;
       this.attach(new AC());
     }
-    if (this.ctx!.state === 'suspended') (this.ctx as AudioContext).resume().catch(() => {});
+    const ctx = this.ctx as AudioContext;
+    const state = ctx.state as string;
+    if (state === 'suspended' || state === 'interrupted') ctx.resume().catch(() => {});
   }
 
   /** Monta o grafo de áudio em qualquer contexto (tempo real ou offline para exportar .wav). */
@@ -89,7 +93,7 @@ export class AudioEngine {
     (this.ctx as AudioContext | null)?.suspend?.().catch(() => {});
   }
   resume() {
-    (this.ctx as AudioContext | null)?.resume?.().catch(() => {});
+    this.unlock();
   }
 
   applyVolumes() {
