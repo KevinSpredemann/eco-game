@@ -8,7 +8,7 @@ import { CHARACTERS } from '../src/game/characters';
 import { BotBrain } from '../src/game/bot';
 import { Game, GameMode, Input, MIN_PLAYERS, MODE_RULES } from '../src/game/sim';
 import { Loadout, botLoadout, DEFAULT_LOADOUT, sanitizeLoadout } from '../src/game/balance';
-import { abilityLevel, buy, equip, matchReward, newProfile, owns, Profile, MatchMode, levelOf } from '../src/game/economy';
+import { abilityLevel, buy, equip, grantStarters, matchReward, newProfile, owns, Profile, MatchMode, levelOf } from '../src/game/economy';
 import { BTN, ClientMsg, encodeSnapshot, echoSignature, EndInfo, LobbyPlayer, RoomInfo, ServerMsg, StartInfo, PROTO } from '../src/net/protocol';
 import { rematchStatus, RematchVote } from '../src/net/rematch';
 import { checkPassword, hashPassword, signToken, validPassword, validUsername, verifyToken } from './auth';
@@ -75,6 +75,7 @@ const http = createServer(async (req, res) => {
       const { hash, salt } = hashPassword(password);
       const profile = newProfile(username);
       importGuest(profile, guest);
+      grantStarters(profile);
       const u: UserRecord = { username, key, hash, salt, profile, lastRewardAt: 0, createdAt: Date.now() };
       if (!(await store.create(u))) return send(res, 409, { error: 'Esse apelido já existe. Escolha outro.' });
       return send(res, 200, { token: signToken(key, SECRET), profile: publicProfile(u) });
@@ -94,12 +95,14 @@ const http = createServer(async (req, res) => {
         return send(res, 401, { error: 'Apelido ou senha errados.' });
       }
       loginAttempts.delete(ip + key);
+      if (grantStarters(u.profile)) await store.save(u);
       return send(res, 200, { token: signToken(key, SECRET), profile: publicProfile(u) });
     }
 
     if (url.pathname === '/api/me') {
       const u = await userFrom(req);
       if (!u) return send(res, 401, { error: 'Entre de novo na sua conta.' });
+      if (grantStarters(u.profile)) await store.save(u);
       return send(res, 200, { profile: publicProfile(u) });
     }
 
@@ -575,6 +578,7 @@ wss.on('connection', (ws) => {
         c.v = Number(m.v) || 0;
         const key = verifyToken(m.token, SECRET);
         const u = key ? await store.get(key) : null;
+        if (u && grantStarters(u.profile)) await store.save(u);
         c.userKey = u ? u.key : null;
         c.name = u ? u.username : cleanName(m.name) || 'Convidado';
         if (u && !resumed) {

@@ -3,26 +3,39 @@ import { gearPrice } from './balance';
 
 export const START_COINS = 150;
 
-/** Personagens que todo mundo já tem. */
-export const STARTER_CHARS = ['kael', 'luna', 'bruno'];
+/** Personagens livres desde a primeira partida. O resto continua na progressão. */
+export const STARTER_CHARS = ['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris'];
 
 export const CHAR_PRICES: Record<string, number> = {
   kael: 0,
   luna: 0,
   bruno: 0,
-  zoe: 300,
-  maya: 300,
-  zed: 400,
+  zoe: 0,
+  maya: 0,
+  zed: 0,
+  tara: 0,
+  iris: 0,
   nyx: 600,
   rex: 800,
-  iris: 800,
-  tara: 500,
   kai: 500,
   leo: 700,
   mei: 900,
   duda: 600,
   bento: 700,
 };
+
+/** Soma os iniciais que faltam. Não mexe em moedas, xp nem no que já foi comprado. */
+export function grantStarters(p: Profile): boolean {
+  let changed = false;
+  for (const id of STARTER_CHARS) {
+    const key = 'char:' + id;
+    if (!p.owned.includes(key)) {
+      p.owned.push(key);
+      changed = true;
+    }
+  }
+  return changed;
+}
 
 export interface Skin {
   id: string;

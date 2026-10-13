@@ -1,5 +1,5 @@
 // Conta do jogador: convidado (salvo no aparelho) ou logado (salvo no servidor).
-import { buy, equip, matchReward, newProfile, MatchResult, Profile, levelOf } from '../game/economy';
+import { buy, equip, grantStarters, matchReward, newProfile, MatchResult, Profile, levelOf } from '../game/economy';
 
 const PKEY = 'eco.profile.v1';
 const TKEY = 'eco.token.v1';
@@ -44,6 +44,8 @@ class Account {
     } catch {
       this.token = null;
     }
+    // quem já jogou ganha os novos iniciais sem perder moedas nem compras
+    if (grantStarters(this.profile) && !this.logged) store(PKEY, this.profile);
   }
 
   get logged() {
@@ -95,6 +97,7 @@ class Account {
     this.token = null;
     store(TKEY, null);
     this.profile = load(PKEY, newProfile());
+    grantStarters(this.profile);
     this.changed();
   }
   private setSession(token: string, profile: Profile) {
