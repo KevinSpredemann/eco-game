@@ -1,6 +1,7 @@
 // Espelho da partida online no aparelho: recebe o estado do servidor, suaviza o movimento
 // dos outros e prevê o movimento do próprio jogador para responder na hora.
-import { ArenaDef, getArena, isGround } from '../game/arenas';
+import { ArenaDef, getArena, inRect, isGround, windState } from '../game/arenas';
+import { choosePortalExit, portalPairAt } from '../game/portals';
 import { getCharacter, withLevel, withSkin } from '../game/characters';
 import * as C from '../game/constants';
 import { ENEMY_STATS, FlagState, Game, GameEvent, GameMode, Hill, Input, MODE_RULES, Player, Storm } from '../game/sim';
@@ -79,6 +80,10 @@ export class ClientGame {
   private echoTarget = new Map<string, { x: number; y: number }>();
   /** posição prevista do jogador local */
   private pred: { x: number; y: number } | null = null;
+  /** velocidade prevista (gelo escorrega; sem isso o online empurra você para o perigo que o servidor vê) */
+  private predV = { x: 0, y: 0 };
+  /** mira manual deste quadro: o snapshot não apaga o analógico */
+  private aimLock = false;
   lastSnapAt = 0;
 
   constructor(info: StartInfo) {
@@ -209,7 +214,7 @@ export class ClientGame {
       p.abilCd = abilCd;
       p.dashCd = dashCd;
       p.shieldHp = shieldHp;
-      if (p.id !== this.localId) p.aim = aim;
+      if (p.id !== this.localId || !this.aimLock) p.aim = aim;
       p.power = pw ? { id: pw, t: pwt } : null;
       p.hitFlash = hitFlash;
       p.vx = vx;
@@ -220,7 +225,10 @@ export class ClientGame {
       if (far || !wasAlive || prevPhase !== this.phase) {
         p.x = x;
         p.y = y;
-        if (id === this.localId) this.pred = { x, y };
+        if (id === this.localId) {
+          this.pred = { x, y };
+          this.predV = { x: vx, y: vy };
+        }
       }
     }
     if (s.EM) {
@@ -305,6 +313,10 @@ export class ClientGame {
 
   /** avança a visualização entre um pacote e outro */
   update(dt: number, input: Input) {
+    if (typeof input.aim === 'number' && isFinite(input.aim)) {
+      this.human.aim = input.aim;
+      this.aimLock = true;
+    } else this.aimLock = false;
     if (this.phase === 'play') this.roundT += dt;
     this.worldT += dt;
     this.phaseT += dt;
@@ -321,10 +333,36 @@ export class ClientGame {
           mx /= m;
           my /= m;
         }
+        const onIce = (this.arena.ice ?? []).some((r) => inRect(this.pred!.x, this.pred!.y, r));
+        const grip = onIce ? 0.12 : this.arena.grip;
+        const kIce = 1 - Math.exp(-12 * grip * dt);
         const speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * (p.slowT > 0 ? 0.6 : 1) * (p.castT > 0 ? COMBAT.castMove : 1) * (p.boss ? BOSS.speedMul : 1) * (p.stunT > 0 ? 0 : 1);
-        this.pred.x += mx * speed * dt;
-        this.pred.y += my * speed * dt;
+        this.predV.x += (mx * speed - this.predV.x) * kIce;
+        this.predV.y += (my * speed - this.predV.y) * kIce;
+        this.pred.x += this.predV.x * dt;
+        this.pred.y += this.predV.y * dt;
+        if (this.arena.wind) {
+          const w = windState(this.arena.wind, this.worldT);
+          if (w.phase === 'blow') this.pred.x += w.dir * this.arena.wind.force * dt;
+        }
         collideWorld.call(this as any, this.pred);
+        if ((p.portalCd ?? 0) <= 0) {
+          const gate = portalPairAt(this.arena.portals, this.pred.x, this.pred.y);
+          if (gate) {
+            const dir = Math.hypot(this.predV.x, this.predV.y) > 30 ? Math.atan2(this.predV.y, this.predV.x) : p.dir;
+            const exit = choosePortalExit(
+              this.arena,
+              gate.to,
+              dir,
+              this.worldT,
+              (i) => this.zoneState(i) === 'on',
+              (x, y) => isFree.call(this as any, x, y, C.PLAYER_R),
+            );
+            this.pred.x = exit.x;
+            this.pred.y = exit.y;
+            p.portalCd = C.PORTAL_CD;
+          }
+        }
         if (this.arena.islands && !isGround(this.arena, this.pred.x, this.pred.y, this.worldT)) {
           // deixa o servidor decidir a queda
         }
