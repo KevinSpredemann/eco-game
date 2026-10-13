@@ -26,11 +26,9 @@ export function duelTiebreak(rows: { id: string; hp: number; dmg: number }[]): {
   return { winner: null, reason: 'draw' };
 }
 
-/** Texto do round. Os dois jogadores recebem resultados complementares a partir do mesmo vencedor. */
-export function roundBanner(myId: string, winner: string | null, reason: DuelReason | null | undefined, score: string) {
+/** Texto do round. Só a frase grande: o placar fica fora deste banner. */
+export function roundBanner(myId: string, winner: string | null, _reason: DuelReason | null | undefined, _score: string) {
   const kind: 'win' | 'loss' | 'draw' = !winner ? 'draw' : winner === myId ? 'win' : 'loss';
-  const title = kind === 'win' ? 'VITÓRIA NO ROUND' : kind === 'loss' ? 'DERROTA NO ROUND' : 'EMPATE NO ROUND';
-  const why =
-    reason === 'kill' ? 'por eliminação' : reason === 'hp' ? 'mais vida no fim' : reason === 'damage' ? 'mesmo vida, mais dano causado' : reason === 'draw' ? 'vida e dano iguais' : '';
-  return { kind, title, sub: why ? `${why} · ${score}` : score };
+  const title = kind === 'win' ? 'Você venceu' : kind === 'loss' ? 'Você perdeu' : 'Empate';
+  return { kind, title, sub: '' };
 }
