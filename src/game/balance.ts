@@ -116,13 +116,13 @@ export interface SkillDef {
 export const SKILLS: Record<SkillId, SkillDef> = {
   rolamento: { id: 'rolamento', name: 'Rolamento', role: 'mobilidade', aim: 'direction', desc: 'Esquiva rápida na direção escolhida. Fica intocável só durante o giro.', cooldown: 5, range: 135, price: 0, icon: '⟳' },
   armadilha: { id: 'armadilha', name: 'Armadilha', role: 'controle', aim: 'point', desc: 'Arma uma armadilha visível. Quem pisar fica preso por 0,6 s.', cooldown: 12, range: 300, radius: 34, duration: 14, damage: 12, price: 0, icon: '⌖' },
-  barreira: { id: 'barreira', name: 'Barreira', role: 'defesa', aim: 'direction', desc: 'Ergue uma parede curta que bloqueia tiros por 3 s.', cooldown: 12, range: 60, duration: 3, price: 200, icon: '▮' },
-  marcador: { id: 'marcador', name: 'Dardo Marcador', role: 'controle', aim: 'direction', desc: 'Dardo reto: o alvo fica visível e leva +20% de dano por 4 s.', cooldown: 10, range: 540, duration: 4, damage: 8, price: 250, icon: '◎' },
-  estimulo: { id: 'estimulo', name: 'Estímulo', role: 'suporte', aim: 'instant', desc: 'Cura 25 de vida em você e nos aliados perto e dá um impulso de velocidade.', cooldown: 14, range: 0, radius: 160, damage: 25, price: 250, icon: '✚' },
+  barreira: { id: 'barreira', name: 'Barreira', role: 'defesa', aim: 'direction', desc: 'Ergue uma parede curta que bloqueia tiros por 3 s.', cooldown: 12, range: 60, duration: 3, price: 0, icon: '▮' },
+  marcador: { id: 'marcador', name: 'Dardo Marcador', role: 'controle', aim: 'direction', desc: 'Dardo reto: o alvo fica visível e leva +20% de dano por 4 s.', cooldown: 10, range: 540, duration: 4, damage: 8, price: 0, icon: '◎' },
+  estimulo: { id: 'estimulo', name: 'Estímulo', role: 'suporte', aim: 'instant', desc: 'Cura 25 de vida em você e nos aliados perto e dá um impulso de velocidade.', cooldown: 14, range: 0, radius: 160, damage: 25, price: 0, icon: '✚' },
 };
 
 // ------------------------------------------------------------------ ultimate (R)
-export type UltId = 'meteoro' | 'feixe' | 'estase' | 'sobrecarga';
+export type UltId = 'meteoro' | 'feixe' | 'estase' | 'sobrecarga' | 'onda' | 'lanca';
 export interface UltDef {
   id: UltId;
   name: string;
@@ -142,17 +142,19 @@ export interface UltDef {
 export const ULTS: Record<UltId, UltDef> = {
   meteoro: { id: 'meteoro', name: 'Meteoro', role: 'dano', aim: 'point', desc: 'Marca uma área: depois de 1 s cai um meteoro (55 de dano). Dá tempo de fugir.', range: 430, radius: 115, windup: 1, damage: 55, price: 0, icon: '☄' },
   feixe: { id: 'feixe', name: 'Feixe Prismático', role: 'dano', aim: 'direction', desc: 'Carrega 0,55 s e dispara um feixe em linha reta que atravessa rivais (50). Paredes bloqueiam.', range: 640, width: 40, windup: 0.55, damage: 50, price: 0, icon: '═' },
-  estase: { id: 'estase', name: 'Campo de Estase', role: 'controle', aim: 'point', desc: 'Campo de 3 s: rivais dentro ficam 65% mais lentos, sem impulso e perdem vida.', range: 380, radius: 140, windup: 0.4, damage: 8, duration: 3, price: 400, icon: '◌' },
-  sobrecarga: { id: 'sobrecarga', name: 'Sobrecarga', role: 'suporte', aim: 'instant', desc: 'Por 5 s: atira 35% mais rápido, corre 15% mais e ganha 30 de escudo.', range: 0, windup: 0, damage: 0, duration: 5, price: 400, icon: '⚡' },
+  estase: { id: 'estase', name: 'Campo de Estase', role: 'controle', aim: 'point', desc: 'Campo de 3 s: rivais dentro ficam 65% mais lentos, sem impulso e perdem vida.', range: 380, radius: 140, windup: 0.4, damage: 8, duration: 3, price: 0, icon: '◌' },
+  sobrecarga: { id: 'sobrecarga', name: 'Sobrecarga', role: 'suporte', aim: 'instant', desc: 'Por 5 s: atira 35% mais rápido, corre 15% mais e ganha 30 de escudo.', range: 0, windup: 0, damage: 0, duration: 5, price: 0, icon: '⚡' },
+  onda: { id: 'onda', name: 'Onda de Choque', role: 'dano', aim: 'instant', desc: 'Depois de 0,35 s explode uma onda em volta de você (36 de dano) e empurra quem estiver perto.', range: 0, radius: 168, windup: 0.35, damage: 36, price: 0, icon: '◎' },
+  lanca: { id: 'lanca', name: 'Lança de Luz', role: 'dano', aim: 'direction', desc: 'Carrega 0,3 s e crava uma lança de luz em linha reta (42). Paredes bloqueiam.', range: 520, width: 28, windup: 0.3, damage: 42, price: 0, icon: '╱' },
 };
 
 // ------------------------------------------------------------------ arma principal e secundária
 /** armas padrão que qualquer personagem pode escolher no lugar da arma própria */
-export const STANDARD_PRIMARIES = ['blaster', 'fuzil', 'espingarda', 'submetra', 'lancador'] as const;
+export const STANDARD_PRIMARIES = ['blaster', 'fuzil', 'espingarda', 'submetra', 'lancador', 'arco', 'plasma', 'agulha'] as const;
 export type StandardPrimary = (typeof STANDARD_PRIMARIES)[number];
-export const PRIMARY_PRICE: Record<string, number> = { blaster: 0, fuzil: 0, espingarda: 0, submetra: 150, lancador: 250 };
+export const PRIMARY_PRICE: Record<string, number> = { blaster: 0, fuzil: 0, espingarda: 0, submetra: 0, lancador: 0, arco: 0, plasma: 0, agulha: 0 };
 
-export type KitId = 'bomba' | 'mina' | 'gelo' | 'kit';
+export type KitId = 'bomba' | 'mina' | 'gelo' | 'kit' | 'pulso';
 export interface KitDef {
   id: KitId;
   name: string;
@@ -164,8 +166,9 @@ export interface KitDef {
 export const KITS: Record<KitId, KitDef> = {
   bomba: { id: 'bomba', name: 'Granadas', role: 'dano', desc: '2 granadas por rodada (40 de dano). Explodem depois de 0,9 s.', count: 2, price: 0 },
   mina: { id: 'mina', name: 'Minas', role: 'controle', desc: '2 minas por rodada (35 de dano). Explodem quando um rival pisa.', count: 2, price: 0 },
-  gelo: { id: 'gelo', name: 'Granada de Gelo', role: 'controle', desc: '2 por rodada: pouco dano, deixa todos na área lentos por 2,5 s.', count: 2, price: 150 },
-  kit: { id: 'kit', name: 'Kit Médico', role: 'suporte', desc: '1 por rodada: recupera 45 de vida na hora.', count: 1, price: 150 },
+  gelo: { id: 'gelo', name: 'Granada de Gelo', role: 'controle', desc: '2 por rodada: pouco dano, deixa todos na área lentos por 2,5 s.', count: 2, price: 0 },
+  kit: { id: 'kit', name: 'Kit Médico', role: 'suporte', desc: '1 por rodada: recupera 45 de vida na hora.', count: 1, price: 0 },
+  pulso: { id: 'pulso', name: 'Pulso', role: 'controle', desc: '2 por rodada: explosão curta (24) que atordoa rivais por um instante.', count: 2, price: 0 },
 };
 
 // ------------------------------------------------------------------ equipamento escolhido
@@ -248,7 +251,7 @@ export function botLoadout(charId: string): Loadout {
   let h = 0;
   for (const ch of charId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   const skills: SkillId[] = ['rolamento', 'armadilha', 'barreira', 'marcador', 'estimulo'];
-  const ults: UltId[] = ['meteoro', 'feixe', 'estase', 'sobrecarga'];
-  const kits: KitId[] = ['bomba', 'mina', 'gelo', 'kit'];
+  const ults: UltId[] = ['meteoro', 'feixe', 'estase', 'sobrecarga', 'onda', 'lanca'];
+  const kits: KitId[] = ['bomba', 'mina', 'gelo', 'kit', 'pulso'];
   return { primary: 'assinatura', skill: skills[h % skills.length], ult: ults[(h >> 3) % ults.length], kit: kits[(h >> 5) % kits.length] };
 }

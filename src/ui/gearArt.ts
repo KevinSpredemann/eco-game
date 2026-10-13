@@ -141,6 +141,9 @@ const SHAPE: Record<WeaponId, Shape> = {
   laser: 'laser',
   foguete: 'rocket',
   congelante: 'crystal',
+  arco: 'crossbow',
+  plasma: 'orb',
+  agulha: 'nail',
 };
 
 function drawWeapon(g: G, id: WeaponId) {
@@ -438,6 +441,18 @@ function drawKit(g: G, id: string) {
     for (const s of [-1, 1]) part(g, 60 + s * 22 - 3, 38, 6, 6, 2, '#7a8440');
     return;
   }
+  if (id === 'pulso') {
+    glow(g, 60, 44, 28, '#c9a6ff');
+    g.strokeStyle = '#e6d4ff';
+    g.lineWidth = 3;
+    for (let k = 0; k < 3; k++) {
+      g.beginPath();
+      g.arc(60, 44, 10 + k * 10, 0, Math.PI * 2);
+      g.stroke();
+    }
+    circle(g, 60, 44, 5, '#ffffff');
+    return;
+  }
   // kit médico
   part(g, 30, 22, 60, 42, 8, '#f2f4fa');
   part(g, 50, 14, 20, 10, 4, '#c8ccd8');
@@ -573,6 +588,7 @@ function drawSkill(g: G, id: string) {
 // ------------------------------------------------------------------ ultimates (R)
 function drawUlt(g: G, id: string) {
   switch (id) {
+    case 'onda':
     case 'meteoro': {
       for (let k = 0; k < 4; k++) {
         g.strokeStyle = hexA(k % 2 ? '#ffd23e' : '#ff6a3a', 0.7 - k * 0.12);
@@ -595,6 +611,7 @@ function drawUlt(g: G, id: string) {
       g.setLineDash([]);
       break;
     }
+    case 'lanca':
     case 'feixe': {
       const gr = g.createLinearGradient(52, 0, 118, 0);
       gr.addColorStop(0, '#ffffff');
