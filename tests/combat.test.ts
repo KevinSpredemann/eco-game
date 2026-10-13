@@ -31,7 +31,7 @@ describe('modo combate', () => {
       { id: 'a', char: 'zoe', isBot: true },
       { id: 'b', char: 'rex', isBot: true },
     ];
-    const g = new Game({ arena: getArena('lab'), humanChar: 'kael', bots: 0, difficulty: 'dificil', ownEchoDamage: true, training: false, mode: 'duelo', roster });
+    const g = new Game({ arena: getArena('lab'), humanChar: 'kael', bots: 0, difficulty: 'dificil', ownEchoDamage: true, training: false, mode: 'duelo', roster, roundSec: 20, suddenSec: 8 });
     play(g);
     expect(g.phase).toBe('results');
     expect(g.players).toHaveLength(2);

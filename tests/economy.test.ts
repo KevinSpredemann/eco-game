@@ -9,7 +9,7 @@ describe('níveis de habilidade', () => {
     const p = newProfile();
     p.coins = 5000;
     expect(abilityLevel(p, 'kael')).toBe(1);
-    expect(buy(p, 'up:zoe')).toMatch(/Libere/);
+    expect(buy(p, 'up:nyx')).toMatch(/Libere/);
     let spent = 0;
     for (let lv = 1; lv < 5; lv++) {
       const cost = upgradePrice(p, 'kael')!;
