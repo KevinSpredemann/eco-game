@@ -64,6 +64,12 @@ export interface Aiming {
 }
 
 /** Junta teclado + mouse + analógico virtual + botões de toque em um único Input por passo. */
+/** No celular, a ultimate mirada só confirma com arrasto. Cancelar (ou um toque seco) não gasta a carga. */
+export function confirmTouchCast(slot: string, kind: string, dragLen: number): boolean {
+  if (slot === 'ult' && kind !== 'instant' && dragLen < 18) return false;
+  return true;
+}
+
 export class InputManager {
   private keys = new Set<string>();
   private stick = { x: 0, y: 0, active: false, id: -1, cx: 0, cy: 0 };
@@ -257,8 +263,14 @@ export class InputManager {
             return;
           }
         }
+        const kindNow = this.aiming.kind;
         const { dx, dy } = this.aiming.touch;
         const len = Math.hypot(dx, dy);
+        // ultimate de área/linha: toque seco não gasta a carga; é preciso arrastar até o ponto
+        if (!confirmTouchCast(slot, kindNow, len)) {
+          this.cancelAim();
+          return;
+        }
         // arrastou o botão: mira do arrasto; só tocou: usa a mira do analógico direito (se tiver)
         const stickAim = this.manualAim();
         this.touchCast = len > 18 ? { ang: Math.atan2(dy, dx), ratio: Math.min(1, len / 90) } : stickAim !== null ? { ang: stickAim, ratio: 0.75 } : null;
@@ -403,7 +415,7 @@ export class InputManager {
       this.onDenied?.(slot);
       return;
     }
-    if (kind === 'instant' || this.touchMode) {
+    if (kind === 'instant' || (this.touchMode && confirmTouchCast(slot, kind, 0))) {
       this.queued.add(slot);
       return;
     }
