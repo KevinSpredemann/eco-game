@@ -908,6 +908,10 @@ input[type='checkbox'] {
   padding: 2px 10px;
   border-radius: 8px 8px 0 0;
 }
+.hud-center .round.sudden {
+  color: #ffb4a2;
+  letter-spacing: 0.12em;
+}
 .hud-center .timer {
   font-family: var(--display);
   font-size: 2rem;
@@ -1037,6 +1041,62 @@ input[type='checkbox'] {
 @keyframes pop {
   from {
     transform: translate(-50%, -50%) scale(1.25);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+#round-call {
+  position: fixed;
+  left: 50%;
+  top: 36%;
+  transform: translate(-50%, -50%);
+  z-index: 13;
+  pointer-events: none;
+  text-align: center;
+  max-width: 92vw;
+  animation: rc-in 0.28s ease-out;
+}
+#round-call .rc-kicker {
+  font-size: clamp(0.72rem, 2vw, 0.9rem);
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: #d7d2ea;
+}
+#round-call .rc-title {
+  font-family: var(--display);
+  font-size: clamp(1.55rem, 6vw, 3.3rem);
+  line-height: 1.05;
+  margin-top: 4px;
+}
+#round-call .rc-sub {
+  margin-top: 8px;
+  font-size: clamp(0.85rem, 2.4vw, 1.05rem);
+  font-weight: 650;
+  color: #fff8e8;
+  background: rgba(8, 6, 22, 0.78);
+  padding: 6px 14px;
+  border-radius: 10px;
+  display: inline-block;
+  max-width: 92vw;
+}
+#round-call.win .rc-title {
+  color: #8dffb8;
+  text-shadow: 0 0 18px rgba(80, 255, 160, 0.65);
+}
+#round-call.loss .rc-title {
+  color: #ff7a86;
+  text-shadow: 0 0 18px rgba(255, 60, 80, 0.6);
+}
+#round-call.draw .rc-title {
+  color: #ffd23e;
+  text-shadow: 0 0 18px rgba(255, 210, 60, 0.5);
+}
+@keyframes rc-in {
+  from {
+    transform: translate(-50%, -42%) scale(0.86);
     opacity: 0;
   }
   to {

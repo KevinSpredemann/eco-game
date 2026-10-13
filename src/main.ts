@@ -4,6 +4,7 @@ import { ARENAS, WORLD_W, getArena } from './game/arenas';
 import { CHARACTERS, getCharacter, withLevel, withSkin } from './game/characters';
 import * as C from './game/constants';
 import { CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, owns, upgradePrice } from './game/economy';
+import { roundBanner, type DuelReason } from './game/duel';
 import type { RoundEchoLine } from './systems/echo/digest';
 import { Game, GameEvent, GameMode, Input, MIN_PLAYERS, MINION_INFO, MinionKind, MODE_RULES, OBJECTIVES, RosterEntry, TEAM_COLORS } from './game/sim';
 import { POWERS, getPower } from './game/powerups';
@@ -25,7 +26,7 @@ import { drawModeArt } from './ui/modeArt';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, ULTS, sanitizeLoadout } from './game/balance';
-import { ACTION_LABEL, Action, DEFAULT_KEYS, Slot, isReservedKey, keyLabel } from './ui/input';
+import { ACTION_LABEL, Action, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { SkillBar, SlotView, drawSlotArt, slotReady } from './ui/skillbar';
 import type { AimPreview } from './render/combatFx';
@@ -83,6 +84,17 @@ function applySettings() {
     layout();
   }
   renderer.showTrails = settings.trails;
+  input.control = settings.control;
+  input.aimSens = settings.aimSens / 100;
+  const sensRow = document.querySelector<HTMLElement>('#opt-sens-row');
+  if (sensRow) sensRow.hidden = settings.control !== 'notebook';
+  const note = document.querySelector<HTMLElement>('#opt-control-note');
+  if (note) {
+    note.textContent =
+      settings.control === 'notebook'
+        ? 'WASD anda e o mouse mira, separados. O cursor não fica preso. Clique curto liga ou desliga o tiro; segurar atira sem trocar. Botão direito só mira. Shift esquiva, Q habilidade, E skill, R ultimate, F item, Espaço poder. Esc pausa. Trocar o estilo recoloca as teclas; depois dá para remapear.'
+        : 'WASD ou setas andam. O mouse mira por alguns segundos e o clique esquerdo atira enquanto segura. Botão direito usa o poder. Esc pausa. Trocar o estilo recoloca as teclas; depois dá para remapear.';
+  }
   refreshMuteIcon();
   saveSettings(settings);
 }
@@ -94,6 +106,7 @@ function bindOptions() {
     ['#opt-sfx', 'sfx'],
     ['#opt-ctrl-alpha', 'ctrlAlpha'],
     ['#opt-ctrl-size', 'ctrlSize'],
+    ['#opt-aim', 'aimSens'],
   ];
   for (const [sel, key] of ranges) {
     const el = $<HTMLInputElement>(sel);
@@ -127,6 +140,17 @@ function bindOptions() {
       audio.click();
     });
   }
+  const style = $<HTMLSelectElement>('#opt-control');
+  style.value = settings.control;
+  style.addEventListener('change', () => {
+    settings.control = style.value === 'notebook' ? 'notebook' : 'classic';
+    settings.keys = presetKeys(settings.control);
+    input.binds = settings.keys;
+    input.fireLatch = false;
+    applySettings();
+    renderKeybinds();
+    audio.click();
+  });
 }
 
 // ------------------------------------------------------------------ teclas (remapear)
@@ -160,8 +184,9 @@ function renderKeybinds() {
   );
 }
 $('#keys-reset').addEventListener('click', () => {
-  settings.keys = { ...DEFAULT_KEYS };
+  settings.keys = presetKeys(settings.control);
   input.binds = settings.keys;
+  input.fireLatch = false;
   saveSettings(settings);
   renderKeybinds();
   audio.click();
@@ -203,6 +228,7 @@ function show(id: string | null) {
   if (!inGame) {
     $('#banner').hidden = true;
     $('#hint').hidden = true;
+    $('#round-call').hidden = true;
   }
   checkRotate();
 }
@@ -571,7 +597,7 @@ const MODE_INFO: { id: MatchMode; name: string; desc: string; tag: string; color
 /** modos principais (cards grandes) e extras (linha pequena) */
 const MAIN_MODES: { id: MatchMode; name: string; line: string; tag: string; color: string }[] = [
   { id: 'combate', name: 'Combate', line: 'Todos contra todos. O último de pé vence.', tag: 'Até 4', color: '#ffb347' },
-  { id: 'duelo', name: 'Duelo x1', line: 'Você contra um rival. Melhor de 5.', tag: '1 contra 1', color: '#ff5a3c' },
+  { id: 'duelo', name: 'Duelo x1', line: '2 minutos por rodada. Melhor de 5. Morte súbita se ninguém cair.', tag: '1 contra 1', color: '#ff5a3c' },
   { id: 'chefe', name: 'Caça ao Chefe', line: '3 caçadores contra 1 Chefe gigante.', tag: 'Novo · 3 contra 1', color: '#ff4a5a' },
   { id: 'ondas', name: 'Sobrevivência', line: 'Junto com aliados contra robôs e um chefão.', tag: 'Cooperativo', color: '#ff3b5c' },
 ];
@@ -641,7 +667,7 @@ function charCardHTML(c: (typeof CHARACTERS)[number]) {
     <span class="car-label">
       <span class="badge">${st.owned ? symbolSvg(c.id, c.color) : LOCK}</span>
       <b class="nm" style="--c:${c.color}">${c.name.toUpperCase()}</b>
-      <span>${st.owned ? `${c.ability.name} · nv ${st.lv}` : `<span class="coins"><span class="coin"></span>${st.price}</span>`}</span>
+      <span>${st.owned ? `${c.ability.name} · nv ${st.lv}` : `<span class="coins"><span class="coin"></span>Libera com ${st.price} moedas</span>`}</span>
     </span>`;
 }
 
@@ -700,8 +726,8 @@ function charDetail(at?: number) {
   const action = st.owned
     ? `<button class="btn primary go-btn" data-action="to-map">${next}</button>`
     : coins >= st.price
-      ? `<button class="btn primary go-btn" id="buy-char"><span class="coin"></span>Liberar por ${st.price}</button>`
-      : `<button class="btn go-btn" disabled>Faltam ${st.price - coins} moedas</button>`;
+      ? `<button class="btn primary go-btn" id="buy-char"><span class="coin"></span>Libera com ${st.price} moedas</button>`
+      : `<button class="btn go-btn" disabled>Libera com ${st.price} moedas · faltam ${st.price - coins}</button>`;
   const pips = Array.from({ length: 5 }, (_, i) => `<i class="${i < st.lv ? 'on' : ''}"></i>`).join('');
   const dur = c.ability.duration > 0;
   const stats =
@@ -1047,7 +1073,7 @@ function openShop(tab: 'char' | 'skin' | 'trail', keep?: number) {
       ? '<span class="lo-state on">✓ Equipado</span>'
       : owned
         ? '<button class="btn primary shop-go">Usar</button>'
-        : `<button class="btn primary shop-go"><span class="coin"></span>Comprar por ${it.price}</button>`;
+        : `<button class="btn primary shop-go"><span class="coin"></span>Libera com ${it.price} moedas</button>`;
     $('#shop-act').innerHTML = `<div class="shop-act-info"><b>${it.name}</b><span>${car.index + 1} de ${items.length} · deslize para o lado</span></div>${btn}`;
     $('#shop-act').querySelector('.shop-go')?.addEventListener('click', async () => {
       if (!owned) {
@@ -1505,6 +1531,8 @@ function beginMatchView(g: AnyGame) {
   layout();
   input.clear();
   input.combat = g.combat;
+  callShown = -1;
+  $('#round-call').hidden = true;
   hintStage = training() ? 1 : 0;
   hintT = 0;
   const me = g.human;
@@ -1639,8 +1667,14 @@ function setHTML(sel: string, v: string) {
   $(sel).innerHTML = v;
 }
 
+function duelScore(g: AnyGame) {
+  const me = g.human;
+  const other = g.players.find((p) => p.id !== me.id);
+  return `${me.roundWins} × ${other?.roundWins ?? 0}`;
+}
+
 function objectiveText(g: AnyGame) {
-  if (g.mode === 'duelo') return 'Vença 3 rodadas · ATIRAR, ITEM e poderes';
+  if (g.mode === 'duelo') return '2 minutos. Quem elimina vence na hora. Sem queda: morte súbita, dano em dobro.';
   if (g.mode === 'combate') return 'Elimine os rivais · eliminação = 2, rodada = 3';
   if (g.mode === 'bandeira') return `Azul ${g.teamScore[0]} × ${g.teamScore[1]} Vermelho · leve a bandeira rival à sua base`;
   if (g.mode === 'rei') return 'Fique sozinho na colina: +1 ponto por segundo';
@@ -1658,6 +1692,7 @@ const OBJ_SHORT: Record<string, string> = { dourado: '★ Fragmento dourado', tr
 /** HUD de combate: só placar/objetivo curto, nunca a explicação do modo */
 function objectiveHud(g: AnyGame) {
   if (g.phase !== 'play') return '';
+  if (g.mode === 'duelo') return duelScore(g);
   if (g.mode === 'bandeira') return `Azul ${g.teamScore[0]} × ${g.teamScore[1]} Vermelho`;
   if (g.mode === 'ondas') return g.wave >= g.totalRounds ? 'CHEFÃO' : `${g.enemies.length} ${g.enemies.length === 1 ? 'robô' : 'robôs'}`;
   if (g.mode === 'nucleo') return OBJ_SHORT[g.objective as string] ?? '';
@@ -1887,11 +1922,14 @@ function updateHud() {
   if (!game) return;
   const g = game;
   rewindPanel(g);
-  const roundLabel = g.tiebreak ? 'DESEMPATE' : training() && !isOnline() ? `TREINO ${g.round}/${g.totalRounds}` : g.mode === 'ondas' ? `ONDA ${g.round}/${g.totalRounds}` : `RODADA ${g.round}/${g.totalRounds}`;
+  const suddenOn = g.mode === 'duelo' && g.sudden && g.phase === 'play';
+  const roundLabel = suddenOn ? 'MORTE SÚBITA' : g.tiebreak ? 'DESEMPATE' : training() && !isOnline() ? `TREINO ${g.round}/${g.totalRounds}` : g.mode === 'ondas' ? `ONDA ${g.round}/${g.totalRounds}` : `RODADA ${g.round}/${g.totalRounds}`;
   setText('#hud-round', roundLabel);
+  $('#hud-round').classList.toggle('sudden', suddenOn);
   const t = g.phase === 'prep' ? g.roundDur : g.timeLeft();
-  setText('#hud-timer', g.phase === 'rewind' ? '◀◀' : String(Math.ceil(t)));
-  $('#hud-timer').classList.toggle('low', g.phase === 'play' && g.timeLeft() <= 5);
+  setText('#hud-timer', g.phase === 'rewind' ? '◀◀' : g.phase === 'call' ? '—' : String(Math.ceil(t)));
+  $('#hud-timer').classList.toggle('low', g.phase === 'play' && g.timeLeft() <= (suddenOn ? 10 : 5));
+  syncRoundCall();
   const obj = objectiveHud(g);
   setText('#hud-objective', obj);
   $('#hud-objective').hidden = !obj;
@@ -1899,14 +1937,14 @@ function updateHud() {
   const me = g.human;
   const ab = me.char.ability;
   const bonusOwner = me.bonusAb ? CHARACTERS.find((c) => c.ability.id === me.bonusAb) : null;
-  const bonusTag = bonusOwner ? `<span class="bonus" style="color:${bonusOwner.color}">${bonusOwner.ability.name}${input.touchMode ? '' : ' (R)'}</span>` : '';
+  const bonusTag = bonusOwner ? `<span class="bonus" style="color:${bonusOwner.color}">${bonusOwner.ability.name}${input.touchMode ? '' : ` (${keyLabel(settings.keys.bonus)})`}</span>` : '';
   const abTxt = me.boss ? "" : me.abilCd > 0 ? `<span class="ab-wait">${ab.label} ${Math.ceil(me.abilCd)}s</span>` : `<span class="ab-ready">${ab.label} pronto</span>`;
   const pw = me.power ? getPower(me.power.id) : null;
   const pwTxt = pw && !g.combat ? `<span class="pw" style="color:${pw.color}">${pw.short}${pw.id === 'dobro' ? '' : ' ' + Math.ceil(me.power!.t) + 's'}</span>` : '';
   if (!me.alive && me.respawnT > 0) {
     setHTML('#hud-status', `<span class="ab-wait">Renascendo em ${Math.ceil(me.respawnT)}s…</span>`);
   } else if (!me.alive) {
-    setHTML('#hud-status', `<span class="ab-wait">${g.mode === 'ondas' ? 'Você caiu — seus aliados seguram a onda' : 'Eliminado nesta rodada — observe os Ecos'}</span>`);
+    setHTML('#hud-status', `<span class="ab-wait">${g.mode === 'ondas' ? 'Você caiu — seus aliados seguram a onda' : g.mode === 'duelo' ? 'Eliminado nesta rodada' : 'Eliminado nesta rodada — observe os Ecos'}</span>`);
   } else if (g.combat) {
     const f = Math.max(0, me.hp / (me.maxHp || MAX_HP));
     const cls = f > 0.5 ? '' : f > 0.25 ? 'mid' : 'low';
@@ -1964,6 +2002,33 @@ function drawCooldown(sel: string, frac: number, color: string) {
   g.fill();
 }
 
+let callShown = -1;
+function showRoundCall(pid: string | null, reason?: DuelReason | null) {
+  if (!game || game.mode !== 'duelo' || game.phase !== 'call') return;
+  if (callShown === game.round) return;
+  callShown = game.round;
+  const view = roundBanner(game.human.id, pid, reason, duelScore(game));
+  const el = $('#round-call');
+  el.hidden = false;
+  el.classList.remove('win', 'loss', 'draw');
+  el.classList.add(view.kind);
+  (el.querySelector('.rc-kicker') as HTMLElement).textContent = `RODADA ${game.round}`;
+  (el.querySelector('.rc-title') as HTMLElement).textContent = view.title;
+  (el.querySelector('.rc-sub') as HTMLElement).textContent = view.sub;
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = '';
+  audio.roundMark(view.kind);
+}
+function syncRoundCall() {
+  if (!game || game.mode !== 'duelo' || game.phase !== 'call') {
+    $('#round-call').hidden = true;
+    return;
+  }
+  const reason = game instanceof Game ? game.callReason : undefined;
+  showRoundCall(game.callWinner, reason);
+}
+
 function banner(main: string, sub = '', dur = 1.6) {
   const b = $('#banner');
   b.hidden = false;
@@ -2009,7 +2074,7 @@ function onEvents(events: GameEvent[]) {
     switch (e.type) {
       case 'phase':
         if (e.phase === 'prep') {
-          const sub = g.tiebreak ? 'Rodada curta: só quem empatou joga.' : objectiveText(g);
+          const sub = g.mode === 'duelo' ? duelScore(g) : g.tiebreak ? 'Rodada curta: só quem empatou joga.' : objectiveText(g);
           banner(g.tiebreak ? 'DESEMPATE' : `RODADA ${g.round}`, sub, 2.4);
           audio.intensity = 0;
         } else if (e.phase === 'play') {
@@ -2029,7 +2094,7 @@ function onEvents(events: GameEvent[]) {
       case 'tick':
         audio.tick(e.n);
         // contagem da preparação: a explicação fica só aqui, antes do combate
-        if (g.phase === 'prep') banner(String(e.n), g.tiebreak ? '' : objectiveText(g), 0.9);
+        if (g.phase === 'prep') banner(String(e.n), g.mode === 'duelo' ? duelScore(g) : g.tiebreak ? '' : objectiveText(g), 0.9);
         break;
       case 'echoSpawn':
         audio.echoSpawn();
@@ -2181,10 +2246,18 @@ function onEvents(events: GameEvent[]) {
       case 'respawn':
         if (mine) audio.echoSpawn();
         break;
+      case 'sudden':
+        banner('MORTE SÚBITA', 'Dano em dobro. A vida continua a mesma.', 2.2);
+        audio.sudden();
+        break;
       case 'roundWin':
+        if (g.mode === 'duelo') {
+          showRoundCall(e.pid, e.reason);
+          break;
+        }
         if (e.pid) {
           const w = g.players.find((p) => p.id === e.pid);
-          if (w) banner(w.id === myId ? 'RODADA SUA!' : `RODADA DE ${w.char.name.toUpperCase()}`, g.mode === 'duelo' ? `${w.roundWins} de 3` : '+3 pontos', 1.0);
+          if (w) banner(w.id === myId ? 'RODADA SUA!' : `RODADA DE ${w.char.name.toUpperCase()}`, '+3 pontos', 1.0);
         }
         break;
       case 'shoot': {
@@ -2318,6 +2391,12 @@ async function showResults() {
   $('#screen-results .btn[data-action=select]').textContent = 'Trocar personagem';
   $('#res-title').textContent = training()
     ? `${me.score} pontos`
+    : g.mode === 'duelo'
+      ? g.winners.length === 1
+        ? meWon
+          ? 'Vitória!'
+          : 'Derrota'
+        : 'EMPATE'
     : g.mode === 'chefe'
       ? meWon
         ? me.boss
@@ -2366,7 +2445,8 @@ async function showResults() {
     settings.tutorialDone = true;
     saveSettings(settings);
   }
-  if (meWon || training()) audio.victory();
+  if (g.mode === 'duelo' && g.winners.length !== 1) audio.roundMark('draw');
+  else if (meWon || training()) audio.victory();
   else audio.defeat();
   audio.stopMusic();
   const placement = meWon ? 1 : rank.indexOf(me) + 1;
@@ -2404,7 +2484,25 @@ function showOnlineResults(info: EndInfo) {
   $('#res-eyebrow').textContent = `Online · ${MODE_LABEL[g.mode]}`;
   const meBoss = g.human.boss;
   $('#res-title').textContent =
-    g.mode === 'chefe' ? (meWon ? (meBoss ? 'Você resistiu como Chefe!' : 'O Chefe caiu!') : meBoss ? 'Os caçadores venceram' : 'O Chefe venceu') : meWon ? (info.winners.length > 1 ? 'Vitória dividida!' : 'Vitória!') : 'Não foi dessa vez';
+    g.mode === 'duelo'
+      ? info.winners.length === 1
+        ? meWon
+          ? 'Vitória!'
+          : 'Derrota'
+        : 'EMPATE'
+      : g.mode === 'chefe'
+        ? meWon
+          ? meBoss
+            ? 'Você resistiu como Chefe!'
+            : 'O Chefe caiu!'
+          : meBoss
+            ? 'Os caçadores venceram'
+            : 'O Chefe venceu'
+        : meWon
+          ? info.winners.length > 1
+            ? 'Vitória dividida!'
+            : 'Vitória!'
+          : 'Não foi dessa vez';
   const list = $('#res-list');
   list.innerHTML = '';
   info.ranking.forEach((r, i) => {
@@ -2419,7 +2517,8 @@ function showOnlineResults(info: EndInfo) {
     $('#res-coins').textContent = 'Entre na conta para ganhar moedas online';
   }
   account.addOnline(coins);
-  if (meWon) audio.victory();
+  if (g.mode === 'duelo' && info.winners.length !== 1) audio.roundMark('draw');
+  else if (meWon) audio.victory();
   else audio.defeat();
   audio.stopMusic();
   rematchPending = false;
@@ -2448,11 +2547,13 @@ let last = performance.now();
 
 function readInput(): Input {
   const i = input.read();
-  const mouseOk = !input.touchMode && performance.now() - input.mouse.at < 4000;
+  const notebook = input.control === 'notebook' && !input.touchMode;
+  const mouseOk = !input.touchMode && (notebook || performance.now() - input.mouse.at < 4000);
   if (game && game.combat && mouseOk) {
     const w = renderer.toWorld(input.mouse.x, input.mouse.y);
     const me = game.human;
-    i.aim = Math.atan2(w.y - (me.y - GUN_Y), w.x - me.x);
+    const ang = Math.atan2(w.y - (me.y - GUN_Y), w.x - me.x);
+    i.aim = notebook ? input.smoothAim(ang) : ang;
   }
   // celular: o analógico direito mira (independente do movimento); solto, a última direção continua
   const stickAim = input.manualAim();

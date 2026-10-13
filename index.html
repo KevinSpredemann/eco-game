@@ -40,6 +40,7 @@
     </div>
     <div id="sb-full" class="sb-full" hidden></div>
     <div id="banner" hidden><div class="banner-main"></div><div class="banner-sub"></div></div>
+    <div id="round-call" hidden><div class="rc-kicker"></div><div class="rc-title"></div><div class="rc-sub"></div></div>
     <div id="hint" hidden></div>
     <div id="rw-sum" hidden></div>
 
@@ -458,9 +459,16 @@
           </label>
         </div>
         <div class="opts pane" data-pane-of="opt" data-pane="teclas" hidden>
-          <p class="form-note">WASD ou setas andam · mouse mira e clique atira · Esc cancela a mira ou pausa. Toque numa ação e aperte a nova tecla.</p>
+          <label class="row">Estilo no computador
+            <select id="opt-control">
+              <option value="classic">Clássico</option>
+              <option value="notebook">Notebook</option>
+            </select>
+          </label>
+          <label class="row" id="opt-sens-row">Sensibilidade da mira <input type="range" id="opt-aim" min="40" max="180" /></label>
+          <p class="form-note" id="opt-control-note"></p>
           <div class="keybinds" id="keybinds"></div>
-          <button class="btn small ghost" id="keys-reset">Voltar ao padrão</button>
+          <button class="btn small ghost" id="keys-reset">Voltar ao padrão deste estilo</button>
         </div>
       </div>
     </section>
