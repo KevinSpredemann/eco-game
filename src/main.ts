@@ -16,7 +16,7 @@ import { Renderer } from './render/renderer';
 import { drawCharacter } from './render/chars';
 import { drawMonster } from './render/monster';
 import { account, serverUrl } from './ui/account';
-import { InputManager } from './ui/input';
+import { InputManager, assistAim, nearestAim } from './ui/input';
 import { Settings, loadSettings, saveSettings } from './ui/settings';
 import { TitleShowcase } from './ui/titleShowcase';
 import { Scoreboard } from './ui/scoreboard';
@@ -92,7 +92,7 @@ function applySettings() {
   if (note) {
     note.textContent =
       settings.control === 'notebook'
-        ? 'WASD anda e o mouse mira, separados. O cursor não fica preso. Clique curto liga ou desliga o tiro; segurar atira sem trocar. Botão direito só mira. Shift esquiva, Q habilidade, E skill, R ultimate, F item, Espaço poder. Esc pausa. Trocar o estilo recoloca as teclas; depois dá para remapear.'
+        ? 'WASD anda. O mouse mira com ajuda para o inimigo perto da mira. C trava no inimigo mais perto. Clique atira nessa direção enquanto segura. Q, E, R e F usam a habilidade na mira atual, num toque. Shift esquiva. Esc pausa.'
         : 'WASD ou setas andam. O mouse mira por alguns segundos e o clique esquerdo atira enquanto segura. Botão direito usa o poder. Esc pausa. Trocar o estilo recoloca as teclas; depois dá para remapear.';
   }
   refreshMuteIcon();
@@ -665,7 +665,7 @@ function charCardHTML(c: (typeof CHARACTERS)[number]) {
   const st = charState(c);
   return `<canvas class="portrait" aria-hidden="true"></canvas>
     <span class="car-label">
-      <span class="badge">${st.owned ? symbolSvg(c.id, c.color) : LOCK}</span>
+      <span class="badge">${symbolSvg(c.id, c.color)}${st.owned ? '' : LOCK}</span>
       <b class="nm" style="--c:${c.color}">${c.name.toUpperCase()}</b>
       <span>${st.owned ? `${c.ability.name} · nv ${st.lv}` : `<span class="coins"><span class="coin"></span>Libera com ${st.price} moedas</span>`}</span>
     </span>`;
@@ -688,7 +688,11 @@ function refreshCharCards() {
     .querySelectorAll<HTMLElement>('button')
     .forEach((b, i) => {
       b.classList.toggle('on', i === charCar!.index);
-      b.classList.toggle('locked', !charState(CHARACTERS[i]).owned);
+      const st = charState(CHARACTERS[i]);
+      b.classList.toggle('locked', !st.owned);
+      b.title = st.owned ? CHARACTERS[i].name : `${CHARACTERS[i].name} · Libera com ${st.price} moedas`;
+      const tn = b.querySelector('.tn');
+      if (tn) tn.textContent = st.owned ? CHARACTERS[i].name : `${CHARACTERS[i].name} · ${st.price}`;
     });
 }
 
@@ -698,7 +702,8 @@ function placeHeroStage() {
   const cv = (heroScene as any).cv as HTMLCanvasElement;
   cv.className = 'stage';
   charCar.center.appendChild(cv);
-  heroScene.set(withSkin(withLevel(c, abilityLevel(account.profile, c.id)), account.profile.equipped.skin), !charState(c).owned);
+  const st = charState(c);
+  heroScene.set(withSkin(withLevel(c, abilityLevel(account.profile, c.id)), account.profile.equipped.skin), !st.owned, st.owned ? '' : `Libera com ${st.price} moedas`);
 }
 
 /**
@@ -807,7 +812,7 @@ function buildCharCarousel() {
     const b = document.createElement('button');
     b.style.setProperty('--c', c.color);
     b.setAttribute('aria-label', c.name);
-    b.innerHTML = `<img src="${avatarURL(c, 44)}" alt="" />`;
+    b.innerHTML = `<img src="${avatarURL(c, 44)}" alt="" /><span class="tn">${c.name}</span>`;
     b.addEventListener('click', () => charCar!.set(i));
     th.appendChild(b);
   });
@@ -1057,7 +1062,8 @@ function openShop(tab: 'char' | 'skin' | 'trail', keep?: number) {
     const b = document.createElement('button');
     b.className = 'shop-card' + (p.equipped[tab] === it.id ? ' equipped' : '') + (owned ? '' : ' locked');
     b.style.setProperty('--c', it.color);
-    b.innerHTML = `<canvas class="pv"></canvas>${p.equipped[tab] === it.id ? '<span class="lo-badge">✓</span>' : !owned ? '<span class="lo-badge lock">🔒</span>' : ''}<span class="car-label"><b>${it.name}</b></span>`;
+    const need = owned ? '' : `<span>Libera com ${it.price} moedas</span>`;
+    b.innerHTML = `<canvas class="pv"></canvas>${p.equipped[tab] === it.id ? '<span class="lo-badge">✓</span>' : !owned ? '<span class="lo-badge lock">🔒</span>' : ''}<span class="car-label"><b style="color:${it.color}">${it.name}</b>${need}</span>`;
     return b;
   });
   shopCar = car;
@@ -1605,8 +1611,10 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     pause();
     audio.suspend();
-  } else audio.resume();
+  } else audio.unlock();
 });
+window.addEventListener('pageshow', () => audio.unlock());
+window.addEventListener('focus', () => audio.unlock());
 
 // ------------------------------------------------------------------ HUD
 let monsterAva = '';
@@ -1674,7 +1682,7 @@ function duelScore(g: AnyGame) {
 }
 
 function objectiveText(g: AnyGame) {
-  if (g.mode === 'duelo') return '2 minutos. Quem elimina vence na hora. Sem queda: morte súbita, dano em dobro.';
+  if (g.mode === 'duelo') return '2 minutos. Quem elimina vence na hora. Depois o ECO rebobina e volta na rodada seguinte.';
   if (g.mode === 'combate') return 'Elimine os rivais · eliminação = 2, rodada = 3';
   if (g.mode === 'bandeira') return `Azul ${g.teamScore[0]} × ${g.teamScore[1]} Vermelho · leve a bandeira rival à sua base`;
   if (g.mode === 'rei') return 'Fique sozinho na colina: +1 ponto por segundo';
@@ -1958,7 +1966,7 @@ function updateHud() {
     );
     // item, habilidades e poder já aparecem nos botões/barra de habilidades (HUD limpo)
     void itTxt;
-    $('#btn-item .tlabel').textContent = me.item ? `${({ bomba: 'BOMBA', mina: 'MINA', gelo: 'GELO', kit: 'KIT' } as Record<string, string>)[me.item] ?? 'ITEM'} ${me.itemN}` : 'ITEM';
+    $('#btn-item .tlabel').textContent = me.item ? `${({ bomba: 'BOMBA', mina: 'MINA', gelo: 'GELO', kit: 'KIT', pulso: 'PULSO' } as Record<string, string>)[me.item] ?? 'ITEM'} ${me.itemN}` : 'ITEM';
     $('#btn-item').classList.toggle('empty', !me.item);
   } else {
     const pips = Array.from({ length: C.MAX_CARRY }, (_, i) => `<span class="pip${i < me.carry ? ' on' : ''}"></span>`).join('');
@@ -2012,9 +2020,11 @@ function showRoundCall(pid: string | null, reason?: DuelReason | null) {
   el.hidden = false;
   el.classList.remove('win', 'loss', 'draw');
   el.classList.add(view.kind);
-  (el.querySelector('.rc-kicker') as HTMLElement).textContent = `RODADA ${game.round}`;
+  (el.querySelector('.rc-kicker') as HTMLElement).textContent = '';
   (el.querySelector('.rc-title') as HTMLElement).textContent = view.title;
-  (el.querySelector('.rc-sub') as HTMLElement).textContent = view.sub;
+  (el.querySelector('.rc-sub') as HTMLElement).textContent = '';
+  $('#banner').hidden = true;
+  bannerTimer = 0;
   el.style.animation = 'none';
   void el.offsetWidth;
   el.style.animation = '';
@@ -2545,6 +2555,13 @@ const STEP = 1 / 60;
 let acc = 0;
 let last = performance.now();
 
+function aimFoes(g: AnyGame) {
+  const me = g.human;
+  return g.players
+    .filter((p) => p.alive && p.playing && g.hostile(me, p) && p.cloakT <= 0)
+    .map((p) => ({ id: p.id, x: p.x, y: p.y - GUN_Y }));
+}
+
 function readInput(): Input {
   const i = input.read();
   const notebook = input.control === 'notebook' && !input.touchMode;
@@ -2552,8 +2569,16 @@ function readInput(): Input {
   if (game && game.combat && mouseOk) {
     const w = renderer.toWorld(input.mouse.x, input.mouse.y);
     const me = game.human;
-    const ang = Math.atan2(w.y - (me.y - GUN_Y), w.x - me.x);
-    i.aim = notebook ? input.smoothAim(ang) : ang;
+    let ang = Math.atan2(w.y - (me.y - GUN_Y), w.x - me.x);
+    if (notebook) {
+      ang = input.smoothAim(ang);
+      const foes = aimFoes(game);
+      if (input.lockOn) {
+        const near = nearestAim(me.x, me.y - GUN_Y, foes);
+        if (near) ang = near.aim;
+      } else ang = assistAim(ang, me.x, me.y - GUN_Y, foes);
+    }
+    i.aim = ang;
   }
   // celular: o analógico direito mira (independente do movimento); solto, a última direção continua
   const stickAim = input.manualAim();
@@ -2565,6 +2590,10 @@ function readInput(): Input {
     if (i.touchCast) {
       i.ca = i.touchCast.ang;
       i.cr = i.touchCast.ratio * slotRange(pressed);
+    } else if (notebook && game.combat) {
+      const aim = typeof i.aim === 'number' ? i.aim : me.aim;
+      i.ca = aim;
+      i.cr = slotRange(pressed) * 0.72;
     } else if (mouseOk && game.combat) {
       const w = renderer.toWorld(input.mouse.x, input.mouse.y);
       i.ca = Math.atan2(w.y - me.y, w.x - me.x);
@@ -2639,6 +2668,7 @@ input.onDenied = (slot) => {
     btn.classList.add('denied');
   }
 };
+input.onLock = (on) => hint(on ? 'Mira travada no inimigo mais perto. C solta.' : null);
 input.onAimChange = (a) => {
   $('#aim-cancel').hidden = !(a && a.touch);
   if (!a) renderer.aimPreview = null;
@@ -2810,19 +2840,19 @@ if (!isNative && 'serviceWorker' in navigator && (location.protocol === 'https:'
 }
 
 // ------------------------------------------------------------------ início
-function firstGesture() {
+let audioPrimed = false;
+function primeAudio() {
   audio.unlock();
+  if (audioPrimed) return;
+  audioPrimed = true;
   applySettings();
   if (!game) audio.playMusic('menu');
   $('#title-foot').textContent = isNative ? 'Toque em Jogar para começar.' : isStandalone ? 'Jogando como app.' : 'Dica: instale o ECO na tela inicial para jogar em tela cheia.';
-  window.removeEventListener('pointerdown', firstGesture);
-  window.removeEventListener('keydown', firstGesture);
 }
-window.addEventListener('pointerdown', firstGesture);
-// iOS (Safari/WKWebView) só libera o áudio em touchend/click
-document.addEventListener('touchend', () => audio.unlock(), { passive: true });
-document.addEventListener('click', () => audio.unlock());
-window.addEventListener('keydown', firstGesture);
+window.addEventListener('pointerdown', primeAudio);
+document.addEventListener('touchend', primeAudio, { passive: true });
+document.addEventListener('click', primeAudio);
+window.addEventListener('keydown', primeAudio);
 
 $('#rules-powers').innerHTML = POWERS.filter((p) => p.modes.includes('nucleo')).map((p) => `<li><span class="pdot" style="--c:${p.color}"></span><b style="color:${p.color}">${p.name}</b> ${p.desc}</li>`).join('');
 bindOptions();

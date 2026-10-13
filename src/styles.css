@@ -1059,28 +1059,15 @@ input[type='checkbox'] {
   max-width: 92vw;
   animation: rc-in 0.28s ease-out;
 }
-#round-call .rc-kicker {
-  font-size: clamp(0.72rem, 2vw, 0.9rem);
-  letter-spacing: 0.16em;
-  font-weight: 700;
-  color: #d7d2ea;
+#round-call .rc-kicker,
+#round-call .rc-sub {
+  display: none;
 }
 #round-call .rc-title {
   font-family: var(--display);
-  font-size: clamp(1.55rem, 6vw, 3.3rem);
-  line-height: 1.05;
-  margin-top: 4px;
-}
-#round-call .rc-sub {
-  margin-top: 8px;
-  font-size: clamp(0.85rem, 2.4vw, 1.05rem);
-  font-weight: 650;
-  color: #fff8e8;
-  background: rgba(8, 6, 22, 0.78);
-  padding: 6px 14px;
-  border-radius: 10px;
-  display: inline-block;
-  max-width: 92vw;
+  font-size: clamp(2.6rem, 8vw, 5.2rem);
+  line-height: 1.02;
+  margin-top: 0;
 }
 #round-call.win .rc-title {
   color: #8dffb8;
@@ -2355,17 +2342,47 @@ input[type='checkbox'] {
 #screen-title .title-inner {
   position: absolute;
   z-index: 3;
-  left: max(4vw, env(safe-area-inset-left));
-  top: 50%;
-  transform: translateY(-50%);
-  width: min(420px, 42vw);
-  align-items: stretch;
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: 0;
+  transform: none;
+  width: 100%;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
   text-align: left;
-  gap: 10px;
+  gap: 10px 16px;
+  padding: 28px 22px max(12px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(6, 4, 16, 0) 0%, rgba(6, 4, 16, 0.78) 34%, rgba(6, 4, 16, 0.94) 100%);
+}
+.title-cast {
+  position: absolute;
+  z-index: 2;
+  top: max(16px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: none;
+  font-family: var(--display);
+  font-size: clamp(1.8rem, 4.6vw, 3.4rem);
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 18px #000, 0 0 24px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+.title-cast span {
+  font-family: inherit;
+  font-size: 0.42em;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #d5d8f2;
 }
 #screen-title .logo {
   position: relative;
-  font-size: clamp(4.5rem, 11vw, 9rem);
+  font-size: clamp(2.4rem, 5vw, 3.8rem);
   padding-left: 0;
   letter-spacing: 0.06em;
   color: transparent;
@@ -2394,14 +2411,16 @@ input[type='checkbox'] {
   }
 }
 #screen-title .tagline {
-  margin: -4px 0 12px;
-  font-size: clamp(0.85rem, 1.6vw, 1.15rem);
-  letter-spacing: 0.32em;
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
   text-shadow: 0 0 12px rgba(62, 232, 255, 0.6);
 }
 .play-btn {
-  min-height: 64px;
-  font-size: 1.35rem;
+  min-height: 52px;
+  width: auto;
+  min-width: 180px;
+  font-size: 1.15rem;
   letter-spacing: 0.18em;
   display: flex;
   align-items: center;
@@ -2427,9 +2446,10 @@ input[type='checkbox'] {
   }
 }
 .menu-tiles {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  width: auto;
 }
 .tile {
   display: flex;
@@ -2437,8 +2457,9 @@ input[type='checkbox'] {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  min-height: 72px;
-  padding: 8px 4px;
+  min-height: 56px;
+  min-width: 84px;
+  padding: 8px 10px;
   border-radius: 14px;
   border: 1px solid rgba(62, 232, 255, 0.35);
   background: linear-gradient(180deg, rgba(40, 30, 90, 0.75), rgba(14, 10, 34, 0.85));
@@ -2523,17 +2544,21 @@ input[type='checkbox'] {
   }
   #screen-title .title-inner {
     top: auto;
-    bottom: max(18px, env(safe-area-inset-bottom));
+    bottom: 0;
     transform: none;
-    left: 16px;
-    right: 16px;
-    width: auto;
-    align-items: stretch;
-    text-align: center;
+    left: 0;
+    right: 0;
+    width: 100%;
+    align-items: center;
+    text-align: left;
+    justify-content: center;
   }
   #screen-title .logo {
-    font-size: clamp(3.5rem, 20vw, 6rem);
+    font-size: clamp(2.2rem, 10vw, 3.2rem);
     align-self: center;
+  }
+  .title-cast {
+    font-size: clamp(1.5rem, 7vw, 2.4rem);
   }
   #screen-title .tagline {
     align-self: center;
@@ -4495,15 +4520,7 @@ body.rewinding #hud-status {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(6, 4, 16, 0.82) 0%, rgba(6, 4, 16, 0.55) 30%, rgba(6, 4, 16, 0) 52%),
-    radial-gradient(ellipse at 70% 50%, rgba(0, 0, 0, 0) 55%, rgba(6, 4, 16, 0.55) 100%);
-}
-@media (orientation: portrait) {
-  .title-shade {
-    background:
-      linear-gradient(180deg, rgba(6, 4, 16, 0.35) 0%, rgba(6, 4, 16, 0) 14%, rgba(6, 4, 16, 0) 46%, rgba(6, 4, 16, 0.85) 62%, rgba(6, 4, 16, 0.96) 100%);
-  }
+  background: linear-gradient(180deg, rgba(6, 4, 16, 0.28) 0%, rgba(6, 4, 16, 0) 18%, rgba(6, 4, 16, 0) 62%, rgba(6, 4, 16, 0.55) 100%);
 }
 /* nome: aparece no card que está no meio (troca na hora, até durante o arrasto) */
 .car-card:not(.center) .car-label {
@@ -4511,6 +4528,10 @@ body.rewinding #hud-status {
 }
 .car-card:not(.named) .car-label {
   opacity: 0;
+}
+.car-card.locked .car-label,
+.shop-card.locked .car-label {
+  opacity: 1;
 }
 
 /* ---------------------------------------------------------------- pronto x indisponível (estilo LoL): cinza/escuro ↔ colorido/vivo */
@@ -4579,19 +4600,33 @@ body.rewinding #hud-status {
     box-shadow: 0 0 28px 8px rgba(255, 255, 255, 0.55);
   }
 }
-/* telas de escolha: o que está bloqueado fica cinza; o liberado, colorido */
+/* bloqueado continua colorido e legível: o cadeado é só um selo, o nome e o preço ficam visíveis */
 .car-card.locked canvas.portrait,
 #char-thumbs button.locked img,
 .lo-card.locked canvas,
 .shop-card.locked canvas,
-.lo-opt.locked canvas {
-  filter: saturate(0.72) brightness(0.96);
-}
-.car-card.locked .car-label b {
-  color: #b8bad0 !important;
-}
+.lo-opt.locked canvas,
 .car-card.locked canvas.stage {
-  filter: saturate(0.8) brightness(0.98);
+  filter: none;
+}
+.car-card.locked .car-label b,
+.shop-card.locked .car-label b {
+  color: var(--c, #ffffff);
+}
+.car-card.locked .badge svg:last-child,
+.shop-card .lo-badge.lock {
+  opacity: 0.9;
+}
+#char-thumbs button .tn {
+  display: block;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #f4f6ff;
+  text-shadow: 0 1px 2px #000;
 }
 /* aviso de indisponível ("vazio", "FASE 2", "TONTO") no meio do ícone, sem encostar na tecla */
 .sk.off .sk-num {
