@@ -41,7 +41,43 @@ export function stepAim(current: number, target: number, sens: number): number {
   return current + d;
 }
 
-/** Clique curto no notebook liga ou desliga o tiro. Segurar continua atirando sem trocar o modo. */
+/** Puxa a mira para o inimigo mais alinhado, se ele estiver dentro do cone. */
+export function assistAim(aim: number, ox: number, oy: number, foes: { x: number; y: number }[], cone = 0.62, range = 460): number {
+  let bestDiff = 0;
+  let bestAbs = cone;
+  let found = false;
+  for (const f of foes) {
+    const dx = f.x - ox;
+    const dy = f.y - oy;
+    const d = Math.hypot(dx, dy);
+    if (d < 12 || d > range) continue;
+    let diff = Math.atan2(dy, dx) - aim;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const ad = Math.abs(diff);
+    if (ad < bestAbs) {
+      bestAbs = ad;
+      bestDiff = diff;
+      found = true;
+    }
+  }
+  return found ? aim + bestDiff * 0.78 : aim;
+}
+
+/** Inimigo mais perto, para a trava de mira do notebook. */
+export function nearestAim(ox: number, oy: number, foes: { id: string; x: number; y: number }[], max = 720): { id: string; aim: number } | null {
+  let best: { id: string; aim: number } | null = null;
+  let bd = max;
+  for (const f of foes) {
+    const d = Math.hypot(f.x - ox, f.y - oy);
+    if (d < 12 || d >= bd) continue;
+    bd = d;
+    best = { id: f.id, aim: Math.atan2(f.y - oy, f.x - ox) };
+  }
+  return best;
+}
+
+/** Clique curto no notebook ligava o tiro. O notebook agora atira só enquanto o botão está pressionado. */
 export function clickFireLatch(latch: boolean, heldMs: number, toggle: boolean): boolean {
   if (!toggle || heldMs >= 280) return latch;
   return !latch;
@@ -116,8 +152,11 @@ export class InputManager {
   control: ControlStyle = 'classic';
   /** 1 = padrão; só o modo notebook suaviza a mira */
   aimSens = 1;
-  /** tiro contínuo sem segurar o botão (notebook) */
+  /** tiro contínuo sem segurar o botão (não usado no notebook) */
   fireLatch = false;
+  /** notebook: C trava a mira no inimigo mais perto */
+  lockOn = false;
+  onLock: ((on: boolean) => void) | null = null;
   private mouseDownAt = 0;
   private ateClick = false;
   private rmbAim = false;
@@ -157,8 +196,16 @@ export class InputManager {
       if (e.code === 'Escape' || e.code === 'KeyP') {
         // Esc primeiro cancela a mira; depois pausa. O tiro travado solta.
         this.fireLatch = false;
+        this.lockOn = false;
         if (this.aiming) this.cancelAim();
         else this.onPause?.();
+        return;
+      }
+      if (this.control === 'notebook' && e.code === 'KeyC') {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        this.lockOn = !this.lockOn;
+        this.onLock?.(this.lockOn);
         return;
       }
       const slot = this.slotOf(e.code);
@@ -414,11 +461,7 @@ export class InputManager {
       }
     });
     window.addEventListener('mouseup', (e) => {
-      if (e.button === 0) {
-        const held = performance.now() - this.mouseDownAt;
-        if (!this.ateClick) this.fireLatch = clickFireLatch(this.fireLatch, held, this.control === 'notebook');
-        this.fireMouse = false;
-      }
+      if (e.button === 0) this.fireMouse = false;
       if (e.button === 2) this.rmbAim = false;
     });
 
@@ -478,7 +521,8 @@ export class InputManager {
       this.onDenied?.(slot);
       return;
     }
-    if (kind === 'instant' || (this.touchMode && confirmTouchCast(slot, kind, 0))) {
+    // notebook: um toque usa a habilidade na mira atual (não pede um segundo clique)
+    if (kind === 'instant' || (this.control === 'notebook' && !this.touchMode) || (this.touchMode && confirmTouchCast(slot, kind, 0))) {
       this.queued.add(slot);
       return;
     }
@@ -540,6 +584,7 @@ export class InputManager {
     this.touchCast = null;
     this.lastAim = null;
     this.fireLatch = false;
+    this.lockOn = false;
     this.rmbAim = false;
     this.aimAng = null;
     this.releaseSticks();
