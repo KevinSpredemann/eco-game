@@ -183,7 +183,7 @@ describe('balanceamento central', () => {
   });
 
   it('equipamento inválido ou não liberado volta para o padrão', () => {
-    const l = sanitizeLoadout({ primary: 'colosso', skill: 'marcador', ult: 'naoexiste' as never, kit: 'kit' }, () => false);
+    const l = sanitizeLoadout({ primary: 'colosso', skill: 'fantasma' as never, ult: 'naoexiste' as never, kit: 'fantasma' as never }, () => false);
     expect(l.primary).toBe('assinatura');
     expect(l.skill).toBe('rolamento');
     expect(l.ult).toBe('meteoro');

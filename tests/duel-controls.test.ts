@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
 import { DUEL, duelTiebreak, roundBanner } from '../src/game/duel';
+import { REWIND_TIME } from '../src/game/constants';
 import { CHAR_PRICES, grantStarters, newProfile, owns, STARTER_CHARS } from '../src/game/economy';
-import { NOTEBOOK_KEYS, clickFireLatch, presetKeys, stepAim } from '../src/ui/input';
+import { NOTEBOOK_KEYS, assistAim, clickFireLatch, nearestAim, presetKeys, stepAim } from '../src/ui/input';
 import { ClientGame } from '../src/net/clientGame';
 import { encodeSnapshot } from '../src/net/protocol';
 
@@ -32,6 +33,11 @@ function duel(extra: { roundSec?: number; suddenSec?: number } = {}) {
   return g;
 }
 
+function finishCall(g: Game) {
+  g.step(DUEL.callSec + 0.05, both);
+  if (g.phase === 'rewind') g.step(REWIND_TIME + 0.05, both);
+}
+
 function mirror() {
   return new ClientGame({
     you: 'a',
@@ -54,7 +60,7 @@ describe('X1 com morte súbita', () => {
     expect(g.timeLeft()).toBeGreaterThan(100);
   });
 
-  it('uma eliminação fecha o round na hora, sem rebobinar e sem somar o ponto duas vezes', () => {
+  it('uma eliminação fecha o round na hora, grava o eco e não soma o ponto duas vezes', () => {
     const g = duel();
     const [a, b] = g.players;
     b.hp = 12;
@@ -65,15 +71,17 @@ describe('X1 com morte súbita', () => {
     expect(g.callWinner).toBe(a.id);
     expect(a.roundWins).toBe(1);
     expect(b.roundWins).toBe(0);
-    expect(g.echoes.count).toBe(0);
+    expect(g.echoes.count).toBeGreaterThan(0);
     g.step(0.4, both);
     g.step(0.4, both);
     expect(a.roundWins).toBe(1);
     expect(g.phase).toBe('call');
     const me = roundBanner(a.id, g.callWinner, g.callReason, '1 × 0');
     const foe = roundBanner(b.id, g.callWinner, g.callReason, '0 × 1');
-    expect(me.title).toBe('VITÓRIA NO ROUND');
-    expect(foe.title).toBe('DERROTA NO ROUND');
+    expect(me.title).toBe('Você venceu');
+    expect(foe.title).toBe('Você perdeu');
+    expect(me.sub).toBe('');
+    expect(foe.sub).toBe('');
     expect(me.kind).not.toBe(foe.kind);
   });
 
@@ -129,9 +137,8 @@ describe('X1 com morte súbita', () => {
     expect(g.callReason).toBe('draw');
     expect(g.callWinner).toBeNull();
     expect(g.players.every((p) => p.roundWins === 0)).toBe(true);
-    expect(g.echoes.count).toBe(0);
     const bothDraw = [g.players[0].id, g.players[1].id].map((id) => roundBanner(id, null, 'draw', '0 × 0').title);
-    expect(bothDraw).toEqual(['EMPATE NO ROUND', 'EMPATE NO ROUND']);
+    expect(bothDraw).toEqual(['Empate', 'Empate']);
   });
 
   it('desempata por vida e, se a vida for igual, por dano causado', () => {
@@ -168,6 +175,9 @@ describe('X1 com morte súbita', () => {
     g.step(STEP, both);
     expect(a.roundWins).toBe(1);
     g.step(DUEL.callSec + 0.05, both);
+    expect(g.phase).toBe('rewind');
+    expect(a.roundWins).toBe(1);
+    g.step(REWIND_TIME + 0.05, both);
     expect(g.phase).toBe('prep');
     expect(g.round).toBe(2);
     expect(a.roundWins).toBe(1);
@@ -183,7 +193,7 @@ describe('X1 com morte súbita', () => {
     g.players[1].hp = 5;
     g.hurt(g.players[1], 20, g.players[0].id, 'shot', 0);
     g.step(STEP, both);
-    g.step(DUEL.callSec + 0.05, both);
+    finishCall(g);
     expect(g.phase).toBe('results');
     expect(g.winners).toEqual(['a']);
 
@@ -193,7 +203,7 @@ describe('X1 com morte súbita', () => {
     draw.suddenT = draw.suddenLimit;
     draw.step(0.05, both);
     expect(draw.callReason).toBe('draw');
-    draw.step(DUEL.callSec + 0.05, both);
+    finishCall(draw);
     expect(draw.phase).toBe('results');
     expect([...draw.winners].sort()).toEqual(['a', 'b']);
   });
@@ -282,6 +292,9 @@ describe('controles de notebook e elenco inicial', () => {
     expect(keys.ability).toBe('KeyQ');
     expect(keys.ult).toBe('KeyR');
     expect(presetKeys('classic').item).toBe('Space');
+    expect(assistAim(0, 0, 0, [{ x: 100, y: 8 }])).toBeGreaterThan(0);
+    expect(assistAim(0, 0, 0, [{ x: -200, y: 0 }])).toBe(0);
+    expect(nearestAim(0, 0, [{ id: 'far', x: 300, y: 0 }, { id: 'near', x: 40, y: 0 }])?.id).toBe('near');
   });
 
   it('os iniciais entram sem apagar moedas nem personagens comprados', () => {
