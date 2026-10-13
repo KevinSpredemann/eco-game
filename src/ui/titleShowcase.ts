@@ -22,6 +22,7 @@ export class TitleShowcase {
   private w = 0;
   private h = 0;
   private endT = 0;
+  private showT = 0;
   private lastPair = '';
 
   constructor(private cv: HTMLCanvasElement) {
@@ -56,6 +57,8 @@ export class TitleShowcase {
     g.drainEvents();
     this.g = g;
     this.endT = 0;
+    this.showT = 0;
+    this.tag();
     this.r.setArena(arena);
     const [p, q] = g.players;
     this.camX = (p.x + q.x) / 2;
@@ -78,10 +81,18 @@ export class TitleShowcase {
     this.place(1);
   }
 
-  /** área da tela onde a luta aparece: em pé, a parte de cima (o menu fica embaixo); deitado, à direita do menu */
+  private tag() {
+    const el = document.getElementById('title-cast');
+    const g = this.g;
+    if (!el || !g) return;
+    const [a, b] = g.players;
+    el.innerHTML = `<b style="color:${a.color}">${a.char.name}</b><span>contra</span><b style="color:${b.color}">${b.char.name}</b>`;
+  }
+
+  /** a luta ocupa quase a tela; o menu fica numa faixa embaixo */
   private area() {
-    const portrait = this.h > this.w;
-    return portrait ? { x: 0, y: 0, w: this.w, h: this.h * 0.58 } : { x: this.w * 0.34, y: 0, w: this.w * 0.66, h: this.h };
+    const bar = Math.min(150, this.h * 0.22);
+    return { x: 0, y: 0, w: this.w, h: Math.max(120, this.h - bar) };
   }
 
   /** câmera: enquadra os dois lutadores (zoom suave), sem mostrar fora do mapa quando der */
@@ -99,7 +110,7 @@ export class TitleShowcase {
     const fitScale = Math.min(A.w / (maxX - minX), A.h / (maxY - minY));
     // limites: nunca mais longe que o mapa inteiro na área, nunca mais perto que um close bonito
     const minScale = Math.min(A.w / WORLD_W, A.h / WORLD_H);
-    const maxScale = this.h > this.w ? this.w / 520 : this.h / 420;
+    const maxScale = this.h > this.w ? this.w / 300 : this.h / 240;
     const target = Math.max(minScale, Math.min(maxScale, fitScale));
     this.zoom = this.zoom ? this.zoom + (target - this.zoom) * k : target;
     const s = this.zoom;
@@ -141,7 +152,8 @@ export class TitleShowcase {
     const box = this.cv.parentElement ?? this.cv;
     if (Math.abs(box.clientWidth - this.w) > 1 || Math.abs(box.clientHeight - this.h) > 1) this.fit();
     // rodada acabou (alguém caiu ou o tempo acabou): segura a última imagem, escurece e troca de duelo
-    if (g.phase !== 'play') {
+    this.showT += dt;
+    if (g.phase !== 'play' || this.showT > 8) {
       this.endT += dt;
       this.cv.style.opacity = String(Math.max(0, 1 - this.endT / 0.35));
       if (this.endT > 0.45) {
