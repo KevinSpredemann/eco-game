@@ -28,6 +28,7 @@ import { botCombat, botThink, BotBrain, NavGrid } from './bot';
 import { PowerId, getPower, randomPower } from './powerups';
 import { BOMB_DAMAGE, BOMB_FUSE, BOMB_RADIUS, ECHO_DAMAGE_MULT, GUN_Y, ICE_DAMAGE, ICE_RADIUS, ITEMS, ItemId, KIT_HEAL, MINE_DAMAGE, MINE_RADIUS, WEAPONS, WeaponId, isPrimary, loadoutPrimary } from './weapons';
 import { withSkin } from './characters';
+import { choosePortalExit, portalPairAt } from './portals';
 
 export type Difficulty = 'facil' | 'normal' | 'dificil';
 export type ObjectiveId = 'dourado' | 'tripla' | 'intocavel';
@@ -514,7 +515,7 @@ export type GameEvent =
   | { type: 'reflect'; x: number; y: number; pid: string }
   | { type: 'bonusSpawn'; x: number; y: number; ab: AbilityId }
   | { type: 'bonusPick'; x: number; y: number; pid: string; ab: AbilityId }
-  | { type: 'dmg'; pid: string; x: number; y: number; n: number; k: 'hp' | 'shield' | 'block' | 'weak' | 'dodge' | 'heal'; sx?: number; sy?: number; src?: DmgSrc }
+  | { type: 'dmg'; pid: string; x: number; y: number; n: number; k: 'hp' | 'shield' | 'block' | 'weak' | 'dodge' | 'heal'; sx?: number; sy?: number; src?: DmgSrc; note?: string }
   | { type: 'skill'; pid: string; x: number; y: number; skill: string }
   | { type: 'ult'; pid: string; x: number; y: number; ult: string }
   | { type: 'cast'; pid: string; kind: CastKind; x: number; y: number }
@@ -588,6 +589,8 @@ export class Game {
   echoViews: EchoView[] = [];
   zoneEvents: ZoneEvent[] = [];
   events: GameEvent[] = [];
+  /** última posição em que o corpo cabia (para sair de uma parede sem teleporte aleatório) */
+  private safePos = new Map<string, { x: number; y: number }>();
 
   phase: Phase = 'prep';
   phaseT = 0;
@@ -794,7 +797,8 @@ export class Game {
   }
   /** pode ser alvo de mira (não está invisível/fumaça) */
   targetable(p: Player): boolean {
-    return p.alive && p.playing && p.cloakT <= 0 && !(p.hidden && p.phaseT > 0);
+    // arbusto, fase e invisibilidade escondem de verdade: o bot não atira em quem não daria para ver
+    return p.alive && p.playing && p.cloakT <= 0 && !p.hidden;
   }
 
   // ------------------------------------------------------------------ rodada
@@ -1458,32 +1462,78 @@ export class Game {
     p.moving = moving || p.dashT > 0;
     if (p.moving) p.walkPhase += dt * (p.turboT > 0 ? 16 : 11);
 
-    // portais
-    for (const [a, b] of this.arena.portals ?? []) {
-      if (p.portalCd > 0) break;
-      for (const [from, to] of [
-        [a, b],
-        [b, a],
-      ] as const) {
-        if (dist(p.x, p.y, from.x, from.y) < 24) {
-          p.recorder?.markJump();
-          const ox = Math.cos(p.dir) * 34;
-          const oy = Math.sin(p.dir) * 34;
-          p.x = to.x + ox;
-          p.y = to.y + oy;
-          this.collideWorld(p);
-          p.portalCd = C.PORTAL_CD;
-          this.events.push({ type: 'portal', x: to.x, y: to.y, pid: p.id });
-          break;
-        }
-      }
-    }
+    this.usePortal(p);
+    this.rescue(p);
+    this.noteSafe(p);
 
     // queda (ilhas)
     if (this.arena.islands && !isGround(this.arena, p.x, p.y, this.worldT)) {
       this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: 'fall' });
       this.respawn(p);
       if (p.invulnT <= 0 && p.phaseT <= 0) this.damage(p, 'fall', true);
+    }
+  }
+
+  /** portal: uma transição, saída segura, vida intacta, recarga contra loop */
+  private usePortal(p: Player) {
+    if (p.portalCd > 0) return;
+    const hit = portalPairAt(this.arena.portals, p.x, p.y);
+    if (!hit) return;
+    const hp = p.hp;
+    const hearts = p.hearts;
+    const shield = p.shieldHp;
+    const dir = Math.hypot(p.vx, p.vy) > 30 ? Math.atan2(p.vy, p.vx) : p.dir;
+    const zoneOn = (i: number) => this.zoneState(i) === 'on';
+    const free = (x: number, y: number) => this.isFree(x, y, C.PLAYER_R);
+    let exit = choosePortalExit(this.arena, hit.to, dir, this.worldT, zoneOn, free);
+    p.recorder?.markJump();
+    p.x = exit.x;
+    p.y = exit.y;
+    p.vx *= 0.25;
+    p.vy *= 0.25;
+    this.collideWorld(p);
+    if (!this.isFree(p.x, p.y, C.PLAYER_R * 0.8) || portalPairAt(this.arena.portals, p.x, p.y)) {
+      exit = choosePortalExit(this.arena, hit.to, dir + Math.PI / 2, this.worldT, zoneOn, free);
+      p.x = exit.x;
+      p.y = exit.y;
+      this.collideWorld(p);
+    }
+    p.portalCd = C.PORTAL_CD;
+    p.hp = hp;
+    p.hearts = hearts;
+    p.shieldHp = shield;
+    this.safePos.set(p.id, { x: p.x, y: p.y });
+    this.events.push({ type: 'portal', x: p.x, y: p.y, pid: p.id });
+  }
+
+  private noteSafe(p: Player) {
+    if (this.isFree(p.x, p.y, C.PLAYER_R)) this.safePos.set(p.id, { x: p.x, y: p.y });
+  }
+
+  /** centro dentro de parede/pilar: volta à última posição válida, senão ao vão livre mais perto */
+  private rescue(p: { id?: string; x: number; y: number; vx?: number; vy?: number }) {
+    if (this.isFree(p.x, p.y, 4)) return;
+    const saved = p.id ? this.safePos.get(p.id) : undefined;
+    if (saved && this.isFree(saved.x, saved.y, C.PLAYER_R)) {
+      p.x = saved.x;
+      p.y = saved.y;
+      if (p.vx !== undefined) p.vx = 0;
+      if (p.vy !== undefined) p.vy = 0;
+      return;
+    }
+    for (let r = 12; r <= 96; r += 12) {
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const x = p.x + Math.cos(a) * r;
+        const y = p.y + Math.sin(a) * r;
+        if (!this.isFree(x, y, C.PLAYER_R)) continue;
+        p.x = x;
+        p.y = y;
+        if (p.vx !== undefined) p.vx = 0;
+        if (p.vy !== undefined) p.vy = 0;
+        if (p.id) this.safePos.set(p.id, { x, y });
+        return;
+      }
     }
   }
 
@@ -1974,9 +2024,18 @@ export class Game {
     return true;
   }
 
+  private slideOut(p: { vx?: number; vy?: number }, nx: number, ny: number) {
+    if (p.vx === undefined || p.vy === undefined) return;
+    const vn = p.vx * nx + p.vy * ny;
+    if (vn < 0) {
+      p.vx -= vn * nx;
+      p.vy -= vn * ny;
+    }
+  }
+
   collideWorld(p: { x: number; y: number; vx?: number; vy?: number }, r = C.PLAYER_R) {
     const walls = this.iceWalls?.length ? [...this.arena.walls, ...this.iceWalls] : this.arena.walls;
-    for (let iter = 0; iter < 2; iter++) {
+    for (let iter = 0; iter < 4; iter++) {
       for (const w of walls) {
         const cx = Math.max(w.x, Math.min(p.x, w.x + w.w));
         const cy = Math.max(w.y, Math.min(p.y, w.y + w.h));
@@ -1985,7 +2044,7 @@ export class Game {
         const d = Math.hypot(dx, dy);
         if (d < r) {
           if (d < 0.001) {
-            // centro dentro do retângulo: empurra pelo lado mais próximo
+            // centro dentro do retângulo: empurra pelo lado mais próximo e desliza
             const opts = [
               [p.x - w.x, -1, 0],
               [w.x + w.w - p.x, 1, 0],
@@ -1997,9 +2056,13 @@ export class Game {
             dy = opts[0][2];
             p.x += dx * (opts[0][0] + r);
             p.y += dy * (opts[0][0] + r);
+            this.slideOut(p, dx, dy);
           } else {
-            p.x = cx + (dx / d) * r;
-            p.y = cy + (dy / d) * r;
+            const nx = dx / d;
+            const ny = dy / d;
+            p.x = cx + nx * r;
+            p.y = cy + ny * r;
+            this.slideOut(p, nx, ny);
           }
         }
       }
@@ -2055,6 +2118,8 @@ export class Game {
           b.y -= ny * push;
           this.collideWorld(a);
           this.collideWorld(b);
+          this.rescue(a);
+          this.rescue(b);
         }
       }
   }
@@ -2196,7 +2261,7 @@ export class Game {
       p.stats.echoHits++;
       this.echoHitBy = e.rec.playerId;
       if (this.combat) {
-        this.hurt(p, 12, null, own ? 'own' : 'echo');
+        this.hurt(p, 12, null, own ? 'own' : 'echo', Math.atan2(p.y - e.y, p.x - e.x));
         p.invulnT = Math.max(p.invulnT, 0.6);
         return;
       }
@@ -2703,8 +2768,10 @@ export class Game {
       sy = p.y - Math.sin(dir) * 140;
     }
     const kind: DmgSrc = cause === 'echo' || cause === 'own' ? 'eco' : cause === 'hazard' || cause === 'fall' ? 'perigo' : cause === 'blast' ? 'explosao' : cause === 'pulse' ? 'golpe' : !by ? 'criatura' : 'arma';
-    this.events.push({ type: 'dmg', pid: p.id, x: p.x, y: p.y, n: Math.max(1, Math.round(dmg)), k: weak ? 'weak' : 'hp', sx: sx === undefined ? undefined : Math.round(sx), sy: sy === undefined ? undefined : Math.round(sy), src: kind });
-    this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: cause === 'shot' ? 'echo' : cause === 'own' ? 'own' : cause === 'fall' ? 'fall' : 'hazard' });
+    const note = cause === 'echo' ? 'ECO DA RODADA ANTERIOR' : cause === 'own' ? 'SEU ECO' : undefined;
+    this.events.push({ type: 'dmg', pid: p.id, x: p.x, y: p.y, n: Math.max(1, Math.round(dmg)), k: weak ? 'weak' : 'hp', sx: sx === undefined ? undefined : Math.round(sx), sy: sy === undefined ? undefined : Math.round(sy), src: kind, note });
+    const hitBy: 'echo' | 'own' | 'hazard' | 'fall' | 'pulse' = cause === 'echo' ? 'echo' : cause === 'own' ? 'own' : cause === 'fall' ? 'fall' : cause === 'hazard' ? 'hazard' : 'pulse';
+    this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: hitBy });
     if (src && src !== p && this.hostile(src, p)) {
       src.stats.dmg += dmg;
       if (!src.boss) src.ultCharge = Math.min(100, src.ultCharge + dmg * COMBAT.ult.perDamageDealt);
