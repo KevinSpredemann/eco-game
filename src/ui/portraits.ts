@@ -1,6 +1,8 @@
 import { ArenaDef } from '../game/arenas';
 import { CharacterDef } from '../game/characters';
+import { accessoryById } from '../game/economy';
 import { drawCharacter, shade } from '../render/chars';
+import { accessoryBehind, drawAccessory } from '../render/accessories';
 import { Renderer } from '../render/renderer';
 
 // Retratos e miniaturas desenhados em vetor, na densidade real da tela (nítidos até em 4K).
@@ -10,7 +12,7 @@ export function dpr(): number {
 }
 
 /** Desenha o personagem de corpo inteiro num canvas de card. */
-export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { locked?: boolean; time?: number } = {}) {
+export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { locked?: boolean; time?: number; acc?: string } = {}) {
   const w = cv.clientWidth || cv.width;
   const h = cv.clientHeight || cv.height;
   if (!w || !h) return;
@@ -39,45 +41,89 @@ export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { loc
     g.lineTo(w, y);
     g.stroke();
   }
-  // chão
-  const floorY = h * 0.92;
+  // chão. A caixa vai do capuz mais alto (−90) até a barra da capa (+8),
+  // a mesma escala para o elenco antigo e o do estúdio.
+  const floorY = h * 0.9;
   g.fillStyle = hexA(c.color, 0.25);
   g.beginPath();
   g.ellipse(w / 2, floorY, w * 0.32, h * 0.035, 0, 0, Math.PI * 2);
   g.fill();
-  // personagem (altura ≈ 62 unidades)
-  const s = Math.min((h * 0.8) / 64, (w * 0.9) / 34);
+  const s = Math.min((floorY - h * 0.04) / 90, (w * 0.9) / 52);
+  const acc = opts.acc ? accessoryById(opts.acc) : null;
   g.save();
   g.translate(w / 2, floorY);
   g.scale(s, s);
-  if (opts.locked) g.filter = 'grayscale(0.85) brightness(0.55)';
+  if (acc && accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
   drawCharacter(g, c, 'down', opts.time ?? 0, false);
+  if (acc && !accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
   g.restore();
-  g.filter = 'none';
+}
+
+const spriteCache = new Map<string, HTMLImageElement>();
+/** Sprite do estúdio, se a arte existir. Enquanto carrega, devolve a imagem incompleta. */
+export function studioSprite(art: string): HTMLImageElement | null {
+  if (!art.includes('studio/') || typeof Image === 'undefined') return null;
+  let img = spriteCache.get(art);
+  if (!img) {
+    img = new Image();
+    img.decoding = 'async';
+    img.src = '/' + art.replace(/^\//, '');
+    spriteCache.set(art, img);
+  }
+  return img;
+}
+
+export function paintStudio(g: CanvasRenderingContext2D, art: string, w = 34, upscale = 1): boolean {
+  const img = studioSprite(art);
+  if (!img || !img.complete || img.naturalWidth <= 0) return false;
+  const m = g.getTransform();
+  const scale = Math.hypot(m.a, m.b) || 1;
+  // A arte do estúdio é nítida no tamanho do arquivo. A tela inicial pode ampliar um pouco.
+  const destW = Math.min(w * scale, img.naturalWidth * Math.max(1, upscale));
+  const userW = destW / scale;
+  const userH = userW * (img.naturalHeight / img.naturalWidth);
+  const smooth = g.imageSmoothingEnabled;
+  const quality = g.imageSmoothingQuality;
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(img, -userW / 2, -userH, userW, userH);
+  g.imageSmoothingEnabled = smooth;
+  g.imageSmoothingQuality = quality;
+  return true;
 }
 
 const urlCache = new Map<string, string>();
-/** Rostinho (busto) em data URL, para placar, salas e resultados. */
-export function avatarURL(c: CharacterDef, size = 64): string {
-  const key = `${c.id}:${c.skinId ?? ''}:${size}`;
-  const hit = urlCache.get(key);
-  if (hit) return hit;
-  const cv = document.createElement('canvas');
-  const k = 2;
-  cv.width = cv.height = size * k;
-  const g = cv.getContext('2d')!;
-  g.scale(k, k);
-  const bg = g.createRadialGradient(size / 2, size * 0.4, 2, size / 2, size / 2, size * 0.7);
-  bg.addColorStop(0, shade(c.color, -0.35));
-  bg.addColorStop(1, '#0d0a20');
-  g.fillStyle = bg;
-  g.fillRect(0, 0, size, size);
+/**
+ * Cabeça e ombros, o mesmo recorte para o elenco antigo e o do estúdio.
+ * Os pés ficam fora do quadro; a escala não depende da arte.
+ */
+function drawBust(g: CanvasRenderingContext2D, c: CharacterDef, size: number) {
   const s = size / 34;
   g.save();
   g.translate(size / 2, size * 0.5 + 50 * s * 0.98);
   g.scale(s, s);
   drawCharacter(g, c, 'down', 0, false);
   g.restore();
+}
+
+/** Rostinho (busto) em data URL, para a faixa, o perfil, o placar e as salas. */
+export function avatarURL(c: CharacterDef, size = 64): string {
+  const key = `${c.id}:${c.skinId ?? ''}:${size}:${dpr()}`;
+  const hit = urlCache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  const k = dpr();
+  cv.width = cv.height = Math.round(size * k);
+  const g = cv.getContext('2d')!;
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.scale(k, k);
+  const bg = g.createRadialGradient(size / 2, size * 0.4, 2, size / 2, size / 2, size * 0.7);
+  bg.addColorStop(0, shade(c.color, -0.35));
+  bg.addColorStop(1, '#0d0a20');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, size, size);
+  drawBust(g, c, size);
   const url = cv.toDataURL('image/png');
   urlCache.set(key, url);
   return url;

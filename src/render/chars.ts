@@ -182,6 +182,26 @@ function lookOf(c: CharacterDef): Look {
         return { ...base, hairStyle: 'curly', top: 'overalls', pants: '#3a7a14', eye: '#5a3a1a', glove: '#ff8a2a', face: 'roundGlasses', lashes: true, extras: ['backpack', 'tools', 'freckles'], shirt: '#fff6e8', shoe: '#6a4a2a' };
       case 'bento':
         return { ...base, hairStyle: 'none', top: 'hoodie', pants: '#22242c', eye: '#8a9ab0', glove: null, head: 'hood', face: 'scarf', shoe: '#3a3e48', shirt: '#3a3e48' };
+      case 'clave':
+        return { ...base, hair: '#140c18', hairStyle: 'buns', jacket: '#e23a62', jacketDark: '#8a2040', shirt: '#ffd27a', pants: '#2a1020', shoe: '#3a1828', glove: '#2a1420', eye: '#e0a040', lashes: true, head: 'headphones', extras: ['earring'] };
+      case 'fuga':
+        return { ...base, hair: '#f4f7ff', hairStyle: 'spiky', jacket: '#1a3f9a', jacketDark: '#0c2260', shirt: '#cfe6ff', pants: '#101830', shoe: '#16307a', glove: '#d7ecff', eye: '#7ec8ff', head: 'cap', extras: ['earring'] };
+      case 'lyra':
+        return { ...base, hair: '#3a28a8', hairStyle: 'long', top: 'overalls', jacket: '#14a090', jacketDark: '#0a5048', shirt: '#241868', pants: '#123038', shoe: '#103038', glove: null, eye: '#204060', lashes: true };
+      case 'metra':
+        return { ...base, hair: '#e6ebf4', hairStyle: 'swept', top: 'parka', jacket: '#4a5568', jacketDark: '#242a36', shirt: '#ffd0e4', pants: '#1c2430', shoe: '#3ad4e8', sole: '#e8fbff', glove: '#ff7ab8', eye: '#203040', head: 'goggles' };
+      case 'resona':
+        return { ...base, hair: '#3ad4e0', hairStyle: 'short', jacket: '#12a0a8', jacketDark: '#0a4850', shirt: '#ff4fc3', pants: '#1a2038', shoe: '#102830', glove: '#102028', eye: '#1a2848', lashes: true, extras: ['earring'] };
+      case 'rufo':
+        return { ...base, hair: '#3a2418', hairStyle: 'short', jacket: '#6a7a32', jacketDark: '#323c16', shirt: '#f0e0c0', pants: '#2a2418', shoe: '#d01818', glove: '#e02828', eye: '#3a2010', head: 'headband', extras: ['bandaid', 'backpack'], build: 1.12 };
+      case 'solfa':
+        return { ...base, hair: '#c4622a', hairStyle: 'curly', jacket: '#e87848', jacketDark: '#8a3818', shirt: '#ffd0a0', pants: '#6a3018', shoe: '#f2e6d8', glove: '#ffd27a', eye: '#5a3018', lashes: true, head: 'flower', extras: ['freckles'] };
+      case 'vibra':
+        return { ...base, hair: '#241448', hairStyle: 'puffs', top: 'hoodie', jacket: '#5a28a8', jacketDark: '#2a1058', shirt: '#ff4fc3', pants: '#1a1030', shoe: '#4a2080', glove: '#ff4fc3', eye: '#c6ff4a', lashes: true, head: 'headband' };
+      case 'sibilo':
+        return { ...base, hair: '#145028', hairStyle: 'none', top: 'hoodie', jacket: '#2fae4a', jacketDark: '#17602a', shirt: '#102818', pants: '#102818', shoe: '#0c2014', glove: '#145028', eye: '#b6ff4a', head: 'hoodUp', face: 'scarf' };
+      case 'sibilo2':
+        return { ...base, hair: '#0e2414', hairStyle: 'none', top: 'hoodie', jacket: '#145028', jacketDark: '#0a2814', shirt: '#081810', pants: '#0c2014', shoe: '#081810', glove: '#0e2414', eye: '#d8ff6a', head: 'hoodUp' };
     }
     return base;
   })();
@@ -190,6 +210,12 @@ function lookOf(c: CharacterDef): Look {
     L.jacketDark = c.suitDark;
   }
   return L;
+}
+
+/** O que muda a silhueta. O raio de colisão não entra aqui. */
+export function lookSignature(c: CharacterDef): string {
+  const L = lookOf(c);
+  return [L.hairStyle, L.head, L.top, L.face, L.hair, L.jacket, L.extras.join('+'), String(L.build)].join('|');
 }
 
 // ================================================================== corpo
@@ -295,10 +321,131 @@ export function drawCharacter(ctx0: CanvasRenderingContext2D, c: CharacterDef, f
     drawArm(ctx, c, L, 12.5 * B, -40, -armSwing, false, side);
   }
 
+  drawStudioBody(ctx, c, facing);
   // ---------------------------------------------------------------- cabeça
   ctx.translate(0, moving ? Math.sin(phase * 2) * 0.5 : 0);
   drawHead(ctx, c, L, facing, hy, expr, phase, moving);
+  drawStudioHead(ctx, c, facing);
   ctx.restore();
+}
+
+/** Capa, tambor e alto-falantes: detalhes que o lookOf não desenha sozinho. */
+function drawStudioBody(ctx: CanvasRenderingContext2D, c: CharacterDef, facing: Facing) {
+  const side = facing === 'side';
+  const back = facing === 'up';
+  if (c.id === 'sibilo2') {
+    ctx.fillStyle = '#0e3a18';
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (side) {
+      ctx.moveTo(-4, -40);
+      ctx.lineTo(9, -36);
+      ctx.lineTo(18, 8);
+      ctx.lineTo(-12, 6);
+    } else {
+      ctx.moveTo(-14, -42);
+      ctx.lineTo(14, -42);
+      ctx.lineTo(24, 8);
+      ctx.lineTo(-24, 8);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#9dff5c';
+    const n = side ? 3 : 5;
+    for (let i = 0; i < n; i++) {
+      const x = (side ? -8 : -18) + i * (side ? 8 : 9);
+      ctx.beginPath();
+      ctx.moveTo(x, 7);
+      ctx.lineTo(x + 3.2, 1.5);
+      ctx.lineTo(x + 6.4, 7);
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (!back) {
+      ctx.fillStyle = '#145028';
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 1.6;
+      for (const s of side ? [1] : [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * 8, -40);
+        ctx.lineTo(s * 18, -34);
+        ctx.lineTo(s * 9, -28);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+  }
+  if (c.id === 'resona' && !back) {
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = OUT;
+    for (const x of side ? [3] : [-5.5, 5.5]) {
+      ctx.fillStyle = '#102028';
+      ctx.beginPath();
+      ctx.arc(x, -32, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#3ee8ff';
+      ctx.beginPath();
+      ctx.arc(x, -32, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawStudioHead(ctx: CanvasRenderingContext2D, c: CharacterDef, facing: Facing) {
+  if (c.id === 'rufo' && facing !== 'up') {
+    ctx.strokeStyle = '#f3e2c4';
+    ctx.lineWidth = 1.7;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-16, -46);
+    ctx.lineTo(8, -64);
+    ctx.moveTo(16, -46);
+    ctx.lineTo(-6, -64);
+    ctx.stroke();
+  }
+  if (c.id !== 'sibilo2') return;
+  const side = facing === 'side';
+  const back = facing === 'up';
+  ctx.fillStyle = '#2fae4a';
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (side) {
+    ctx.moveTo(-8, -62);
+    ctx.lineTo(6, -58);
+    ctx.lineTo(-14, -80);
+  } else {
+    ctx.moveTo(-11, -64);
+    ctx.lineTo(11, -64);
+    ctx.lineTo(0, -82);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#9dff5c';
+  ctx.beginPath();
+  if (back) {
+    ctx.moveTo(0, -48);
+    ctx.lineTo(12, -22);
+    ctx.lineTo(-12, -22);
+  } else if (!side) {
+    ctx.moveTo(0, -40);
+    ctx.lineTo(6, -30);
+    ctx.lineTo(-6, -30);
+  } else {
+    ctx.moveTo(2, -40);
+    ctx.lineTo(8, -30);
+    ctx.lineTo(-1, -30);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
 }
 
 function drawTorso(ctx: CanvasRenderingContext2D, c: CharacterDef, L: Look, facing: Facing) {
@@ -863,7 +1010,18 @@ function drawBackLayer(ctx: CanvasRenderingContext2D, c: CharacterDef, L: Look, 
       ctx.stroke();
     }
   }
-  if (L.head === 'hoodUp' || L.head === 'hood') {
+  if (c.id === 'sibilo2' && (L.head === 'hoodUp' || L.head === 'hood')) {
+    ctx.fillStyle = vgrad(ctx, hy - 28, hy + 14, '#3ad25a', '#0a2814');
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2.3;
+    ctx.beginPath();
+    ctx.moveTo(-R - 2, hy + 12);
+    ctx.lineTo(side ? -4 : 0, hy - R - 18);
+    ctx.lineTo(R + 2, hy + 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (L.head === 'hoodUp' || L.head === 'hood') {
     // capuz levantado (parte de trás)
     ctx.fillStyle = vgrad(ctx, hy - 20, hy + 14, shade(L.jacket, 0.18), L.jacketDark);
     ctx.strokeStyle = OUT;
@@ -1554,7 +1712,7 @@ function drawHeadwear(ctx: CanvasRenderingContext2D, c: CharacterDef, L: Look, f
       break;
     }
     case 'headband': {
-      ctx.fillStyle = G(c);
+      ctx.fillStyle = c.id === 'rufo' ? '#ffd27a' : c.id === 'vibra' ? '#ff4fc3' : G(c);
       ctx.strokeStyle = OUT;
       ctx.lineWidth = 1.6;
       rrect(ctx, -R - 1, hy - 9, 2 * R + 2, 4.6, 2);
@@ -1666,7 +1824,9 @@ function drawHeadwear(ctx: CanvasRenderingContext2D, c: CharacterDef, L: Look, f
       ctx.stroke();
       break;
     case 'scarf':
-      ctx.fillStyle = vgrad(ctx, hy + 3, hy + 15, '#6a7284', '#3a404c');
+      ctx.fillStyle = c.id === 'sibilo'
+        ? vgrad(ctx, hy + 3, hy + 15, '#145028', '#0a2014')
+        : vgrad(ctx, hy + 3, hy + 15, '#6a7284', '#3a404c');
       ctx.strokeStyle = OUT;
       ctx.lineWidth = 1.8;
       if (side) rrect(ctx, fx - 3, hy + 4.5, 17, 11, 5);

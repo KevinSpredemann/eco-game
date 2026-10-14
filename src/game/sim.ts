@@ -3,7 +3,7 @@ import { EchoRecorder, eventsBetween, sampleRecording, upcomingEvent } from '../
 import { EchoManager } from '../systems/echo/manager';
 import { assignUniqueColors, assignUniqueNames } from './colors';
 import { digestRecording, EchoDigest, nextMark, RoundEchoLine, summarizeRound } from '../systems/echo/digest';
-import { POINTS, deliveryPoints, leaders, ranking } from '../systems/scoring';
+import { POINTS, deliveryPoints, ranking } from '../systems/scoring';
 import {
   ArenaDef,
   BORDER,
@@ -22,12 +22,59 @@ import {
   windState,
 } from './arenas';
 import { AbilityId, CHARACTERS, CharacterDef, getCharacter, withLevel } from './characters';
-import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, KITS, Loadout, SKILLS, ULTS, botLoadout, levelMult, sanitizeLoadout } from './balance';
+import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, Loadout, SKILLS, ULTS, botLoadout, levelMult, sanitizeLoadout } from './balance';
 import * as C from './constants';
-import { botCombat, botThink, BotBrain, NavGrid } from './bot';
+import { botCombat, BotBrain, NavGrid } from './bot';
 import { PowerId, getPower, randomPower } from './powerups';
-import { BOMB_DAMAGE, BOMB_FUSE, BOMB_RADIUS, ECHO_DAMAGE_MULT, GUN_Y, ICE_DAMAGE, ICE_RADIUS, ITEMS, ItemId, KIT_HEAL, MINE_DAMAGE, MINE_RADIUS, WEAPONS, WeaponId, isPrimary, loadoutPrimary } from './weapons';
+import { BOMB_DAMAGE, BOMB_FUSE, BOMB_RADIUS, ECHO_DAMAGE_MULT, GUN_Y, ICE_DAMAGE, ICE_RADIUS, ITEMS, ItemId, KIT_HEAL, MINE_DAMAGE, MINE_RADIUS, PULSE_DAMAGE, PULSE_FUSE, PULSE_RADIUS, WEAPONS, WeaponId, isPrimary, loadoutPrimary } from './weapons';
 import { withSkin } from './characters';
+import { choosePortalExit, portalPairAt } from './portals';
+import { DUEL, duelTiebreak, type DuelReason } from './duel';
+import {
+  AMBUSH_BONUS,
+  AMBUSH_TIME,
+  BASIC,
+  BLINK_STEP,
+  BURN_TICK,
+  BURN_TIME,
+  ENERGY_MAX,
+  ENERGY_REGEN,
+  EXTRA_CAP,
+  FLOW_BONUS,
+  FLOW_TIME,
+  FROZEN_TIME,
+  HEAL_ZONE_TIME,
+  KNOCK,
+  MARK_TIME,
+  PLASMA,
+  ROOT_AOE_BONUS,
+  ROOT_RESIST,
+  ROOT_TIME,
+  SLOT_COST,
+  VISUAL_WEAPON,
+  type PowerDef,
+  WALL_BONUS,
+  WALL_REACH,
+  bonusDamage,
+  burnDpsOf,
+  comboOf,
+  cooldownOf,
+  gustSlow,
+  healOnCombo,
+  kitOf,
+  knockMul,
+  studioOf,
+  refundOnCombo,
+  resolvedDamage,
+  speedMul,
+  stunTime,
+  tuneCombo,
+  wallSlam,
+  wallStun,
+  type Element,
+} from './elements';
+import { abilityTrace } from './abilityTrace';
+import { sweepCapsule, sweepCircle } from './sweep';
 
 export type Difficulty = 'facil' | 'normal' | 'dificil';
 export type ObjectiveId = 'dourado' | 'tripla' | 'intocavel';
@@ -38,21 +85,15 @@ export const OBJECTIVES: Record<ObjectiveId, string> = {
   intocavel: 'Termine a rodada sem levar dano (+1)',
 };
 
-export type GameMode = 'nucleo' | 'duelo' | 'combate' | 'bandeira' | 'rei' | 'ondas' | 'royale' | 'chefe';
+export type GameMode = 'duelo' | 'dupla';
 
-/** regras de cada modo */
+/** X1 online e 2x2 (online ou com bots). Os dois fecham a rodada como um duelo. */
 export const MODE_RULES: Record<GameMode, { rounds: number; dur: number; respawn: boolean; teams: boolean; maxPlayers: number }> = {
-  nucleo: { rounds: C.TOTAL_ROUNDS, dur: C.ROUND_TIME, respawn: false, teams: false, maxPlayers: 4 },
-  duelo: { rounds: 5, dur: 40, respawn: false, teams: false, maxPlayers: 2 },
-  combate: { rounds: 4, dur: 45, respawn: false, teams: false, maxPlayers: 4 },
-  bandeira: { rounds: 3, dur: 70, respawn: true, teams: true, maxPlayers: 4 },
-  rei: { rounds: 3, dur: 50, respawn: true, teams: false, maxPlayers: 4 },
-  ondas: { rounds: 5, dur: 55, respawn: false, teams: true, maxPlayers: 4 },
-  royale: { rounds: 3, dur: 60, respawn: false, teams: false, maxPlayers: 6 },
-  chefe: { rounds: 1, dur: 180, respawn: true, teams: true, maxPlayers: 5 },
+  duelo: { rounds: 5, dur: DUEL.roundSec, respawn: false, teams: false, maxPlayers: 2 },
+  dupla: { rounds: 5, dur: DUEL.roundSec, respawn: false, teams: true, maxPlayers: 4 },
 };
 /** mínimo de participantes (pessoas + bots) para começar */
-export const MIN_PLAYERS: Partial<Record<GameMode, number>> = { chefe: 4 };
+export const MIN_PLAYERS: Partial<Record<GameMode, number>> = { duelo: 2, dupla: 2 };
 export const TEAM_COLORS = ['#3ea8ff', '#ff4a5a'];
 export const TEAM_NAMES = ['Azul', 'Vermelho'];
 export const RESPAWN_TIME = 3;
@@ -84,6 +125,9 @@ export interface MatchConfig {
   training: boolean;
   /** fundo animado do menu: sem jogador humano */
   spectator?: boolean;
+  /** X1: duração da rodada e da morte súbita (testes e salas podem encurtar) */
+  roundSec?: number;
+  suddenSec?: number;
 }
 
 export interface Input {
@@ -106,6 +150,8 @@ export interface Input {
   /** mira da habilidade: ângulo e distância a partir dos pés (ausente = automático) */
   ca?: number | null;
   cr?: number | null;
+  /** Rajada de Plasma (X), se entrou no equipamento desta partida */
+  plasma?: boolean;
 }
 
 export interface Player {
@@ -135,6 +181,26 @@ export interface Player {
   phaseT: number;
   shieldT: number;
   portalCd: number;
+  /** marcas elementais do X1 (segundos). Queimadura dói em tiques; as outras armam combo. */
+  burnT: number;
+  frozenT: number;
+  gustT: number;
+  shockT: number;
+  burnAcc: number;
+  burnDps: number;
+  burnFrom: string;
+  /** recarga dos quatro poderes (Q E R F) */
+  powerCd: [number, number, number, number];
+  /** 0–100. O servidor (e o jogo local) é quem gasta e recupera. */
+  energy: number;
+  /** recarga da Rajada de Plasma */
+  plasmaCd: number;
+  /** marca de plasma neste jogador (segundos) */
+  plasmaT: number;
+  /** o espaço extra desta partida trouxe a Rajada de Plasma */
+  plasmaOn: boolean;
+  /** combos fechados nesta rodada (a ninja fica mais rápida) */
+  comboStacks: number;
   hidden: boolean;
   tookDamage: boolean;
   tripleDone: boolean;
@@ -199,6 +265,24 @@ export interface Player {
   stasisT: number;
   /** preparando um golpe (não atira, anda devagar) */
   castT: number;
+  /** golpe com preparo: ainda não gastou energia nem recarga */
+  pendingCast: { slot: number; ang: number; ca?: number | null; cr?: number | null; at: number } | null;
+  /** recarga do ataque básico */
+  basicCd: number;
+  /** preso no chão. Não anda nem esquiva. */
+  rootT: number;
+  /** depois de uma raiz, a próxima demora a pegar */
+  rootResistT: number;
+  /** arrancada recente: o próximo golpe soma um pouco */
+  flowT: number;
+  /** piscar recente: o próximo golpe soma a emboscada */
+  ambushT: number;
+  /** brilho de cura */
+  healT: number;
+  /** dano de contato enquanto a arrancada do poder dura */
+  dashDmg: number;
+  dashEl: Element | null;
+  dashHit: string[];
   /** Chefe exausto: janela para atacar (mais dano, sem golpes) */
   exhaustT: number;
   /** último dano levado (relógio da rodada): a recuperação lenta começa depois de um tempo */
@@ -228,6 +312,8 @@ export interface Cast {
   life: number;
   fired: boolean;
   acc: number;
+  /** dano deste golpe, quando a ultimate não usa o valor padrão do tipo */
+  dmg?: number;
 }
 export interface Trap {
   id: number;
@@ -382,6 +468,15 @@ export interface Bullet {
   hit: string[];
   /** já foi devolvido por um escudo (não volta de novo) */
   refl?: boolean;
+  /** poder do X1: o acerto aplica o elemento, não o efeito da arma desenhada */
+  el?: Element;
+  knock?: number;
+  /** Rajada de Plasma: marca o alvo. Não usa o efeito da arma desenhada. */
+  plasma?: boolean;
+  /** ataque básico: só dano. Não marca elemento e não gasta a marca de plasma. */
+  basic?: boolean;
+  /** persegue este id. Some se o alvo cair ou sair da partida. */
+  homeId?: string;
 }
 
 export interface Bomb {
@@ -397,6 +492,8 @@ export interface Bomb {
   fromEcho: boolean;
   /** granada de gelo */
   ice?: boolean;
+  /** pulso: explosão curta que atordoa */
+  pulse?: boolean;
 }
 
 export interface Mine {
@@ -436,6 +533,22 @@ export interface Clone {
   y: number;
   dir: number;
   t: number;
+  /** ilusão: segura um tiro hostil e estoura. Não coleta fragmento. */
+  decoy?: boolean;
+  absorb?: number;
+  pop?: number;
+}
+
+export interface Grove {
+  id: number;
+  owner: string;
+  team: number;
+  x: number;
+  y: number;
+  r: number;
+  t: number;
+  acc: number;
+  heal: number;
 }
 
 export interface ZoneEvent {
@@ -497,7 +610,8 @@ export type GameEvent =
   | { type: 'explode'; x: number; y: number; r: number }
   | { type: 'kill'; pid: string; by: string | null; x: number; y: number }
   | { type: 'heal'; x: number; y: number; pid: string }
-  | { type: 'roundWin'; pid: string | null }
+  | { type: 'roundWin'; pid: string | null; reason?: DuelReason }
+  | { type: 'sudden' }
   | { type: 'zap'; pid: string; pts: number[] }
   | { type: 'capture'; pid: string; team: number }
   | { type: 'flagTake'; pid: string; team: number }
@@ -514,8 +628,8 @@ export type GameEvent =
   | { type: 'reflect'; x: number; y: number; pid: string }
   | { type: 'bonusSpawn'; x: number; y: number; ab: AbilityId }
   | { type: 'bonusPick'; x: number; y: number; pid: string; ab: AbilityId }
-  | { type: 'dmg'; pid: string; x: number; y: number; n: number; k: 'hp' | 'shield' | 'block' | 'weak' | 'dodge' | 'heal'; sx?: number; sy?: number; src?: DmgSrc }
-  | { type: 'skill'; pid: string; x: number; y: number; skill: string }
+  | { type: 'dmg'; pid: string; x: number; y: number; n: number; k: 'hp' | 'shield' | 'block' | 'weak' | 'dodge' | 'heal' | 'immune'; sx?: number; sy?: number; src?: DmgSrc; note?: string }
+  | { type: 'skill'; pid: string; x: number; y: number; skill: string; r?: number }
   | { type: 'ult'; pid: string; x: number; y: number; ult: string }
   | { type: 'cast'; pid: string; kind: CastKind; x: number; y: number }
   | { type: 'castHit'; kind: CastKind; x: number; y: number; r: number; ang: number; len: number }
@@ -527,14 +641,26 @@ export type GameEvent =
   | { type: 'exhaust'; x: number; y: number }
   | { type: 'minion'; x: number; y: number; kind: MinionKind }
   | { type: 'block'; x: number; y: number }
-  | { type: 'stunned'; x: number; y: number; pid: string };
+  | { type: 'stunned'; x: number; y: number; pid: string }
+  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string }
+  | { type: 'deny'; pid: string; msg: string };
 
-export type Phase = 'prep' | 'play' | 'rewind' | 'results';
+export type Phase = 'prep' | 'play' | 'rewind' | 'call' | 'results';
 /** de onde veio o dano (para o indicador de direção e a cor do número) */
 export type DmgSrc = 'arma' | 'eco' | 'perigo' | 'golpe' | 'explosao' | 'criatura';
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
+
+/** tira a velocidade que entra na parede. Vale na simulação e na previsão online. */
+function slideVelocity(p: { vx?: number; vy?: number }, nx: number, ny: number) {
+  if (p.vx === undefined || p.vy === undefined) return;
+  const vn = p.vx * nx + p.vy * ny;
+  if (vn < 0) {
+    p.vx -= vn * nx;
+    p.vy -= vn * ny;
+  }
+}
 
 export class Game {
   readonly arena: ArenaDef;
@@ -544,6 +670,7 @@ export class Game {
   readonly nav: NavGrid;
   fragments: Fragment[] = [];
   clones: Clone[] = [];
+  groves: Grove[] = [];
   powerups: { id: number; kind: PowerId; x: number; y: number; age: number }[] = [];
   bullets: Bullet[] = [];
   bombs: Bomb[] = [];
@@ -588,6 +715,8 @@ export class Game {
   echoViews: EchoView[] = [];
   zoneEvents: ZoneEvent[] = [];
   events: GameEvent[] = [];
+  /** última posição em que o corpo cabia (para sair de uma parede sem teleporte aleatório) */
+  private safePos = new Map<string, { x: number; y: number }>();
 
   phase: Phase = 'prep';
   phaseT = 0;
@@ -595,6 +724,14 @@ export class Game {
   totalRounds = C.TOTAL_ROUNDS;
   tiebreak = false;
   roundDur = C.ROUND_TIME;
+  /** X1: morte súbita ligada (o dano base passa a valer o dobro, uma vez) */
+  sudden = false;
+  suddenT = 0;
+  suddenLimit = DUEL.suddenSec;
+  /** vencedor do round em exibição; null com phase call = empate */
+  callWinner: string | null = null;
+  callReason: DuelReason | null = null;
+  private duelClosedRound = 0;
   roundT = 0; // segundos de rodada ativa
   worldT = 0; // relógio contínuo para pontes/pistões/feixes
   core: Pt = { x: 640, y: 360 };
@@ -626,33 +763,25 @@ export class Game {
   constructor(cfg: MatchConfig) {
     this.cfg = cfg;
     this.arena = cfg.arena;
-    this.mode = cfg.training ? 'nucleo' : cfg.mode ?? 'nucleo';
+    this.mode = cfg.mode === 'dupla' ? 'dupla' : 'duelo';
     this.rules = MODE_RULES[this.mode];
     this.nav = new NavGrid(this.arena);
+    this.suddenLimit = cfg.suddenSec ?? DUEL.suddenSec;
     this.totalRounds = this.rules.rounds;
-    const pve = this.mode === 'ondas';
     if (cfg.roster) {
-      for (const r of cfg.roster) this.addPlayer(r.id, withLevel(getCharacter(r.char), r.lv, pve), r.isBot, r.name, r.skin, r.trail, r.loadout);
+      for (const r of cfg.roster) this.addPlayer(r.id, withLevel(getCharacter(r.char), r.lv, false), r.isBot, r.name, r.skin, r.trail, r.loadout);
     } else {
       const human = getCharacter(cfg.humanChar);
       this.addPlayer('p0', human, false);
-      if (!cfg.training) {
-        const others = shuffle(CHARACTERS.map((c) => c.id).filter((c) => c !== human.id));
-        const n = this.mode === 'duelo' ? 1 : Math.min(cfg.bots, this.rules.maxPlayers - 1);
-        for (let i = 0; i < n; i++) this.addPlayer('b' + i, getCharacter(others[i % others.length]), true);
-      }
+      const others = shuffle(CHARACTERS.map((c) => c.id).filter((c) => c !== human.id));
+      const n = this.mode === 'duelo' ? 1 : Math.min(Math.max(1, cfg.bots), this.rules.maxPlayers - 1);
+      for (let i = 0; i < n; i++) this.addPlayer('b' + i, getCharacter(others[i % others.length]), true);
     }
-    // mesmo personagem (ou cor quase igual) = cor diferente para cada jogador (anel, nome e Eco)
     assignUniqueColors(this.players);
     assignUniqueNames(this.players);
-    // times: bandeira = alternado; ondas = todos juntos; chefe = caçadores (0) contra o Chefe (1)
-    this.players.forEach((p, i) => (p.team = this.mode === 'bandeira' ? i % 2 : this.mode === 'ondas' || this.mode === 'chefe' ? 0 : -1));
-    if (this.mode === 'chefe') this.setupBoss(cfg.roster?.find((r) => r.boss)?.id);
-    if (this.mode === 'bandeira') {
-      const s0 = this.arena.spawns[0];
-      const s1 = this.arena.spawns[1];
-      this.flags = [s0, s1].map((h, team) => ({ team, x: h.x, y: h.y, home: { ...h }, carrier: null, atHome: true, dropT: 0 }));
-    }
+    // 2x2: primeira metade no time azul, segunda no vermelho (amigos entram antes dos bots)
+    const half = Math.ceil(this.players.length / 2);
+    this.players.forEach((p, i) => (p.team = this.mode === 'dupla' ? (i < half ? 0 : 1) : -1));
     this.nextRound();
   }
 
@@ -661,7 +790,7 @@ export class Game {
   }
 
   get combat(): boolean {
-    return this.mode !== 'nucleo';
+    return true;
   }
 
   private addPlayer(id: string, base: CharacterDef, isBot: boolean, name?: string, skin = 'padrao', trail = 'nenhum', loadout?: Partial<Loadout>) {
@@ -694,6 +823,19 @@ export class Game {
       phaseT: 0,
       shieldT: 0,
       portalCd: 0,
+      burnT: 0,
+      frozenT: 0,
+      gustT: 0,
+      shockT: 0,
+      burnAcc: 0,
+      burnDps: 0,
+      burnFrom: '',
+      powerCd: [0, 0, 0, 0],
+      energy: ENERGY_MAX,
+      plasmaCd: 0,
+      plasmaT: 0,
+      plasmaOn: !!lo.secondary,
+      comboStacks: 0,
       hidden: false,
       tookDamage: false,
       tripleDone: false,
@@ -743,6 +885,16 @@ export class Game {
       ccResistT: 0,
       stasisT: 0,
       castT: 0,
+      pendingCast: null,
+      basicCd: 0,
+      rootT: 0,
+      rootResistT: 0,
+      flowT: 0,
+      ambushT: 0,
+      healT: 0,
+      dashDmg: 0,
+      dashEl: null,
+      dashHit: [],
       exhaustT: 0,
       lastHurtAt: 0,
       boss: false,
@@ -756,28 +908,6 @@ export class Game {
     const p = this.players.find((q) => q.id === id);
     if (!p || p.boss) return;
     p.pendingLoadout = sanitizeLoadout({ ...p.loadout, ...l });
-  }
-
-  /** Caça ao Chefe: escolhe o Chefe e ajusta vida, times e vidas do time */
-  private setupBoss(want?: string) {
-    const humans = this.players.filter((p) => !p.isBot);
-    const pick = this.players.find((p) => p.id === want) ?? (humans.length ? humans[Math.floor(Math.random() * humans.length)] : this.players[0]);
-    for (const p of this.players) p.team = p === pick ? 1 : 0;
-    pick.boss = true;
-    this.bossId = pick.id;
-    const hunters = this.players.length - 1;
-    pick.maxHp = BOSS.hpPerHunter * Math.max(1, hunters);
-    pick.hp = pick.maxHp;
-    pick.name = pick.isBot ? `${pick.char.name} (Chefe)` : pick.name;
-    this.teamLives = hunters * BOSS.livesPerHunter;
-  }
-
-  keepBossInside(p: Player) {
-    const top = BORDER + 130;
-    if (p.y < top) {
-      p.y = top;
-      if (p.vy < 0) p.vy = 0;
-    }
   }
 
   get boss(): Player | null {
@@ -794,7 +924,8 @@ export class Game {
   }
   /** pode ser alvo de mira (não está invisível/fumaça) */
   targetable(p: Player): boolean {
-    return p.alive && p.playing && p.cloakT <= 0 && !(p.hidden && p.phaseT > 0);
+    // arbusto, fase e invisibilidade escondem de verdade: o bot não atira em quem não daria para ver
+    return p.alive && p.playing && p.cloakT <= 0 && !p.hidden;
   }
 
   // ------------------------------------------------------------------ rodada
@@ -804,7 +935,11 @@ export class Game {
     this.phaseT = 0;
     this.roundT = 0;
     this.lastTick = -1;
-    this.roundDur = this.tiebreak ? C.TIEBREAK_TIME : this.rules.dur;
+    this.roundDur = this.cfg.roundSec ?? this.rules.dur;
+    this.sudden = false;
+    this.suddenT = 0;
+    this.callWinner = null;
+    this.callReason = null;
     this.bullets = [];
     this.bombs = [];
     this.mines = [];
@@ -856,6 +991,18 @@ export class Game {
         phaseT: 0,
         shieldT: 0,
         portalCd: 0,
+        burnT: 0,
+        frozenT: 0,
+        gustT: 0,
+        shockT: 0,
+        burnAcc: 0,
+        burnDps: 0,
+        burnFrom: '',
+        powerCd: [0, 0, 0, 0],
+        energy: ENERGY_MAX,
+        plasmaCd: 0,
+        plasmaT: 0,
+        comboStacks: 0,
         tookDamage: false,
         tripleDone: false,
         hitFlash: 0,
@@ -875,6 +1022,16 @@ export class Game {
         ccResistT: 0,
         stasisT: 0,
         castT: 0,
+        pendingCast: null,
+        basicCd: 0,
+        rootT: 0,
+        rootResistT: 0,
+        flowT: 0,
+        ambushT: 0,
+        healT: 0,
+        dashDmg: 0,
+        dashEl: null,
+        dashHit: [],
         exhaustT: 0,
         chargeDmg: 0,
         lastHurtAt: 0,
@@ -892,24 +1049,16 @@ export class Game {
         p.loadout = p.pendingLoadout;
         p.pendingLoadout = null;
       }
+      p.plasmaOn = !!p.loadout.secondary;
       this.equip(p);
-      if (this.mode === 'duelo') {
-        // lados opostos
+      if (this.mode === 'dupla') {
+        const sp = this.teamSpawn(p.team, i % 2);
+        p.x = sp.x;
+        p.y = sp.y;
+      } else {
         const sp = [spawns[0], spawns[1]][i % 2];
         p.x = sp.x;
         p.y = sp.y;
-      }
-      if (p.team >= 0 && this.mode === 'bandeira') {
-        const sp = this.teamSpawn(p.team, Math.floor(i / 2));
-        p.x = sp.x;
-        p.y = sp.y;
-      }
-      if (this.mode === 'chefe') {
-        // Chefe no centro do lado oposto; caçadores espalhados do outro lado
-        const sp = p.boss ? this.teamSpawn(1, 0) : this.teamSpawn(0, i % 3);
-        p.x = sp.x;
-        p.y = sp.y;
-        if (p.boss) this.keepBossInside(p);
       }
       p.dir = Math.atan2(360 - p.y, 640 - p.x);
       p.aim = p.dir;
@@ -925,7 +1074,6 @@ export class Game {
     } else {
       this.powerTimer = 2;
     }
-    this.setupModeRound();
     this.buildZoneSchedule();
     this.refreshEchoViews();
     this.events.push({ type: 'phase', phase: 'prep' });
@@ -961,71 +1109,19 @@ export class Game {
     }
   }
 
-  private endRound() {
+  /** Grava a rodada que acabou. O placar já foi decidido antes; o Eco só vale na rodada seguinte. */
+  private sealEchoes() {
     const recs: EchoRecording[] = [];
-    let anyAlive = false;
-    if (this.mode === 'duelo' || this.mode === 'combate' || this.mode === 'royale') {
-      // vence a rodada quem sobrou (ou quem tem mais vida no fim do tempo)
-      const alive = this.players.filter((p) => p.playing && p.alive).sort((a, b) => b.hp - a.hp);
-      const w = alive.length && (alive.length === 1 || alive[0].hp > alive[1].hp) ? alive[0] : null;
-      if (w) {
-        w.roundWins++;
-        this.award(w, this.mode === 'duelo' ? 1 : 3);
-      }
-      this.events.push({ type: 'roundWin', pid: w ? w.id : null });
-    }
-    if (this.mode === 'chefe') {
-      // caçadores vencem só se derrubarem o Chefe; tempo esgotado = o Chefe resistiu
-      const b = this.boss;
-      this.gameWon = !!b && !b.alive;
-      for (const p of this.players) {
-        if (p.boss && !this.gameWon) this.award(p, 15);
-        if (!p.boss && this.gameWon) this.award(p, 10);
-      }
-      this.events.push({ type: 'gameOver', won: this.gameWon });
-    }
-    if (this.mode === 'ondas') {
-      const alive = this.players.filter((p) => p.playing && p.alive);
-      if (!alive.length) {
-        this.gameWon = false;
-        this.events.push({ type: 'gameOver', won: false });
-      } else {
-        for (const p of alive) this.award(p, 3);
-        if (this.round >= this.totalRounds) {
-          this.gameWon = true;
-          this.events.push({ type: 'gameOver', won: true });
-        }
-      }
-      this.enemies = [];
-    }
     for (const p of this.players) {
-      if (!p.playing) continue;
-      if (this.combat) {
-        // Caça ao Chefe tem uma rodada só: não grava Ecos (o Chefe não vira fantasma humano)
-        if (p.recorder && this.mode !== 'chefe') recs.push(p.recorder.finish(this.roundDur * 1000, p.x, p.y, p.dir));
-        continue;
-      }
-      if (p.alive) {
-        anyAlive = true;
-        this.award(p, POINTS.survive);
-        p.stats.survived++;
-        if (this.objective === 'intocavel' && !p.tookDamage) {
-          this.award(p, POINTS.objective);
-          this.events.push({ type: 'objective', pid: p.id, text: 'Intocável +1' });
-        }
-      }
-      if (p.recorder) recs.push(p.recorder.finish(this.roundDur * 1000, p.x, p.y, p.dir));
+      if (!p.playing || !p.recorder) continue;
+      recs.push(p.recorder.finish(this.roundDur * 1000, p.x, p.y, p.dir));
     }
-    void anyAlive;
     this.lastRecordings = recs;
     this.lastDigests = recs.filter((r) => r.frames.length > 1).map((r) => digestRecording(r));
     this.roundEchoLines = summarizeRound(this.lastDigests, this.roundDur * 1000);
     const removed = this.echoes.add(this.round, recs);
     this.expiredRound = removed.length ? removed[0].round : null;
     if (this.expiredRound !== null) this.events.push({ type: 'echoExpired', round: this.expiredRound });
-    this.phase = 'rewind';
-    this.phaseT = 0;
-    this.events.push({ type: 'phase', phase: 'rewind' });
   }
 
   /** pular a animação do Rebobinando (contra bots: na hora; online: quando todos pedem) */
@@ -1034,39 +1130,15 @@ export class Game {
   }
 
   private afterRewind() {
-    const lines = this.players.map((p) => ({ id: p.id, score: p.score }));
-    const duelDone = this.mode === 'duelo' && this.players.some((p) => p.roundWins >= 3);
-    const wavesDone = this.mode === 'ondas' && this.gameWon !== null;
-    if (this.round < this.totalRounds && !this.tiebreak && !duelDone && !wavesDone) {
-      this.nextRound();
-      return;
-    }
-    if (this.mode === 'chefe') {
-      this.winners = this.players.filter((p) => (this.gameWon ? !p.boss : p.boss)).map((p) => p.id);
+    const best = Math.max(0, ...this.players.map((p) => p.roundWins));
+    const done = best >= DUEL.wins || this.round >= this.totalRounds;
+    if (done) {
+      this.winners = this.players.filter((p) => p.roundWins === best && best > 0).map((p) => p.id);
+      if (!this.winners.length) this.winners = this.players.map((p) => p.id);
       this.finishMatch();
       return;
     }
-    if (this.mode === 'ondas') {
-      this.winners = this.gameWon ? this.players.filter((p) => p.playing).map((p) => p.id) : [];
-      this.finishMatch();
-      return;
-    }
-    if (this.mode === 'bandeira') {
-      const [a, b] = this.teamScore;
-      this.winners = a === b ? leaders(lines) : this.players.filter((p) => p.team === (a > b ? 0 : 1)).map((p) => p.id);
-      this.finishMatch();
-      return;
-    }
-    const top = leaders(lines);
-    const canTiebreak = this.mode === 'nucleo' || this.mode === 'combate';
-    if (top.length > 1 && !this.tiebreak && !this.cfg.training && canTiebreak) {
-      this.tiebreak = true;
-      this.winners = top;
-      this.nextRound();
-      return;
-    }
-    this.winners = top;
-    this.finishMatch();
+    this.nextRound();
   }
 
   private finishMatch() {
@@ -1079,26 +1151,11 @@ export class Game {
     if (best && best.stats.bestDelivery > 0) parts.push(`Maior entrega: ${best.char.name} com ${best.stats.bestDelivery} pontos de uma vez.`);
     if (clumsy && clumsy.stats.ownEchoHits > 0)
       parts.push(`${clumsy.char.name} foi pego pelo próprio Eco ${clumsy.stats.ownEchoHits}×.`);
-    if (this.combat) {
-      parts.length = 0;
-      const killer = [...this.players].sort((a, b) => b.kills - a.kills)[0];
-      if (this.mode === 'chefe') {
-        const b = this.boss;
-        const t = Math.round(this.roundT);
-        const mmss = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
-        parts.push(this.gameWon ? `Os caçadores derrubaram ${b?.char.name ?? 'o Chefe'} em ${mmss}.` : `${b?.char.name ?? 'O Chefe'} resistiu (${Math.round(((b?.hp ?? 0) / (b?.maxHp || 1)) * 100)}% de vida).`);
-        const weak = [...this.players].sort((a, c) => c.stats.weak - a.stats.weak)[0];
-        if (weak && weak.stats.weak > 0) parts.push(`Mais acertos no ponto fraco: ${weak.char.name} (${weak.stats.weak}).`);
-        const healer = [...this.players].sort((a, c) => c.stats.heal - a.stats.heal)[0];
-        if (healer && healer.stats.heal >= 20) parts.push(`Quem mais curou: ${healer.char.name} (${Math.round(healer.stats.heal)}).`);
-      } else if (this.mode === 'ondas') {
-        parts.push(this.gameWon ? `Vocês sobreviveram às ${this.totalRounds} ondas!` : `Vocês caíram na onda ${this.wave}.`);
-        if (killer && killer.kills > 0) parts.push(`Mais robôs destruídos: ${killer.char.name} (${killer.kills}).`);
-      } else if (this.mode === 'bandeira') {
-        parts.push(`Placar: Azul ${this.teamScore[0]} × ${this.teamScore[1]} Vermelho.`);
-      } else if (killer && killer.kills > 0) parts.push(`Mais eliminações: ${killer.char.name} (${killer.kills}).`);
-      if (clumsy && clumsy.stats.ownEchoHits > 0) parts.push(`${clumsy.char.name} levou ${clumsy.stats.ownEchoHits} golpe(s) do próprio Eco.`);
-    }
+    parts.length = 0;
+    const killer = [...this.players].sort((a, b) => b.kills - a.kills)[0];
+    if (this.mode === 'dupla') parts.push(`Placar de rodadas: Azul ${this.teamRoundWins(0)} × ${this.teamRoundWins(1)} Vermelho.`);
+    if (killer && killer.kills > 0) parts.push(`Mais eliminações: ${killer.char.name} (${killer.kills}).`);
+    if (clumsy && clumsy.stats.ownEchoHits > 0) parts.push(`${clumsy.char.name} levou ${clumsy.stats.ownEchoHits} golpe(s) do próprio Eco.`);
     const breaker = [...this.players].sort((a, b) => b.stats.disrupted - a.stats.disrupted)[0];
     if (breaker && breaker.stats.disrupted > 0) parts.push(`${breaker.char.name} desfez ${breaker.stats.disrupted} Eco(s).`);
     this.highlight = parts.join(' ');
@@ -1149,10 +1206,16 @@ export class Game {
       return;
     }
 
+    if (this.phase === 'call') {
+      if (this.phaseT >= DUEL.callSec) this.afterDuelCall();
+      return;
+    }
+
     // ---- rodada ativa
     this.roundT += dt;
+    if (this.sudden) this.suddenT += dt;
     const tms = this.roundT * 1000;
-    const left = Math.ceil(this.roundDur - this.roundT);
+    const left = this.sudden ? Math.ceil(this.suddenLimit - this.suddenT) : Math.ceil(this.roundDur - this.roundT);
     if (left <= 5 && left !== this.lastTick && left > 0) {
       this.lastTick = left;
       this.events.push({ type: 'tick', n: left });
@@ -1170,7 +1233,7 @@ export class Game {
         }
         continue;
       }
-      const input = p.isBot ? (this.combat ? botCombat(this, p, dt) : botThink(this, p, dt)) : inputFor(p);
+      const input = p.isBot ? botCombat(this, p, dt) : inputFor(p);
       this.updatePlayer(p, input, dt);
     }
     this.separatePlayers();
@@ -1191,6 +1254,7 @@ export class Game {
       p.recorder?.sample(tms, p.x, p.y, p.dir, p.moving);
     }
     this.updateClones(dt);
+    this.updateGroves(dt);
     this.updateTurrets(dt);
     this.replayEchoActions(tms);
     this.updatePowerups(dt);
@@ -1200,24 +1264,99 @@ export class Game {
       this.updateCasts(dt);
       this.updateTraps(dt);
     }
-    if (this.mode === 'chefe') this.updateBoss(dt);
     if (this.combat) this.updateCombat(dt);
     else this.updateFragments(dt);
-    this.updateMode(dt);
     this.prevTms = tms;
 
-    const playing = this.players.filter((p) => p.playing).length;
-    const alive = this.players.filter((p) => p.playing && (p.alive || p.respawnT > 0)).length;
-    const elim = this.mode === 'duelo' || this.mode === 'combate' || this.mode === 'royale';
-    const lastStanding = elim && playing > 1 && alive <= 1;
-    const waveCleared = this.mode === 'ondas' && !this.waveQueue.length && !this.enemies.length && this.roundT > 2;
-    let bossDone = false;
-    if (this.mode === 'chefe') {
-      const b = this.boss;
-      const hunters = this.players.some((p) => !p.boss && p.playing && (p.alive || p.respawnT > 0));
-      bossDone = !b || !b.alive || !hunters;
+    this.maybeEndRound();
+  }
+
+  /** X1 e 2x2 não usam o relógio do cliente: só este passo muda de fase. */
+  private maybeEndRound() {
+    const playing = this.players.filter((p) => p.playing);
+    const living = playing.filter((p) => p.alive);
+    if (this.mode === 'dupla') {
+      const sides = new Set(playing.map((p) => p.team));
+      const live = new Set(living.map((p) => p.team));
+      if (sides.size > 1 && live.size < sides.size) {
+        if (living.length) this.closeDuel(living[0], 'kill');
+        else this.closeDuelTie();
+        return;
+      }
+    } else if (playing.length > 1 && living.length <= 1) {
+      if (living.length === 1) this.closeDuel(living[0], 'kill');
+      else this.closeDuelTie();
+      return;
     }
-    if (this.roundT >= this.roundDur || alive === 0 || lastStanding || waveCleared || bossDone) this.endRound();
+    if (!this.sudden && this.roundT >= this.roundDur) {
+      this.enterSudden();
+      return;
+    }
+    if (this.sudden && this.suddenT >= this.suddenLimit) this.closeDuelTie();
+  }
+
+  private teamRoundWins(team: number) {
+    return this.players.find((p) => p.playing && p.team === team)?.roundWins ?? 0;
+  }
+
+  private enterSudden() {
+    if (this.sudden || this.phase !== 'play') return;
+    this.sudden = true;
+    this.suddenT = 0;
+    this.lastTick = -1;
+    this.events.push({ type: 'sudden' });
+  }
+
+  private closeDuelTie() {
+    if (this.mode === 'dupla') {
+      const sum = (team: number, key: 'hp' | 'dmg') =>
+        this.players.filter((p) => p.playing && p.team === team).reduce((n, p) => n + (key === 'hp' ? (p.alive ? p.hp : 0) : p.stats.dmg), 0);
+      const hp0 = sum(0, 'hp');
+      const hp1 = sum(1, 'hp');
+      const d0 = sum(0, 'dmg');
+      const d1 = sum(1, 'dmg');
+      let team = -1;
+      let reason: DuelReason = 'draw';
+      if (hp0 !== hp1) {
+        team = hp0 > hp1 ? 0 : 1;
+        reason = 'hp';
+      } else if (d0 !== d1) {
+        team = d0 > d1 ? 0 : 1;
+        reason = 'damage';
+      }
+      const winner = team < 0 ? null : (this.players.find((p) => p.playing && p.team === team) ?? null);
+      this.closeDuel(winner, reason);
+      return;
+    }
+    const rows = this.players.filter((p) => p.playing).map((p) => ({ id: p.id, hp: p.alive ? p.hp : 0, dmg: p.stats.dmg }));
+    const r = duelTiebreak(rows);
+    this.closeDuel(r.winner ? (this.players.find((p) => p.id === r.winner) ?? null) : null, r.reason);
+  }
+
+  /** um round do X1 fecha uma vez. O placar sai agora; o Rebobinando vem depois e não muda o ponto. */
+  private closeDuel(winner: Player | null, reason: DuelReason) {
+    if (this.duelClosedRound === this.round || this.phase !== 'play') return;
+    this.duelClosedRound = this.round;
+    if (winner) {
+      const mates = this.mode === 'dupla' ? this.players.filter((p) => p.playing && p.team === winner.team) : [winner];
+      for (const m of mates) {
+        m.roundWins++;
+        this.award(m, 1);
+      }
+    }
+    this.sealEchoes();
+    this.callWinner = winner?.id ?? null;
+    this.callReason = reason;
+    this.phase = 'call';
+    this.phaseT = 0;
+    this.events.push({ type: 'roundWin', pid: winner?.id ?? null, reason });
+    this.events.push({ type: 'phase', phase: 'call' });
+  }
+
+  private afterDuelCall() {
+    this.phase = 'rewind';
+    this.phaseT = 0;
+    this.events.push({ type: 'phase', phase: 'rewind' });
   }
 
   private updateRoundEvents() {
@@ -1307,6 +1446,29 @@ export class Game {
     p.phaseT = Math.max(0, p.phaseT - dt);
     p.shieldT = Math.max(0, p.shieldT - dt);
     p.portalCd = Math.max(0, p.portalCd - dt);
+    if (this.mode === 'duelo' || this.mode === 'dupla') {
+      p.burnT = Math.max(0, p.burnT - dt);
+      p.frozenT = Math.max(0, p.frozenT - dt);
+      p.gustT = Math.max(0, p.gustT - dt);
+      p.shockT = Math.max(0, p.shockT - dt);
+      for (let i = 0; i < 4; i++) p.powerCd[i] = Math.max(0, p.powerCd[i] - dt);
+      p.plasmaCd = Math.max(0, p.plasmaCd - dt);
+      p.plasmaT = Math.max(0, p.plasmaT - dt);
+      p.basicCd = Math.max(0, p.basicCd - dt);
+      p.rootT = Math.max(0, p.rootT - dt);
+      p.rootResistT = Math.max(0, p.rootResistT - dt);
+      p.flowT = Math.max(0, p.flowT - dt);
+      p.ambushT = Math.max(0, p.ambushT - dt);
+      p.healT = Math.max(0, p.healT - dt);
+      if (p.alive) p.energy = Math.min(ENERGY_MAX, p.energy + ENERGY_REGEN * dt);
+      if (p.burnT > 0 && p.alive) {
+        p.burnAcc += dt;
+        while (p.burnAcc >= BURN_TICK && p.alive) {
+          p.burnAcc -= BURN_TICK;
+          this.hurt(p, p.burnDps, p.burnFrom || null, 'pulse');
+        }
+      } else p.burnAcc = 0;
+    }
     p.hitFlash = Math.max(0, p.hitFlash - dt);
     p.slowT = Math.max(0, p.slowT - dt);
     p.vampT = Math.max(0, p.vampT - dt);
@@ -1333,7 +1495,7 @@ export class Game {
       mx /= mag;
       my /= mag;
     }
-    if (p.stunT > 0) {
+    if (p.stunT > 0 || p.rootT > 0) {
       mx = 0;
       my = 0;
     }
@@ -1343,35 +1505,34 @@ export class Game {
     if (this.combat) p.aim = typeof inp.aim === 'number' && isFinite(inp.aim) ? inp.aim : this.autoAim(p);
     // direção das habilidades: a mira escolhida; senão para onde anda; senão a mira automática
     const castAng = typeof inp.ca === 'number' && isFinite(inp.ca) ? inp.ca : moving ? Math.atan2(my, mx) : this.combat ? p.aim : p.dir;
+    if (p.pendingCast && (p.stunT > 0 || !p.alive)) {
+      p.pendingCast = null;
+      p.castT = 0;
+      abilityTrace(p.id, 'windup-cancel', 'interrupted');
+    } else if (p.pendingCast && this.roundT >= p.pendingCast.at) {
+      const c = p.pendingCast;
+      p.pendingCast = null;
+      p.castT = 0;
+      this.castPower(p, c.slot, c.ang, { mx: 0, my: 0, dash: false, ability: false, ca: c.ca, cr: c.cr });
+    }
     const free = p.stunT <= 0 && p.castT <= 0;
 
-    if (p.boss) {
-      this.updateBossInput(p, inp, castAng, dt);
-    } else {
-      if (inp.dash && p.dashCd <= 0 && free && p.stasisT <= 0) {
+    if (inp.dash && p.dashCd <= 0 && free && p.stasisT <= 0 && p.rootT <= 0) {
         p.dashT = C.DASH_TIME;
         p.dashCd = C.DASH_CD;
+        p.dashHit = [];
+        if (this.mode === 'duelo' || this.mode === 'dupla') p.flowT = Math.max(p.flowT, FLOW_TIME);
         p.recorder?.event(tms, 'dash');
         this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
       }
-      if (inp.ability && p.abilCd <= 0 && free) this.useAbility(p, castAng, inp);
-      if (inp.bonus && p.bonusAb && free) {
-        const def = abilityDef(p.bonusAb);
-        p.bonusAb = null;
-        this.useAbility(p, castAng, inp, def);
+      if (free && p.alive) {
+        if (inp.ability) this.beginPower(p, 0, castAng, inp);
+        if (inp.skill) this.beginPower(p, 1, castAng, inp);
+        if (inp.ult) this.beginPower(p, 2, castAng, inp);
+        if (inp.bonus || inp.item) this.beginPower(p, 3, castAng, inp);
+        if (inp.plasma) this.castPlasma(p, castAng, inp);
+        if ((this.mode === 'duelo' || this.mode === 'dupla') && inp.fire) this.castBasic(p, castAng);
       }
-      if (this.combat && inp.skill && p.skillCd <= 0 && free) this.useSkill(p, castAng, inp);
-      if (this.combat && inp.ult && p.ultCharge >= 100 && free) this.useUlt(p, castAng, inp);
-    }
-    if (this.combat) {
-      p.fireCd = Math.max(0, p.fireCd - dt);
-      if (!isPrimary(p.weapon) && WEAPONS[p.weapon].time > 0) {
-        p.weaponT -= dt;
-        if (p.weaponT <= 0) p.weapon = this.primaryFor(p);
-      }
-      if (inp.fire && p.fireCd <= 0 && free) this.fire(p);
-      if (inp.item && p.item && p.itemN > 0 && free) this.useItem(p);
-    }
 
     const inBush = (this.arena.bushes ?? []).some((b) => dist(p.x, p.y, b.x, b.y) < b.r);
     const sand = (this.arena.sand ?? []).find((c) => dist(p.x, p.y, c.x, c.y) < c.r);
@@ -1381,6 +1542,7 @@ export class Game {
     // lentidões não se multiplicam sem limite: a mais forte vale, e há uma velocidade mínima
     const slowK = Math.min(p.slowT > 0 ? 0.6 : 1, p.stasisT > 0 ? 0.35 : 1, sand ? 0.55 : 1, p.castT > 0 ? COMBAT.castMove : 1) * (inBush ? 0.92 : 1) * (carrying ? 0.92 : 1);
     let speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * Math.max(COMBAT.minSpeed, slowK) * (p.boss ? BOSS.speedMul * (p.exhaustT > 0 ? 0.5 : 1) : 1);
+    if (this.mode === 'duelo' || this.mode === 'dupla') speed *= speedMul(p.char.id, p.comboStacks);
     if (p.isBot) speed *= p.brain!.speedMul;
 
     if (p.chargeT > 0) {
@@ -1404,6 +1566,11 @@ export class Game {
       p.dashT -= dt;
       p.vx = Math.cos(p.dir) * C.DASH_SPEED;
       p.vy = Math.sin(p.dir) * C.DASH_SPEED;
+      if (p.dashDmg > 0 && p.dashEl) this.dashTouch(p);
+      if (p.dashT <= 0) {
+        p.dashDmg = 0;
+        p.dashEl = null;
+      }
     } else {
       const grip = onIce ? 0.12 : this.arena.grip;
       const k = 1 - Math.exp(-12 * grip * dt);
@@ -1443,8 +1610,7 @@ export class Game {
         p.vy += ((w.y - p.y) / d) * f;
       }
     }
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
+    this.integrate(p, dt);
     // esteiras
     for (const cv of this.arena.conveyors ?? []) {
       if (inRect(p.x, p.y, cv)) {
@@ -1454,36 +1620,81 @@ export class Game {
     }
     this.collideWorld(p);
     // o Chefe é alto: não encosta na parede de cima (o corpo ficaria fora da arena)
-    if (p.boss) this.keepBossInside(p);
     p.moving = moving || p.dashT > 0;
     if (p.moving) p.walkPhase += dt * (p.turboT > 0 ? 16 : 11);
 
-    // portais
-    for (const [a, b] of this.arena.portals ?? []) {
-      if (p.portalCd > 0) break;
-      for (const [from, to] of [
-        [a, b],
-        [b, a],
-      ] as const) {
-        if (dist(p.x, p.y, from.x, from.y) < 24) {
-          p.recorder?.markJump();
-          const ox = Math.cos(p.dir) * 34;
-          const oy = Math.sin(p.dir) * 34;
-          p.x = to.x + ox;
-          p.y = to.y + oy;
-          this.collideWorld(p);
-          p.portalCd = C.PORTAL_CD;
-          this.events.push({ type: 'portal', x: to.x, y: to.y, pid: p.id });
-          break;
-        }
-      }
-    }
+    this.usePortal(p);
+    this.rescue(p);
+    this.noteSafe(p);
 
     // queda (ilhas)
     if (this.arena.islands && !isGround(this.arena, p.x, p.y, this.worldT)) {
       this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: 'fall' });
       this.respawn(p);
       if (p.invulnT <= 0 && p.phaseT <= 0) this.damage(p, 'fall', true);
+    }
+  }
+
+  /** portal: uma transição, saída segura, vida intacta, recarga contra loop */
+  private usePortal(p: Player) {
+    if (p.portalCd > 0) return;
+    const hit = portalPairAt(this.arena.portals, p.x, p.y);
+    if (!hit) return;
+    const hp = p.hp;
+    const hearts = p.hearts;
+    const shield = p.shieldHp;
+    const dir = Math.hypot(p.vx, p.vy) > 30 ? Math.atan2(p.vy, p.vx) : p.dir;
+    const zoneOn = (i: number) => this.zoneState(i) === 'on';
+    const free = (x: number, y: number) => this.isFree(x, y, C.PLAYER_R);
+    let exit = choosePortalExit(this.arena, hit.to, dir, this.worldT, zoneOn, free);
+    p.recorder?.markJump();
+    p.x = exit.x;
+    p.y = exit.y;
+    p.vx *= 0.25;
+    p.vy *= 0.25;
+    this.collideWorld(p);
+    if (!this.isFree(p.x, p.y, C.PLAYER_R * 0.8) || portalPairAt(this.arena.portals, p.x, p.y)) {
+      exit = choosePortalExit(this.arena, hit.to, dir + Math.PI / 2, this.worldT, zoneOn, free);
+      p.x = exit.x;
+      p.y = exit.y;
+      this.collideWorld(p);
+    }
+    p.portalCd = C.PORTAL_CD;
+    p.hp = hp;
+    p.hearts = hearts;
+    p.shieldHp = shield;
+    this.safePos.set(p.id, { x: p.x, y: p.y });
+    this.events.push({ type: 'portal', x: p.x, y: p.y, pid: p.id });
+  }
+
+  private noteSafe(p: Player) {
+    if (this.isFree(p.x, p.y, C.PLAYER_R)) this.safePos.set(p.id, { x: p.x, y: p.y });
+  }
+
+  /** centro dentro de parede/pilar: volta à última posição válida, senão ao vão livre mais perto */
+  private rescue(p: { id?: string; x: number; y: number; vx?: number; vy?: number }) {
+    if (this.isFree(p.x, p.y, 4)) return;
+    const saved = p.id ? this.safePos.get(p.id) : undefined;
+    if (saved && this.isFree(saved.x, saved.y, C.PLAYER_R)) {
+      p.x = saved.x;
+      p.y = saved.y;
+      if (p.vx !== undefined) p.vx = 0;
+      if (p.vy !== undefined) p.vy = 0;
+      return;
+    }
+    for (let r = 12; r <= 96; r += 12) {
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const x = p.x + Math.cos(a) * r;
+        const y = p.y + Math.sin(a) * r;
+        if (!this.isFree(x, y, C.PLAYER_R)) continue;
+        p.x = x;
+        p.y = y;
+        if (p.vx !== undefined) p.vx = 0;
+        if (p.vy !== undefined) p.vy = 0;
+        if (p.id) this.safePos.set(p.id, { x, y });
+        return;
+      }
     }
   }
 
@@ -1506,7 +1717,7 @@ export class Game {
 
   /** volta ao jogo depois de cair (modos com renascer) */
   private revive(p: Player) {
-    const sp = this.mode === 'chefe' ? this.teamSpawn(p.team, Math.floor(Math.random() * 3)) : p.team >= 0 ? this.teamSpawn(p.team, Math.floor(Math.random() * 3)) : this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)];
+    const sp = p.team >= 0 ? this.teamSpawn(p.team, Math.floor(Math.random() * 3)) : this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)];
     p.recorder?.markJump();
     Object.assign(p, { x: sp.x, y: sp.y, vx: 0, vy: 0, alive: true, hp: p.maxHp, shieldHp: 0, invulnT: 1 + COMBAT.spawnProtect, stunT: 0, slowT: 0, pullT: 0, chargeT: 0, castT: 0, markT: 0, dodgeT: 0 });
     // arma volta para a do equipamento; itens NÃO recarregam ao renascer (evita abuso)
@@ -1526,14 +1737,9 @@ export class Game {
     p.weapon = this.primaryFor(p);
     p.weaponT = 0;
     p.ammo = 0;
-    const kit = KITS[p.loadout.kit];
-    if (this.combat && !p.boss && kit) {
-      p.item = kit.id;
-      p.itemN = kit.count;
-    } else {
-      p.item = null;
-      p.itemN = 0;
-    }
+    // X1 e 2x2 não usam granada nem item de arma.
+    p.item = null;
+    p.itemN = 0;
   }
 
   /** atordoamento com limite e imunidade logo depois (sempre há chance de reagir) */
@@ -1544,6 +1750,10 @@ export class Game {
     if (t < 0.05) return;
     p.stunT = Math.max(p.stunT, t);
     p.castT = 0;
+    if (p.pendingCast) {
+      p.pendingCast = null;
+      abilityTrace(p.id, 'windup-cancel', 'stun');
+    }
     p.ccResistT = p.stunT + COMBAT.ccResist;
     this.events.push({ type: 'stunned', x: p.x, y: p.y, pid: p.id });
   }
@@ -1930,7 +2140,7 @@ export class Game {
 
   /** força da habilidade conforme o nível */
   private pow(p: Player) {
-    return levelMult(p.char.abilityLv ?? 1, this.mode === 'ondas').power;
+    return levelMult(p.char.abilityLv ?? 1, false).power;
   }
 
   /** raio do corpo para acertos */
@@ -1938,9 +2148,18 @@ export class Game {
     return p.boss ? BOSS.hitR : C.PLAYER_R;
   }
 
-  /** inimigos do mapa (robôs, geradores) são alvos deste jogador? */
-  enemyHostileTo(p: { team: number }) {
-    return !(this.mode === 'chefe' && p.team === 1);
+  /** cápsula dos pés até a cabeça: o tiro acerta o desenho, não só a cintura */
+  bodyHit(o: Player, x: number, y: number, pad = 6): boolean {
+    const r = this.hitR(o) + pad;
+    const foot = o.y - 4;
+    const head = o.y - (o.boss ? 86 : 72);
+    const cy = Math.max(head, Math.min(foot, y));
+    return dist(o.x, cy, x, y) <= r;
+  }
+
+  /** inimigos do mapa (robôs) são alvos deste jogador? */
+  enemyHostileTo(_p: { team: number }) {
+    return true;
   }
 
   /** escudo do Bronzar: devolve o tiro que vem da frente (nunca mais forte e só uma vez) */
@@ -1976,7 +2195,7 @@ export class Game {
 
   collideWorld(p: { x: number; y: number; vx?: number; vy?: number }, r = C.PLAYER_R) {
     const walls = this.iceWalls?.length ? [...this.arena.walls, ...this.iceWalls] : this.arena.walls;
-    for (let iter = 0; iter < 2; iter++) {
+    for (let iter = 0; iter < 4; iter++) {
       for (const w of walls) {
         const cx = Math.max(w.x, Math.min(p.x, w.x + w.w));
         const cy = Math.max(w.y, Math.min(p.y, w.y + w.h));
@@ -1985,7 +2204,7 @@ export class Game {
         const d = Math.hypot(dx, dy);
         if (d < r) {
           if (d < 0.001) {
-            // centro dentro do retângulo: empurra pelo lado mais próximo
+            // centro dentro do retângulo: empurra pelo lado mais próximo e desliza
             const opts = [
               [p.x - w.x, -1, 0],
               [w.x + w.w - p.x, 1, 0],
@@ -1997,9 +2216,13 @@ export class Game {
             dy = opts[0][2];
             p.x += dx * (opts[0][0] + r);
             p.y += dy * (opts[0][0] + r);
+            slideVelocity(p, dx, dy);
           } else {
-            p.x = cx + (dx / d) * r;
-            p.y = cy + (dy / d) * r;
+            const nx = dx / d;
+            const ny = dy / d;
+            p.x = cx + nx * r;
+            p.y = cy + ny * r;
+            slideVelocity(p, nx, ny);
           }
         }
       }
@@ -2055,6 +2278,8 @@ export class Game {
           b.y -= ny * push;
           this.collideWorld(a);
           this.collideWorld(b);
+          this.rescue(a);
+          this.rescue(b);
         }
       }
   }
@@ -2196,7 +2421,7 @@ export class Game {
       p.stats.echoHits++;
       this.echoHitBy = e.rec.playerId;
       if (this.combat) {
-        this.hurt(p, 12, null, own ? 'own' : 'echo');
+        this.hurt(p, 12, null, own ? 'own' : 'echo', Math.atan2(p.y - e.y, p.x - e.x));
         p.invulnT = Math.max(p.invulnT, 0.6);
         return;
       }
@@ -2350,7 +2575,7 @@ export class Game {
       if (this.powerups.length < (this.combat ? 4 : 2) && this.roundT < this.roundDur - 3) {
         const s = this.randomFreeSpot(90);
         if (s) {
-          const kind = randomPower(this.combat ? 'combate' : 'nucleo');
+          const kind = this.pickPower();
           this.powerups.push({ id: this.fragId++, kind, x: s.x, y: s.y, age: 0 });
           this.events.push({ type: 'powerSpawn', x: s.x, y: s.y, power: kind });
         }
@@ -2379,6 +2604,10 @@ export class Game {
 
   // ------------------------------------------------------------------ cristais de habilidade
   private updateAbilityOrbs(dt: number) {
+    if (this.mode === 'duelo' || this.mode === 'dupla') {
+      this.abilityOrbs = [];
+      return;
+    }
     for (const o of this.abilityOrbs) o.age += dt;
     if (this.cfg.training) return;
     this.orbTimer -= dt;
@@ -2538,6 +2767,558 @@ export class Game {
     }
   }
 
+  /** Poder de arena que não é arma. Recusa (recarga) não reinicia o tempo. */
+  private pickPower(): PowerId {
+    const banned = new Set<PowerId>(['metralhadora', 'escopeta', 'laser', 'foguete', 'congelante', 'bomba', 'mina']);
+    for (let i = 0; i < 8; i++) {
+      const kind = randomPower();
+      if (!banned.has(kind)) return kind;
+    }
+    return 'turbo';
+  }
+
+  private foeInRadius(p: Player, x: number, y: number, radius: number, los = false) {
+    return this.players.some((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, x, y) <= radius && (!los || this.sight(p.x, p.y, o.x, o.y)));
+  }
+
+  /** Parede, pilar e borda no meio do trecho. As pontas não contam. */
+  private sight(ax: number, ay: number, bx: number, by: number) {
+    const d = Math.hypot(bx - ax, by - ay);
+    if (d < 14) return true;
+    const inset = 8 / d;
+    return (
+      this.solidAlong(ax + (bx - ax) * inset, ay + (by - ay) * inset, bx - (bx - ax) * inset, by - (by - ay) * inset, 2) === null
+    );
+  }
+
+  /** Anda em passos curtos. Um impulso contra a parede para; não aparece do outro lado. */
+  private integrate(p: Player, dt: number) {
+    const distMoved = Math.hypot(p.vx, p.vy) * dt;
+    const n = Math.max(1, Math.ceil(distMoved / 8));
+    const step = dt / n;
+    for (let i = 0; i < n; i++) {
+      const ox = p.x;
+      const oy = p.y;
+      p.x += p.vx * step;
+      p.y += p.vy * step;
+      this.collideWorld(p);
+      if (p.dashT > 0) {
+        const moved = Math.hypot(p.x - ox, p.y - oy);
+        const want = Math.hypot(p.vx, p.vy) * step;
+        if (want > 1 && moved < want * 0.25) {
+          p.dashT = 0;
+          abilityTrace(p.id, 'dash-block', `${Math.round(p.x)},${Math.round(p.y)}`);
+          break;
+        }
+      }
+    }
+  }
+
+  private solidAlong(x0: number, y0: number, x1: number, y1: number, r: number) {
+    const rects = this.iceWalls.length ? [...this.arena.walls, ...this.iceWalls] : this.arena.walls;
+    return sweepCircle(x0, y0, x1, y1, r, rects, this.arena.pillars, {
+      minX: BORDER + r,
+      minY: BORDER + r,
+      maxX: WORLD_W - BORDER - r,
+      maxY: WORLD_H - BORDER - r,
+    });
+  }
+
+  private earliestBody(b: Bullet, x0: number, y0: number, x1: number, y1: number, enemyShot: boolean, ownerTeam: number) {
+    let best: number | null = null;
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || b.hit.includes(o.id)) continue;
+      if (!enemyShot) {
+        if (o.id === b.owner && !b.fromEcho) continue;
+        if (o.id === b.owner && this.rules.teams) continue;
+        if (o.id !== b.owner && ownerTeam >= 0 && ownerTeam === o.team) continue;
+      }
+      const foot = o.y - 4;
+      const head = o.y - (o.boss ? 86 : 72);
+      const t = sweepCapsule(x0, y0, x1, y1, o.x, foot, head, this.hitR(o) + 6);
+      if (t === null) continue;
+      if (best === null || t < best) best = t;
+    }
+    return best;
+  }
+
+  private steerHome(b: Bullet, dt: number) {
+    const tgt = this.players.find((p) => p.id === b.homeId);
+    if (!tgt || !tgt.alive || !tgt.playing) {
+      b.life = 0;
+      abilityTrace(b.owner, 'home-end', b.homeId ?? '');
+      return;
+    }
+    const sp = Math.hypot(b.vx, b.vy);
+    if (sp < 1) return;
+    const want = Math.atan2(tgt.y - GUN_Y - b.y, tgt.x - b.x);
+    const cur = Math.atan2(b.vy, b.vx);
+    let diff = want - cur;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const cap = 6 * dt;
+    const turn = Math.abs(diff) > cap ? Math.sign(diff) * cap : diff;
+    const ang = cur + turn;
+    b.vx = Math.cos(ang) * sp;
+    b.vy = Math.sin(ang) * sp;
+  }
+
+  private nearestHostile(p: Player, max: number): Player | null {
+    let best: Player | null = null;
+    let bd = max;
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
+      const d = dist(p.x, p.y, o.x, o.y);
+      if (d < bd) {
+        bd = d;
+        best = o;
+      }
+    }
+    return best;
+  }
+
+  /** Soma emboscada e embalo uma vez, com teto. O número entra no mesmo dano, sem um segundo golpe. */
+  private mobilityBonus(src: Player): number {
+    let n = 0;
+    if (src.ambushT > 0) {
+      const g = Math.min(AMBUSH_BONUS, EXTRA_CAP - n);
+      src.ambushT = 0;
+      n += g;
+      if (g > 0) this.events.push({ type: 'combo', x: src.x, y: src.y, name: 'Emboscada', bonus: g, pid: src.id });
+    }
+    if (src.flowT > 0) {
+      const g = Math.min(FLOW_BONUS, EXTRA_CAP - n);
+      src.flowT = 0;
+      n += g;
+      if (g > 0) this.events.push({ type: 'combo', x: src.x, y: src.y, name: 'Embalo', bonus: g, pid: src.id });
+    }
+    return n;
+  }
+
+  private applyRoot(p: Player, t: number) {
+    if (t <= 0 || p.rootResistT > 0 || p.dodgeT > 0 || p.boss) return;
+    p.rootT = Math.max(p.rootT, t);
+    p.rootResistT = p.rootT + ROOT_RESIST;
+    this.events.push({ type: 'trap', x: p.x, y: p.y, pid: p.id });
+  }
+
+  /** Anda até a parede e para. Devolve a distância andada. */
+  private blinkTo(p: Player, ang: number, reach: number): number {
+    const step = 8;
+    let x = p.x;
+    let y = p.y;
+    const n = Math.max(1, Math.floor(reach / step));
+    for (let i = 1; i <= n; i++) {
+      const nx = p.x + Math.cos(ang) * step * i;
+      const ny = p.y + Math.sin(ang) * step * i;
+      if (!this.isFree(nx, ny, C.PLAYER_R)) break;
+      x = nx;
+      y = ny;
+    }
+    const moved = Math.hypot(x - p.x, y - p.y);
+    p.x = x;
+    p.y = y;
+    return moved;
+  }
+
+  private placeGrove(p: Player, x: number, y: number, r: number, heal: number) {
+    this.groves.push({ id: this.fragId++, owner: p.id, team: p.team, x, y, r, t: HEAL_ZONE_TIME, acc: 0, heal });
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || dist(o.x, o.y, x, y) > r) continue;
+      if (this.hostile(p, o)) continue;
+      this.heal(p, o, heal);
+      o.healT = 0.5;
+    }
+  }
+
+  private dashTouch(p: Player) {
+    if (!p.dashEl || p.dashDmg <= 0) return;
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || p.dashHit.includes(o.id) || !this.hostile(p, o)) continue;
+      if (dist(p.x, p.y, o.x, o.y) > 36) continue;
+      p.dashHit.push(o.id);
+      this.deliverPower(p, o, p.dashEl, p.dashDmg, KNOCK[p.dashEl]);
+    }
+  }
+
+  /** Clique no X1 e no 2x2. Não usa a arma, não marca e não consome plasma. */
+  private castBasic(p: Player, ang: number) {
+    if (p.basicCd > 0) return;
+    if (p.energy < BASIC.cost) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      abilityTrace(p.id, 'deny', 'energy');
+      return;
+    }
+    p.energy -= BASIC.cost;
+    p.basicCd = BASIC.cd;
+    const muzzle = 16;
+    this.bullets.push({
+      id: this.fragId++,
+      x: p.x + Math.cos(ang) * muzzle,
+      y: p.y - GUN_Y + Math.sin(ang) * muzzle,
+      vx: Math.cos(ang) * BASIC.speed,
+      vy: Math.sin(ang) * BASIC.speed,
+      owner: p.id,
+      dmg: BASIC.dmg,
+      life: BASIC.range / BASIC.speed,
+      weapon: 'pulsador',
+      pierce: false,
+      fromEcho: false,
+      hit: [],
+      basic: true,
+    });
+    abilityTrace(p.id, 'launch', BASIC.name);
+    this.events.push({ type: 'shoot', x: p.x, y: p.y, pid: p.id, weapon: 'pulsador' });
+  }
+
+  /** Prepara o golpe. Com windup, energia e recarga só caem quando ele sai. */
+  private beginPower(p: Player, slot: number, ang: number, inp?: Input) {
+    if (p.pendingCast) return;
+    const def = kitOf(p.char.id).powers[slot];
+    const wind = def.windup ?? 0;
+    const ult = slot === 2;
+    if (ult && p.ultCharge < 100) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Ultimate em carga' });
+      abilityTrace(p.id, 'deny', 'charge');
+      return;
+    }
+    if (wind <= 0) {
+      this.castPower(p, slot, ang, inp);
+      return;
+    }
+    if (p.powerCd[slot] > 0) return;
+    if (!ult && p.energy < SLOT_COST[slot]) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      abilityTrace(p.id, 'deny', 'energy');
+      return;
+    }
+    if (def.speed <= 0) {
+      const pt = this.castPoint(p, inp, ang, def.range);
+      if (!this.foeInRadius(p, pt.x, pt.y, def.radius, def.los !== false)) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido' });
+        abilityTrace(p.id, 'deny', 'target');
+        return;
+      }
+    }
+    p.pendingCast = { slot, ang, ca: inp?.ca, cr: inp?.cr, at: this.roundT + wind };
+    p.castT = Math.max(p.castT, wind);
+    abilityTrace(p.id, 'windup', def.name);
+  }
+
+  /**
+   * Q E R F no X1 e no 2x2. Não grava tiro no Eco e não usa a arma.
+   * Recarga e energia só caem depois que o golpe é aceito.
+   * Área sem inimigo no círculo: não gasta. Projétil: gasta ao sair, mesmo se errar.
+   */
+  private castPower(p: Player, slot: number, ang: number, inp?: Input) {
+    if (p.powerCd[slot] > 0) return;
+    const def = kitOf(p.char.id).powers[slot];
+    const cost = SLOT_COST[slot];
+    const ult = slot === 2;
+    if (ult && p.ultCharge < 100) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Ultimate em carga' });
+      abilityTrace(p.id, 'deny', 'charge');
+      return;
+    }
+    if (!ult && p.energy < cost) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      abilityTrace(p.id, 'deny', 'energy');
+      return;
+    }
+    const dmg = resolvedDamage(def, slot);
+    const knock = KNOCK[def.element];
+    const pay = () => {
+      if (ult) p.ultCharge = 0;
+      else p.energy -= cost;
+      p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+    };
+    if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone' || def.act === 'wall') {
+      if ((def.act === 'dash' || def.act === 'blink') && p.rootT > 0) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Preso pelas raízes' });
+        return;
+      }
+      pay();
+      abilityTrace(p.id, 'launch', def.name);
+      this.playAct(p, def, ang, inp, dmg);
+      return;
+    }
+    if (def.speed <= 0) {
+      const pt = this.castPoint(p, inp, ang, def.range);
+      const los = def.los !== false;
+      if (!this.foeInRadius(p, pt.x, pt.y, def.radius, los)) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido' });
+        abilityTrace(p.id, 'deny', 'target');
+        return;
+      }
+      pay();
+      abilityTrace(p.id, 'impact', def.name);
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
+      for (const o of this.players) {
+        if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
+        if (dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
+        if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
+        this.deliverPower(p, o, def.element, dmg, knock, true);
+      }
+      if (def.grove === 'heal') this.placeGrove(p, pt.x, pt.y, def.radius, 4);
+      return;
+    }
+    pay();
+    const muzzle = 18;
+    const home = def.home ? this.nearestHostile(p, def.range) : null;
+    this.bullets.push({
+      id: this.fragId++,
+      x: p.x + Math.cos(ang) * muzzle,
+      y: p.y - GUN_Y + Math.sin(ang) * muzzle,
+      vx: Math.cos(ang) * def.speed,
+      vy: Math.sin(ang) * def.speed,
+      owner: p.id,
+      dmg,
+      life: def.range / def.speed,
+      weapon: VISUAL_WEAPON[def.element],
+      pierce: !!def.pass,
+      fromEcho: false,
+      hit: [],
+      el: def.element,
+      knock,
+      homeId: home?.id,
+    });
+    abilityTrace(p.id, 'launch', def.name);
+    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
+  }
+
+  /** Efeito já pago: arrancada, piscar, ilusão, bosque ou muralha. */
+  private playAct(p: Player, def: PowerDef, ang: number, inp: Input | undefined, dmg: number) {
+    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: def.radius });
+    if (def.act === 'dash') {
+      p.dir = ang;
+      p.dashT = C.DASH_TIME;
+      p.dashDmg = dmg;
+      p.dashEl = def.element;
+      p.dashHit = [];
+      p.flowT = Math.max(p.flowT, FLOW_TIME);
+      this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
+    } else if (def.act === 'blink') {
+      const ox = p.x;
+      const oy = p.y;
+      const moved = this.blinkTo(p, ang, def.step ?? BLINK_STEP);
+      if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, dmg) });
+      if (moved > 12) p.ambushT = AMBUSH_TIME;
+      const foe = this.nearestHostile(p, 36);
+      if (foe) this.deliverPower(p, foe, def.element, dmg, 0);
+    } else if (def.act === 'decoy') {
+      const ox = p.x + Math.cos(ang) * 48;
+      const oy = p.y + Math.sin(ang) * 48;
+      const spot = this.isFree(ox, oy, 12) ? { x: ox, y: oy } : { x: p.x, y: p.y };
+      this.clones.push({ owner: p.id, x: spot.x, y: spot.y, dir: ang, t: 3.2, decoy: true, absorb: 1, pop: dmg });
+    } else if (def.act === 'wall') {
+      const reach = Math.min(78, Math.max(48, def.range));
+      const cx = p.x + Math.cos(ang) * reach;
+      const cy = p.y + Math.sin(ang) * reach;
+      this.raiseWall(p.id, cx, cy, ang, 92, 16, 3.2, 'barreira');
+      for (const o of this.players) {
+        if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
+        if (dist(o.x, o.y, cx, cy) > def.radius + 8) continue;
+        this.slow(o, 1.1);
+        this.deliverPower(p, o, def.element, dmg, 0, true);
+      }
+    } else {
+      const pt = this.castPoint(p, inp, ang, def.range);
+      this.placeGrove(p, pt.x, pt.y, def.radius, dmg);
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
+    }
+  }
+
+  /** Poder extra do Z. Plasma mantém a marca. Os outros usam o mesmo combate do kit. */
+  private castPlasma(p: Player, ang: number, inp?: Input) {
+    const def = studioOf(p.loadout.secondary);
+    if (!p.plasmaOn || !def) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Habilidade ainda não desbloqueada' });
+      abilityTrace(p.id, 'deny', 'locked');
+      return;
+    }
+    if (p.plasmaCd > 0) return;
+    if (def.id === 'plasma') {
+      if (p.energy < PLASMA.cost) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+        abilityTrace(p.id, 'deny', 'energy');
+        return;
+      }
+      p.energy -= PLASMA.cost;
+      p.plasmaCd = PLASMA.cd;
+      const muzzle = 18;
+      this.bullets.push({
+        id: this.fragId++,
+        x: p.x + Math.cos(ang) * muzzle,
+        y: p.y - GUN_Y + Math.sin(ang) * muzzle,
+        vx: Math.cos(ang) * PLASMA.speed,
+        vy: Math.sin(ang) * PLASMA.speed,
+        owner: p.id,
+        dmg: PLASMA.dmg,
+        life: PLASMA.range / PLASMA.speed,
+        weapon: 'pulsador',
+        pierce: false,
+        fromEcho: false,
+        hit: [],
+        plasma: true,
+      });
+      abilityTrace(p.id, 'launch', PLASMA.name);
+      this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: 'plasma' });
+      return;
+    }
+    if ((def.act === 'dash' || def.act === 'blink') && p.rootT > 0) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Preso pelas raízes' });
+      return;
+    }
+    if (p.energy < def.cost) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      abilityTrace(p.id, 'deny', 'energy');
+      return;
+    }
+    if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone' || def.act === 'wall') {
+      p.energy -= def.cost;
+      p.plasmaCd = def.cd;
+      abilityTrace(p.id, 'launch', def.name);
+      this.playAct(p, def, ang, inp, def.dmg);
+      return;
+    }
+    if (def.speed <= 0) {
+      const pt = this.castPoint(p, inp, ang, def.range);
+      const los = def.los !== false;
+      if (!this.foeInRadius(p, pt.x, pt.y, def.radius, los)) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido' });
+        abilityTrace(p.id, 'deny', 'target');
+        return;
+      }
+      p.energy -= def.cost;
+      p.plasmaCd = def.cd;
+      abilityTrace(p.id, 'impact', def.name);
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
+      for (const o of this.players) {
+        if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
+        if (dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
+        if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
+        this.deliverPower(p, o, def.element, def.dmg, KNOCK[def.element], true);
+        if (def.yank && def.yank > 0) {
+          const dx = p.x - o.x;
+          const dy = p.y - o.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const step = Math.min(def.yank, d);
+          o.pullX = o.x + (dx / d) * step;
+          o.pullY = o.y + (dy / d) * step;
+          o.pullT = 0.45;
+        }
+      }
+      return;
+    }
+    p.energy -= def.cost;
+    p.plasmaCd = def.cd;
+    const muzzle = 18;
+    this.bullets.push({
+      id: this.fragId++,
+      x: p.x + Math.cos(ang) * muzzle,
+      y: p.y - GUN_Y + Math.sin(ang) * muzzle,
+      vx: Math.cos(ang) * def.speed,
+      vy: Math.sin(ang) * def.speed,
+      owner: p.id,
+      dmg: def.dmg,
+      life: def.range / def.speed,
+      weapon: VISUAL_WEAPON[def.element],
+      pierce: false,
+      fromEcho: false,
+      hit: [],
+      el: def.element,
+      knock: KNOCK[def.element],
+    });
+    abilityTrace(p.id, 'launch', def.name);
+    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
+  }
+
+  /** Marca de 4 s. O dano do projétil não passa do valor da habilidade. */
+  private deliverPlasma(src: Player, dst: Player, damage: number) {
+    if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
+    this.hurt(dst, Math.min(PLASMA.dmg, Math.max(0, damage)), src.id, 'pulse');
+    dst.plasmaT = PLASMA.mark;
+  }
+
+  /** Lê o combo, grava o elemento novo e aplica queimadura, lentidão, tontura ou empurrão. */
+  private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number, aoe = false) {
+    if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
+    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT };
+    const extra = bonusDamage(src.char.id, aura, dst.stunT > 0);
+    const move = this.mobilityBonus(src);
+    let rootBonus = 0;
+    if (aoe && dst.rootT > 0) {
+      rootBonus = Math.min(ROOT_AOE_BONUS, Math.max(0, EXTRA_CAP - move));
+      dst.rootT = 0;
+      if (rootBonus > 0) this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Raiz e impacto', bonus: rootBonus, pid: src.id });
+    }
+    const combo = tuneCombo(src.char.id, comboOf(aura, element));
+    const marked = dst.plasmaT > 0;
+    let burst = 0;
+    if (marked) {
+      dst.plasmaT = 0;
+      burst = Math.min(PLASMA.burst, Math.max(0, PLASMA.cap - (damage + extra)));
+    }
+    this.hurt(dst, damage + extra + move + rootBonus, src.id, 'pulse');
+    if ((this.mode === 'duelo' || this.mode === 'dupla') && !src.boss) src.ultCharge = Math.min(100, src.ultCharge + COMBAT.ult.perAbility);
+    if (burst > 0) {
+      this.hurt(dst, burst, src.id, 'pulse');
+      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Explosão de Plasma', bonus: burst, pid: src.id });
+      src.comboStacks = Math.min(8, src.comboStacks + 1);
+    }
+    if (element === 'fire') {
+      dst.burnT = BURN_TIME;
+      dst.burnDps = burnDpsOf(src.char.id);
+      dst.burnFrom = src.id;
+      dst.burnAcc = 0;
+    } else if (element === 'ice') {
+      dst.frozenT = FROZEN_TIME;
+      this.slow(dst, FROZEN_TIME);
+    } else if (element === 'lightning') dst.shockT = MARK_TIME;
+    else if (element === 'wind') dst.gustT = MARK_TIME;
+    else if (element === 'nature') this.applyRoot(dst, ROOT_TIME);
+    if (combo) {
+      if (combo.clearFrozen) {
+        dst.frozenT = 0;
+        dst.slowT = 0;
+      }
+      this.hurt(dst, combo.bonus, src.id, 'pulse');
+      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: combo.name, bonus: combo.bonus, pid: src.id });
+      src.comboStacks = Math.min(8, src.comboStacks + 1);
+      const refund = refundOnCombo(src.char.id);
+      if (refund) for (let i = 0; i < 4; i++) src.powerCd[i] = Math.max(0, src.powerCd[i] - refund);
+      const healN = healOnCombo(src.char.id);
+      if (healN && src.alive) this.heal(src, src, healN);
+      if (combo.aoe) {
+        for (const o of this.players) {
+          if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
+          if (dist(o.x, o.y, dst.x, dst.y) < combo.aoe && this.sight(dst.x, dst.y, o.x, o.y)) this.hurt(o, combo.bonus * 0.5, src.id, 'pulse');
+        }
+      }
+    }
+    if (element === 'lightning') this.stun(dst, stunTime(src.char.id));
+    if (element === 'plasma') {
+      const ang = Math.atan2(dst.y - src.y, dst.x - src.x);
+      this.knock(dst, Math.cos(ang) * knock, Math.sin(ang) * knock);
+    } else if (element === 'wind') {
+      const slammed = wallSlam(src.x, src.y, dst.x, dst.y, WALL_REACH, (x, y) => !this.isFree(x, y, 10));
+      if (slammed) {
+        this.stun(dst, wallStun(src.char.id));
+        this.hurt(dst, WALL_BONUS, src.id, 'pulse');
+        this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Pancada', bonus: WALL_BONUS, pid: src.id });
+        src.comboStacks = Math.min(8, src.comboStacks + 1);
+      }
+      const ang = Math.atan2(dst.y - src.y, dst.x - src.x);
+      const k = knock * knockMul(src.char.id);
+      this.knock(dst, Math.cos(ang) * k, Math.sin(ang) * k);
+      const gs = gustSlow(src.char.id);
+      if (gs) this.slow(dst, gs);
+    } else if (knock > 0) {
+      const ang = Math.atan2(dst.y - src.y, dst.x - src.x);
+      this.knock(dst, Math.cos(ang) * knock, Math.sin(ang) * knock);
+    }
+  }
+
   private fire(p: Player) {
     const w = WEAPONS[p.weapon];
     // atirar revela quem está em fase/sombra (invulnerabilidade nunca vem junto com ataque)
@@ -2552,7 +3333,7 @@ export class Game {
     }
   }
 
-  private throwBomb(x: number, y: number, ang: number, owner: string, fromEcho: boolean, tx?: number, ty?: number, ice = false) {
+  private throwBomb(x: number, y: number, ang: number, owner: string, fromEcho: boolean, tx?: number, ty?: number, ice = false, pulse = false) {
     let ex = tx ?? x + Math.cos(ang) * 210;
     let ey = ty ?? y + Math.sin(ang) * 210;
     // não atravessa paredes: para no primeiro obstáculo
@@ -2567,7 +3348,7 @@ export class Game {
         break;
       }
     }
-    this.bombs.push({ id: this.fragId++, x, y, sx: x, sy: y, tx: ex, ty: ey, t: 0, owner, fromEcho, ice });
+    this.bombs.push({ id: this.fragId++, x, y, sx: x, sy: y, tx: ex, ty: ey, t: 0, owner, fromEcho, ice, pulse });
     return { tx: ex, ty: ey };
   }
 
@@ -2581,6 +3362,9 @@ export class Game {
       p.recorder?.event(t, 'mine');
     } else if (p.item === 'gelo') {
       this.throwBomb(p.x, p.y, p.aim, p.id, false, undefined, undefined, true);
+    } else if (p.item === 'pulso') {
+      const target = this.throwBomb(p.x, p.y, p.aim, p.id, false, undefined, undefined, false, true);
+      p.recorder?.event(t, 'bomb', { tx: Math.round(target.tx), ty: Math.round(target.ty), w: 'pulso' });
     } else if (p.item === 'kit') {
       this.heal(p, p, KIT_HEAL);
       this.events.push({ type: 'heal', x: p.x, y: p.y, pid: p.id });
@@ -2622,6 +3406,17 @@ export class Game {
     for (const e of this.echoViews) if (e.active && !e.disrupted && dist(e.x, e.y, x, y) < r) this.disrupted.set(e.key, this.roundT + 2.5);
   }
 
+  /** pulso: explosão menor que atordoa rivais na área */
+  private pulseBlast(x: number, y: number, owner: string, fromEcho: boolean) {
+    this.explode(x, y, PULSE_RADIUS, PULSE_DAMAGE, owner, fromEcho);
+    const op = this.players.find((q) => q.id === owner);
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || o.id === owner || dist(o.x, o.y, x, y) > PULSE_RADIUS) continue;
+      if (op && !this.hostile(op, o)) continue;
+      this.stun(o, 0.4);
+    }
+  }
+
   /** granada de gelo: pouco dano, deixa todos na área lentos */
   private iceBlast(x: number, y: number, owner: string) {
     this.events.push({ type: 'castHit', kind: 'estase', x, y, r: ICE_RADIUS, ang: 0, len: 0 });
@@ -2655,28 +3450,19 @@ export class Game {
   hurt(p: Player, dmg: number, by: string | null, cause: 'echo' | 'own' | 'hazard' | 'fall' | 'pulse' | 'shot' | 'blast', dir?: number) {
     // invulnT > 1 = proteção de início de rodada/renascer (o resto só evita repetir dano de Eco/perigo)
     if (!p.alive || dmg <= 0) return;
-    if (p.phaseT > 0 || p.invulnT > 1) return;
+    if (p.phaseT > 0 || p.invulnT > 1) {
+      if (cause === 'pulse' || cause === 'shot' || cause === 'blast') this.events.push({ type: 'dmg', pid: p.id, x: p.x, y: p.y, n: 0, k: 'immune' });
+      return;
+    }
+    // morte súbita: o dano base dobra uma vez. Não acumula a cada passo.
+    if (this.sudden) dmg *= DUEL.mult;
     if (p.dodgeT > 0) {
       this.events.push({ type: 'dmg', pid: p.id, x: p.x, y: p.y, n: 0, k: 'dodge' });
       return;
     }
     const src = by ? this.players.find((o) => o.id === by) ?? null : null;
     if (p.markT > 0) dmg *= COMBAT.markMult;
-    let weak = false;
-    if (p.boss) {
-      // ponto fraco nas costas: tiro que chega na mesma direção em que o Chefe olha
-      if (dir !== undefined) {
-        let diff = Math.abs(dir - p.aim) % (Math.PI * 2);
-        if (diff > Math.PI) diff = Math.PI * 2 - diff;
-        if (diff < 0.9) {
-          dmg *= BOSS.weakMult;
-          weak = true;
-          if (src) src.stats.weak++;
-        }
-      }
-      // geradores de pé: o Chefe fica protegido
-      if (this.enemies.some((e) => e.kind === 'pylon' && e.hp > 0)) dmg *= BOSS.pylonShield;
-    }
+    const weak = false;
     if (p.exhaustT > 0) dmg *= BOSS.exhaustMult;
     if (p.shieldT > 0) dmg *= COMBAT.shieldSideDamage;
     if (p.shieldHp > 0) {
@@ -2703,36 +3489,28 @@ export class Game {
       sy = p.y - Math.sin(dir) * 140;
     }
     const kind: DmgSrc = cause === 'echo' || cause === 'own' ? 'eco' : cause === 'hazard' || cause === 'fall' ? 'perigo' : cause === 'blast' ? 'explosao' : cause === 'pulse' ? 'golpe' : !by ? 'criatura' : 'arma';
-    this.events.push({ type: 'dmg', pid: p.id, x: p.x, y: p.y, n: Math.max(1, Math.round(dmg)), k: weak ? 'weak' : 'hp', sx: sx === undefined ? undefined : Math.round(sx), sy: sy === undefined ? undefined : Math.round(sy), src: kind });
-    this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: cause === 'shot' ? 'echo' : cause === 'own' ? 'own' : cause === 'fall' ? 'fall' : 'hazard' });
+    const note = cause === 'echo' ? 'ECO DA RODADA ANTERIOR' : cause === 'own' ? 'SEU ECO' : undefined;
+    this.events.push({ type: 'dmg', pid: p.id, x: p.x, y: p.y, n: Math.max(1, Math.round(dmg)), k: weak ? 'weak' : 'hp', sx: sx === undefined ? undefined : Math.round(sx), sy: sy === undefined ? undefined : Math.round(sy), src: kind, note });
+    const hitBy: 'echo' | 'own' | 'hazard' | 'fall' | 'pulse' = cause === 'echo' ? 'echo' : cause === 'own' ? 'own' : cause === 'fall' ? 'fall' : cause === 'hazard' ? 'hazard' : 'pulse';
+    this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: hitBy });
     if (src && src !== p && this.hostile(src, p)) {
       src.stats.dmg += dmg;
       if (!src.boss) src.ultCharge = Math.min(100, src.ultCharge + dmg * COMBAT.ult.perDamageDealt);
       if (src.vampT > 0) this.heal(src, src, dmg * COMBAT.vampFrac);
-      if (this.mode === 'chefe') this.chefePoints(src, dmg);
     }
     if (p.hp <= 0) {
       p.hp = 0;
       p.alive = false;
       p.deaths++;
       p.castT = 0;
+      p.pendingCast = null;
       p.chargeT = 0;
-      if (this.mode === 'chefe') {
-        // caçadores usam as vidas do time; o Chefe não volta
-        if (!p.boss && this.teamLives > 0) {
-          this.teamLives--;
-          p.respawnT = BOSS.hunterRespawn;
-          this.events.push({ type: 'lives', n: this.teamLives });
-        } else p.respawnT = 0;
-      } else if (this.rules.respawn) p.respawnT = RESPAWN_TIME;
+      if (this.rules.respawn) p.respawnT = RESPAWN_TIME;
       else p.recorder?.finish(this.roundT * 1000, p.x, p.y, p.dir);
       const killer = src;
       if (killer && killer !== p) {
         killer.kills++;
         if (!killer.boss) killer.ultCharge = Math.min(100, killer.ultCharge + COMBAT.ult.perKill);
-        if (this.mode === 'combate' || this.mode === 'royale') this.award(killer, 2);
-        if (this.mode === 'bandeira' || this.mode === 'rei') this.award(killer, 1);
-        if (this.mode === 'chefe' && killer.boss) this.award(killer, 4);
       }
       this.events.push({ type: 'kill', pid: p.id, by: killer && killer !== p ? killer.id : null, x: p.x, y: p.y });
       this.events.push({ type: 'eliminated', x: p.x, y: p.y, pid: p.id });
@@ -2741,40 +3519,89 @@ export class Game {
     }
   }
 
-  /** Caça ao Chefe: pontos por contribuição (não só dano) */
-  private dmgAcc = new Map<string, number>();
-  private chefePoints(src: Player, dmg: number) {
-    const acc = (this.dmgAcc.get(src.id) ?? 0) + dmg;
-    const step = src.boss ? 50 : 60;
-    const n = Math.floor(acc / step);
-    this.dmgAcc.set(src.id, acc - n * step);
-    if (n > 0) this.award(src, n);
-  }
-
   private updateCombat(dt: number) {
     // balas
     for (const b of this.bullets) {
+      if (b.homeId) this.steerHome(b, dt);
+      if (b.life <= 0) continue;
       b.life -= dt;
-      const steps = Math.ceil((Math.hypot(b.vx, b.vy) * dt) / 10);
+      const steps = Math.max(1, Math.ceil((Math.hypot(b.vx, b.vy) * dt) / 4));
       const enemyShot = b.owner === 'enemy';
       const ownerTeam = enemyShot ? -2 : this.teamOf(b.owner);
       for (let i = 0; i < steps && b.life > 0; i++) {
-        b.x += (b.vx * dt) / steps;
-        b.y += (b.vy * dt) / steps;
-        if (!this.isFree(b.x, b.y + GUN_Y, 3) && !b.pierce) {
-          this.damageCover(b.x, b.y + GUN_Y, 4, b.dmg);
+        const ox = b.x;
+        const oy = b.y;
+        const nx = ox + (b.vx * dt) / steps;
+        const ny = oy + (b.vy * dt) / steps;
+        if (!b.pierce) {
+          const wallT = this.solidAlong(ox, oy + GUN_Y, nx, ny + GUN_Y, 3);
+          const bodyT = this.earliestBody(b, ox, oy, nx, ny, enemyShot, ownerTeam);
+          if (wallT !== null && (bodyT === null || wallT <= bodyT)) {
+            const t = Math.max(0, Math.min(1, wallT));
+            b.x = ox + (nx - ox) * t;
+            b.y = oy + (ny - oy) * t;
+            this.damageCover(b.x, b.y + GUN_Y, 4, b.dmg);
+            b.life = 0;
+            abilityTrace(b.owner, 'wall', `${Math.round(b.x)},${Math.round(b.y)}`);
+            break;
+          }
+          if (bodyT !== null) {
+            b.x = ox + (nx - ox) * bodyT;
+            b.y = oy + (ny - oy) * bodyT;
+          } else {
+            b.x = nx;
+            b.y = ny;
+          }
+        } else {
+          b.x = nx;
+          b.y = ny;
+        }
+        if (this.absorbDecoy(b)) {
           b.life = 0;
           break;
         }
         for (const o of this.players) {
           if (!o.alive || !o.playing || b.hit.includes(o.id)) continue;
-          if (enemyShot && this.mode === 'chefe' && o.team === 1) continue;
           if (!enemyShot) {
             if (o.id === b.owner && !b.fromEcho) continue;
             if (o.id === b.owner && this.rules.teams) continue;
             if (o.id !== b.owner && ownerTeam >= 0 && ownerTeam === o.team) continue;
           }
-          if (dist(o.x, o.y - (o.boss ? BOSS.hitY : GUN_Y), b.x, b.y) > this.hitR(o) + 7) continue;
+          if (!this.bodyHit(o, b.x, b.y)) continue;
+          // poder do X1: dano e elemento aqui. A arma desenhada não queima, cura nem empurra de novo.
+          if (b.plasma) {
+            b.hit.push(o.id);
+            const src = this.players.find((q) => q.id === b.owner);
+            if (src) this.deliverPlasma(src, o, b.dmg);
+            else this.hurt(o, Math.min(PLASMA.dmg, b.dmg), b.owner, 'shot', Math.atan2(b.vy, b.vx));
+            if (!b.pierce) {
+              b.life = 0;
+              break;
+            }
+            continue;
+          }
+          if (b.basic) {
+            b.hit.push(o.id);
+            const src = this.players.find((q) => q.id === b.owner);
+            const move = src ? this.mobilityBonus(src) : 0;
+            this.hurt(o, b.dmg + move, b.fromEcho ? null : b.owner, 'shot', Math.atan2(b.vy, b.vx));
+            if (!b.pierce) {
+              b.life = 0;
+              break;
+            }
+            continue;
+          }
+          if (b.el) {
+            b.hit.push(o.id);
+            const src = this.players.find((q) => q.id === b.owner);
+            if (src) this.deliverPower(src, o, b.el, b.dmg, b.knock ?? 0);
+            else this.hurt(o, b.dmg, b.owner, 'shot', Math.atan2(b.vy, b.vx));
+            if (!b.pierce) {
+              b.life = 0;
+              break;
+            }
+            continue;
+          }
           // esquiva e fase: o tiro atravessa
           if (o.dodgeT > 0 || o.phaseT > 0) continue;
           if (o.shieldT > 0 && this.combat && !enemyShot && this.reflect(o, b)) break;
@@ -2841,7 +3668,7 @@ export class Game {
       }
       // foguete e lança-granadas explodem ao bater ou no fim do alcance
       const bw = WEAPONS[b.weapon];
-      if (bw.blast && b.life <= 0) this.explode(b.x, b.y + GUN_Y, bw.blast.r, bw.blast.dmg * (b.fromEcho ? ECHO_DAMAGE_MULT : 1), b.owner, b.fromEcho);
+      if (bw.blast && b.life <= 0 && !b.el) this.explode(b.x, b.y + GUN_Y, bw.blast.r, bw.blast.dmg * (b.fromEcho ? ECHO_DAMAGE_MULT : 1), b.owner, b.fromEcho);
     }
     this.bullets = this.bullets.filter((b) => b.life > 0);
     this.enemies = this.enemies.filter((e) => e.hp > 0);
@@ -2852,8 +3679,10 @@ export class Game {
       const k = Math.min(1, bm.t / 0.35);
       bm.x = bm.sx + (bm.tx - bm.sx) * k;
       bm.y = bm.sy + (bm.ty - bm.sy) * k;
-      if (bm.t >= 0.35 + BOMB_FUSE) {
-        if (bm.ice) this.iceBlast(bm.x, bm.y, bm.owner);
+      const fuse = bm.pulse ? PULSE_FUSE : BOMB_FUSE;
+      if (bm.t >= 0.35 + fuse) {
+        if (bm.pulse) this.pulseBlast(bm.x, bm.y, bm.owner, bm.fromEcho);
+        else if (bm.ice) this.iceBlast(bm.x, bm.y, bm.owner);
         else this.explode(bm.x, bm.y, BOMB_RADIUS, BOMB_DAMAGE, bm.owner, bm.fromEcho);
         bm.t = -1;
       }
@@ -2923,7 +3752,7 @@ export class Game {
           echoShots++;
           this.spawnBullets(e.x, e.y, ev.a, (ev.w as WeaponId) ?? 'blaster', e.rec.playerId, true);
         } else if (ev.action === 'bomb' && ev.tx !== undefined && ev.ty !== undefined) {
-          this.throwBomb(e.x, e.y, 0, e.rec.playerId, true, ev.tx, ev.ty);
+          this.throwBomb(e.x, e.y, 0, e.rec.playerId, true, ev.tx, ev.ty, ev.w === 'gelo', ev.w === 'pulso');
         } else if (ev.action === 'mine') {
           this.mines.push({ id: this.fragId++, x: e.x, y: e.y, owner: this.rules.teams ? e.rec.playerId : 'eco', armT: 0.7 });
         }
@@ -2931,9 +3760,52 @@ export class Game {
     }
   }
 
+  private absorbDecoy(b: Bullet): boolean {
+    for (const c of this.clones) {
+      if (!c.decoy || (c.absorb ?? 0) <= 0 || c.t <= 0) continue;
+      if (c.owner === b.owner) continue;
+      if (dist(c.x, c.y - GUN_Y, b.x, b.y) > 22) continue;
+      const owner = this.players.find((p) => p.id === c.owner);
+      const ownerTeam = this.teamOf(b.owner);
+      if (owner && ownerTeam >= 0 && owner.team === ownerTeam) continue;
+      c.absorb = (c.absorb ?? 1) - 1;
+      this.events.push({ type: 'block', x: c.x, y: c.y });
+      if ((c.pop ?? 0) > 0 && owner) {
+        for (const o of this.players) {
+          if (!o.alive || !o.playing || !this.hostile(owner, o)) continue;
+          if (dist(o.x, o.y, c.x, c.y) > 56) continue;
+          if (!this.sight(c.x, c.y, o.x, o.y)) continue;
+          this.hurt(o, c.pop ?? 0, owner.id, 'pulse');
+        }
+      }
+      if ((c.absorb ?? 0) <= 0) c.t = 0;
+      return true;
+    }
+    return false;
+  }
+
+  private updateGroves(dt: number) {
+    for (const g of this.groves) {
+      g.t -= dt;
+      g.acc += dt;
+      if (g.acc < 0.8) continue;
+      g.acc -= 0.8;
+      const src = this.players.find((p) => p.id === g.owner);
+      if (!src) continue;
+      for (const o of this.players) {
+        if (!o.alive || !o.playing || dist(o.x, o.y, g.x, g.y) > g.r) continue;
+        if (this.hostile(src, o)) continue;
+        this.heal(src, o, g.heal);
+        o.healT = 0.5;
+      }
+    }
+    this.groves = this.groves.filter((g) => g.t > 0);
+  }
+
   private updateClones(dt: number) {
     for (const c of this.clones) {
       c.t -= dt;
+      if (c.decoy) continue;
       const owner = this.players.find((p) => p.id === c.owner);
       if (!owner || !owner.alive || owner.carry >= C.MAX_CARRY) continue;
       let best: Fragment | null = null;
@@ -3020,12 +3892,19 @@ export class Game {
         p.overT = u.duration ?? 5;
         p.shieldHp = Math.max(p.shieldHp, 30);
         break;
+      case 'onda':
+        this.addCast('meteoro', p, p.x, p.y, ang, { r: u.radius, windup: u.windup, dmg: u.damage });
+        break;
+      case 'lanca':
+        this.addCast('feixe', p, p.x, p.y, ang, { len: u.range, w: u.width, windup: u.windup, dmg: u.damage });
+        p.castT = u.windup;
+        break;
     }
     this.events.push({ type: 'ult', pid: p.id, x: p.x, y: p.y, ult: u.id });
   }
 
-  private addCast(kind: CastKind, p: Player, x: number, y: number, ang: number, o: { r?: number; len?: number; w?: number; windup?: number; life?: number }) {
-    this.casts.push({ id: this.fragId++, kind, owner: p.id, team: p.team, x, y, ang, r: o.r ?? 0, len: o.len ?? 0, w: o.w ?? 0, t: 0, windup: o.windup ?? 0, life: o.life ?? 0, fired: false, acc: 0 });
+  private addCast(kind: CastKind, p: Player, x: number, y: number, ang: number, o: { r?: number; len?: number; w?: number; windup?: number; life?: number; dmg?: number }) {
+    this.casts.push({ id: this.fragId++, kind, owner: p.id, team: p.team, x, y, ang, r: o.r ?? 0, len: o.len ?? 0, w: o.w ?? 0, t: 0, windup: o.windup ?? 0, life: o.life ?? 0, fired: false, acc: 0, dmg: o.dmg });
     this.events.push({ type: 'cast', pid: p.id, kind, x, y });
   }
 
@@ -3070,7 +3949,7 @@ export class Game {
     const hostileTo = (o: Player) => o.alive && o.playing && (!owner ? o.team !== c.team : this.hostile(owner, o));
     switch (c.kind) {
       case 'meteoro':
-        this.explode(c.x, c.y, c.r, ULTS.meteoro.damage, c.owner, false);
+        this.explode(c.x, c.y, c.r, c.dmg ?? ULTS.meteoro.damage, c.owner, false);
         break;
       case 'chuva':
         this.explode(c.x, c.y, c.r, BOSS.skills.chuva.damage ?? 30, c.owner, false);
@@ -3095,12 +3974,13 @@ export class Game {
         }
         const x1 = c.x + Math.cos(c.ang) * len;
         const y1 = c.y + Math.sin(c.ang) * len;
+        const beam = c.dmg ?? ULTS.feixe.damage;
         for (const o of this.players) if (hostileTo(o) && distToSegment(o.x, o.y, c.x, c.y, x1, y1) < c.w / 2 + this.hitR(o)) {
-          this.hurt(o, ULTS.feixe.damage, c.owner, 'pulse', c.ang);
+          this.hurt(o, beam, c.owner, 'pulse', c.ang);
           this.knock(o, Math.cos(c.ang) * 300, Math.sin(c.ang) * 300);
         }
-        if (!owner || this.enemyHostileTo(owner)) for (const e of this.enemies) if (distToSegment(e.x, e.y, c.x, c.y, x1, y1) < c.w / 2 + ENEMY_STATS[e.kind].r) this.hurtEnemy(e, ULTS.feixe.damage, c.owner);
-        this.hitTurrets((c.x + x1) / 2, (c.y + y1) / 2, len / 2, c.owner, ULTS.feixe.damage);
+        if (!owner || this.enemyHostileTo(owner)) for (const e of this.enemies) if (distToSegment(e.x, e.y, c.x, c.y, x1, y1) < c.w / 2 + ENEMY_STATS[e.kind].r) this.hurtEnemy(e, beam, c.owner);
+        this.hitTurrets((c.x + x1) / 2, (c.y + y1) / 2, len / 2, c.owner, beam);
         this.events.push({ type: 'castHit', kind: 'feixe', x: c.x, y: c.y, r: 0, ang: c.ang, len });
         return;
       }
@@ -3117,7 +3997,6 @@ export class Game {
           this.slow(o, 0.6);
         }
         // fase final: o impacto solta um anel de projéteis junto (padrão combinado)
-        if (owner && this.bossPhase >= 3) for (let i = 0; i < 12; i++) this.bossShot(owner, (i / 12) * Math.PI * 2, 300, 8);
         this.events.push({ type: 'castHit', kind: 'impacto', x: cx, y: cy, r: c.r, ang: 0, len: 0 });
         return;
       }
@@ -3164,142 +4043,6 @@ export class Game {
     this.traps = this.traps.filter((t) => t.t > 0);
   }
 
-  // ------------------------------------------------------------------ Chefe
-  private updateBossInput(p: Player, inp: Input, ang: number, _dt: number) {
-    const free = p.stunT <= 0 && p.castT <= 0 && p.chargeT <= 0 && p.exhaustT <= 0;
-    const rage = this.bossPhase >= 3 ? BOSS.rageCooldown : 1;
-    const S = BOSS.skills;
-    const ready = (k: BossSkill) => free && p.bossCd[k] <= 0 && this.bossPhase >= S[k].phase;
-    const start = (k: BossSkill) => {
-      p.bossCd[k] = S[k].cooldown * rage;
-      p.castT = S[k].windup;
-      this.use(p, S[k].name);
-    };
-    if (inp.ability && ready('impacto')) {
-      start('impacto');
-      this.addCast('impacto', p, p.x, p.y, 0, { r: S.impacto.radius, windup: S.impacto.windup });
-    } else if (inp.skill && ready('barragem')) {
-      start('barragem');
-      this.addCast('barragem', p, p.x, p.y, ang, { windup: S.barragem.windup, life: 1 });
-    } else if (inp.ult && ready('chuva')) {
-      start('chuva');
-      p.castT = 0.3;
-      const targets = this.players.filter((o) => o.alive && o.playing && this.hostile(p, o)).slice(0, 3);
-      for (const o of targets) this.addCast('chuva', p, o.x + o.vx * 0.5, o.y + o.vy * 0.5, 0, { r: S.chuva.radius, windup: S.chuva.windup });
-      for (let i = 0; i < 2; i++) {
-        const sp = this.randomFreeSpot(0);
-        if (sp) this.addCast('chuva', p, sp.x, sp.y, 0, { r: S.chuva.radius, windup: S.chuva.windup + 0.3 });
-      }
-      // golpe enorme cansa: janela para os caçadores
-      this.exhaust(p, BOSS.exhaustTime);
-    } else if (inp.bonus && ready('obsidiana')) {
-      start('obsidiana');
-      const pt = this.castPoint(p, inp, ang, S.obsidiana.range ?? 420);
-      this.addCast('obsidiana', p, pt.x, pt.y, pt.ang, { windup: S.obsidiana.windup });
-    } else if (inp.dash && ready('avanco')) {
-      start('avanco');
-      this.addCast('avanco', p, p.x, p.y, ang, { len: S.avanco.range, w: 64, windup: S.avanco.windup });
-    }
-  }
-
-  private bossAutoT = 0;
-  /** fases: a luta muda conforme a vida do Chefe cai */
-  private updateBoss(dt: number) {
-    const b = this.boss;
-    if (!b) return;
-    this.updateHunt(dt, b);
-    if (this.enemies.some((e) => e.kind !== 'pylon')) this.updateEnemies(dt);
-    if (!b.alive) return;
-    const f = b.hp / b.maxHp;
-    const phase = f <= 1 / 3 ? 3 : f <= 2 / 3 ? 2 : 1;
-    if (phase > this.bossPhase) {
-      this.bossPhase = phase;
-      this.events.push({ type: 'bossPhase', n: phase });
-      // novos geradores protegem o Chefe (objetivo dos caçadores)
-      const n = phase === 2 ? 2 : 1;
-      const spots = [...this.arena.cores].sort((a, c) => dist(c.x, c.y, b.x, b.y) - dist(a.x, a.y, b.x, b.y));
-      const hunters = this.players.filter((p) => !p.boss).length;
-      for (let i = 0; i < n && i < spots.length; i++) {
-        const s = spots[i];
-        const hp = BOSS.pylonHp * Math.max(1, hunters) / 3;
-        this.enemies.push({ id: this.fragId++, kind: 'pylon', x: s.x, y: s.y, vx: 0, vy: 0, hp, maxHp: hp, cd: 0, cd2: 0, dir: 0, hitFlash: 0, stunT: 0, slowT: 0, chargeT: 0 });
-        this.events.push({ type: 'pylon', x: s.x, y: s.y, down: false });
-      }
-      this.bossAutoT = 4;
-      // novas criaturas a cada fase: o xamã chega na fase 2; carapaça e semeador na fase 3
-      if (phase === 2) {
-        this.spawnMinion('xama', b);
-        this.minionT = 3;
-      } else {
-        this.spawnMinion('carapaca', b);
-        this.spawnMinion('semeador', b);
-        this.minionT = BOSS.minionWaveEvery;
-      }
-    }
-    // fase final: rochas caem sozinhas pela arena (menos espaço seguro)
-    if (this.bossPhase >= 3) {
-      this.bossAutoT -= dt;
-      if (this.bossAutoT <= 0) {
-        this.bossAutoT = 6;
-        for (const o of this.players.filter((q) => q.alive && q.playing && !q.boss).slice(0, 2)) this.addCast('chuva', b, o.x, o.y, 0, { r: 60, windup: 1.4 });
-      }
-    }
-  }
-
-
-
-  // ------------------------------------------------------------------ Caça ao Chefe: arena, criaturas e objetivos
-  /** coberturas destrutíveis e pontos de recurso */
-  private setupHunt() {
-    this.pools = [];
-    this.iceWalls = this.iceWalls.filter((w) => w.kind !== 'caixa');
-    const cands = [
-      { x: 640 - 210, y: 360 - 125 },
-      { x: 640 + 210, y: 360 - 125 },
-      { x: 640 - 210, y: 360 + 125 },
-      { x: 640 + 210, y: 360 + 125 },
-      { x: 640, y: 210 },
-      { x: 640, y: 515 },
-      { x: 400, y: 360 },
-      { x: 880, y: 360 },
-      { x: 520, y: 255 },
-      { x: 760, y: 465 },
-      { x: 760, y: 255 },
-      { x: 520, y: 465 },
-      { x: 330, y: 260 },
-      { x: 950, y: 460 },
-      { x: 950, y: 260 },
-      { x: 330, y: 460 },
-      { x: 470, y: 360 },
-      { x: 810, y: 360 },
-    ];
-    let n = 0;
-    const placed: Pt[] = [];
-    for (const c of cands) {
-      if (n >= 4) break;
-      if (!this.isFree(c.x, c.y, 54)) continue;
-      if (placed.some((q) => dist(q.x, q.y, c.x, c.y) < 170)) continue;
-      if (this.arena.spawns.some((s) => dist(s.x, s.y, c.x, c.y) < 110)) continue;
-      if ((this.arena.lava ?? []).some((l) => dist(l.x, l.y, c.x, c.y) < l.r + 50)) continue;
-      this.iceWalls.push({ id: this.fragId++, owner: 'arena', kind: 'caixa', x: c.x - 38, y: c.y - 12, w: 76, h: 24, t: 1e6, hp: BOSS.coverHp, maxHp: BOSS.coverHp });
-      placed.push(c);
-      n++;
-    }
-    // dois pontos de recurso longe um do outro
-    const cores = [...this.arena.cores];
-    let best: [Pt, Pt] | null = null;
-    let bd = 0;
-    for (const a of cores) for (const b of cores) if (dist(a.x, a.y, b.x, b.y) > bd) {
-      bd = dist(a.x, a.y, b.x, b.y);
-      best = [a, b];
-    }
-    this.resSpots = best ? best.map((p) => ({ x: p.x, y: p.y })) : [];
-    this.resT = 6;
-    this.minionT = 0;
-    this.fissureT = 6;
-    this.exhaustAuto = 18;
-  }
-
   /** dano em coberturas destrutíveis (tiros, explosões, golpes) */
   private damageCover(x: number, y: number, r: number, dmg: number) {
     if (dmg <= 0) return;
@@ -3320,252 +4063,6 @@ export class Game {
     this.events.push({ type: 'exhaust', x: p.x, y: p.y });
   }
 
-  private spawnMinion(kind: MinionKind, near: Pt) {
-    let pos: Pt | null = null;
-    for (let i = 0; i < 12 && !pos; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const x = near.x + Math.cos(a) * (50 + i * 6);
-      const y = near.y + Math.sin(a) * (50 + i * 6);
-      if (this.isFree(x, y, 22)) pos = { x, y };
-    }
-    if (!pos) pos = this.randomFreeSpot(0);
-    if (!pos) return;
-    const hunters = Math.max(1, this.players.filter((p) => !p.boss && p.playing).length);
-    const hp = ENEMY_STATS[kind].hp * (0.6 + hunters * 0.15);
-    this.enemies.push({ id: this.fragId++, kind, x: pos.x, y: pos.y, vx: 0, vy: 0, hp, maxHp: hp, cd: 1 + Math.random(), cd2: 2 + Math.random() * 2, dir: 0, hitFlash: 0, stunT: 0.6, slowT: 0, chargeT: 0 });
-    this.events.push({ type: 'minion', x: pos.x, y: pos.y, kind });
-  }
-
-  /** objetivos e criaturas por fase (chamado todo passo no modo Caça ao Chefe) */
-  private updateHunt(dt: number, b: Player) {
-    // pontos de recurso
-    this.resT -= dt;
-    if (this.resT <= 0) {
-      this.resT = BOSS.resourceEvery;
-      this.resSpots.forEach((s, i) => {
-        if (this.powerups.some((pw) => dist(pw.x, pw.y, s.x, s.y) < 30)) return;
-        const kind: PowerId = (i + Math.floor(this.roundT / BOSS.resourceEvery)) % 2 ? 'escudo' : 'cura';
-        this.powerups.push({ id: this.fragId++, kind, x: s.x, y: s.y, age: 0 });
-        this.events.push({ type: 'powerSpawn', x: s.x, y: s.y, power: kind });
-      });
-    }
-    // poças de ácido
-    for (const pl of this.pools) {
-      pl.t -= dt;
-      pl.armT -= dt;
-      if (pl.armT > 0) continue;
-      const tick = Math.floor((pl.t + dt) * 2) !== Math.floor(pl.t * 2);
-      for (const o of this.players) {
-        if (!o.alive || !o.playing || o.team === 1 || dist(o.x, o.y, pl.x, pl.y) > pl.r + 6) continue;
-        this.slow(o, 0.3);
-        if (tick) this.hurt(o, 4.5, null, 'hazard');
-      }
-    }
-    this.pools = this.pools.filter((pl) => pl.t > 0);
-    if (!b.alive) return;
-    // criaturas: fase 2 e 3 (com limite, nunca uma enxurrada)
-    const hunters = this.players.filter((p) => !p.boss && p.playing).length;
-    const cap = Math.min(5, 2 + hunters);
-    const alive = this.enemies.filter((e) => e.kind !== 'pylon').length;
-    if (this.bossPhase >= 2) {
-      this.minionT -= dt;
-      if (this.minionT <= 0 && alive < cap) {
-        this.minionT = BOSS.minionWaveEvery;
-        const pyl = this.enemies.filter((e) => e.kind === 'pylon');
-        const from = (k: number) => (pyl.length ? pyl[k % pyl.length] : b);
-        const wave: MinionKind[] = this.bossPhase >= 3 ? ['rastejador', Math.random() < 0.5 ? 'semeador' : 'carapaca'] : ['rastejador', 'cuspidor'];
-        if (hunters >= 3) wave.push('rastejador');
-        wave.slice(0, cap - alive).forEach((k, i) => this.spawnMinion(k, from(i)));
-      }
-    }
-    // fase 3: rachaduras de lava e cansaço periódico do Chefe
-    if (this.bossPhase >= 3) {
-      this.fissureT -= dt;
-      if (this.fissureT <= 0) {
-        this.fissureT = BOSS.fissureEvery;
-        const h = this.players.filter((p) => p.alive && p.playing && !p.boss);
-        const t = h[Math.floor(Math.random() * h.length)];
-        if (t) {
-          const vert = Math.random() < 0.5;
-          if (vert) this.addCast('fissura', b, t.x, BORDER, Math.PI / 2, { len: WORLD_H - BORDER * 2, w: 46, windup: 1.5 });
-          else this.addCast('fissura', b, BORDER, t.y, 0, { len: WORLD_W - BORDER * 2, w: 46, windup: 1.5 });
-        }
-      }
-      this.exhaustAuto -= dt;
-      if (this.exhaustAuto <= 0) {
-        this.exhaustAuto = 18;
-        this.exhaust(b, BOSS.exhaustTime * 0.8);
-      }
-    }
-  }
-
-  /** comportamento de cada criatura (time do Chefe) */
-  private updateMinion(e: Enemy, dt: number) {
-    const st = ENEMY_STATS[e.kind];
-    e.cd -= dt;
-    e.cd2 -= dt;
-    e.hitFlash = Math.max(0, e.hitFlash - dt);
-    e.stunT = Math.max(0, e.stunT - dt);
-    e.slowT = Math.max(0, e.slowT - dt);
-    const hunters = this.players.filter((p) => p.alive && p.playing && p.team === 0 && this.targetable(p));
-    const boss = this.boss;
-    let target: Player | null = null;
-    let bd = Infinity;
-    for (const p of hunters) {
-      let d = dist(p.x, p.y, e.x, e.y);
-      // o rastejador procura quem está sozinho
-      if (e.kind === 'rastejador') d -= 260 - Math.min(260, Math.min(...hunters.filter((q) => q !== p).map((q) => dist(q.x, q.y, p.x, p.y)), 260));
-      if (d < bd) {
-        bd = d;
-        target = p;
-      }
-    }
-    let speed = st.speed * (e.slowT > 0 ? 0.55 : 1);
-    let gx = e.x;
-    let gy = e.y;
-    const td = target ? dist(target.x, target.y, e.x, e.y) : Infinity;
-    const clear = target ? this.nav.lineClear(e.x, e.y, target.x, target.y, this.worldT) : false;
-    if (target && e.stunT <= 0) {
-      const ang = Math.atan2(target.y - e.y, target.x - e.x);
-      if (e.kind !== 'carapaca') e.dir = ang;
-      switch (e.kind as MinionKind) {
-        case 'rastejador':
-          if (e.chargeT > 0) {
-            // agachado (aviso), depois salta
-            e.chargeT -= dt;
-            speed = 0;
-            if (e.chargeT <= 0) {
-              e.vx = Math.cos(e.dir) * 640;
-              e.vy = Math.sin(e.dir) * 640;
-              e.cd2 = 3.5;
-            }
-          } else if (td < 150 && clear && e.cd2 <= 0) {
-            e.chargeT = 0.45;
-          } else {
-            gx = target.x;
-            gy = target.y;
-          }
-          break;
-        case 'carapaca': {
-          // guarda-costas: fica entre o Chefe e o caçador mais perto, de frente para ele
-          e.dir += Math.atan2(Math.sin(ang - e.dir), Math.cos(ang - e.dir)) * Math.min(1, dt * 3);
-          if (boss && boss.alive) {
-            const ba = Math.atan2(target.y - boss.y, target.x - boss.x);
-            gx = boss.x + Math.cos(ba) * 95;
-            gy = boss.y + Math.sin(ba) * 95;
-          } else {
-            gx = target.x;
-            gy = target.y;
-          }
-          break;
-        }
-        case 'cuspidor':
-          if (e.chargeT > 0) {
-            e.chargeT -= dt;
-            speed = 0;
-            if (e.chargeT <= 0) {
-              const lead = td / 300;
-              const a2 = Math.atan2(target.y + target.vy * lead * 0.5 - e.y, target.x + target.vx * lead * 0.5 - e.x);
-              this.bullets.push({ id: this.fragId++, x: e.x + Math.cos(a2) * 22, y: e.y - GUN_Y + Math.sin(a2) * 22, vx: Math.cos(a2) * 300, vy: Math.sin(a2) * 300, owner: 'enemy', dmg: 14, life: 1.5, weapon: 'acido', pierce: false, fromEcho: false, hit: [] });
-              e.cd = 2.4;
-            }
-          } else if (clear && td < 440 && e.cd <= 0) {
-            e.chargeT = 0.55;
-          } else if (td < 260) {
-            gx = e.x - Math.cos(ang) * 120;
-            gy = e.y - Math.sin(ang) * 120;
-          } else if (td > 380 || !clear) {
-            gx = target.x;
-            gy = target.y;
-          } else {
-            gx = e.x + Math.cos(ang + Math.PI / 2) * 80;
-            gy = e.y + Math.sin(ang + Math.PI / 2) * 80;
-          }
-          break;
-        case 'xama': {
-          // fica atrás do Chefe e cura quem estiver mais ferido
-          if (boss && boss.alive) {
-            const ba = Math.atan2(boss.y - target.y, boss.x - target.x);
-            gx = boss.x + Math.cos(ba) * 120;
-            gy = boss.y + Math.sin(ba) * 120;
-          }
-          if (e.chargeT > 0) e.chargeT -= dt;
-          if (e.cd <= 0) {
-            e.cd = 3.2;
-            const allies = this.enemies.filter((o) => o !== e && o.hp < o.maxHp && dist(o.x, o.y, e.x, e.y) < 360);
-            const hurtAlly = allies.sort((a, c) => a.hp / a.maxHp - c.hp / c.maxHp)[0];
-            if (boss && boss.alive && boss.hp < boss.maxHp && dist(boss.x, boss.y, e.x, e.y) < 360 && (!hurtAlly || boss.hp / boss.maxHp < hurtAlly.hp / hurtAlly.maxHp + 0.2)) {
-              this.heal(null, boss, 40);
-              this.events.push({ type: 'heal', x: boss.x, y: boss.y, pid: boss.id });
-              this.events.push({ type: 'zap', pid: boss.id, pts: [e.x, e.y - 30, boss.x, boss.y - 60] });
-              e.chargeT = 0.5;
-            } else if (hurtAlly) {
-              hurtAlly.hp = Math.min(hurtAlly.maxHp, hurtAlly.hp + 25);
-              this.events.push({ type: 'zap', pid: boss?.id ?? '', pts: [e.x, e.y - 30, hurtAlly.x, hurtAlly.y - 20] });
-              e.chargeT = 0.5;
-            }
-          }
-          break;
-        }
-        case 'semeador':
-          if (e.chargeT > 0) {
-            e.chargeT -= dt;
-            speed = 0;
-            if (e.chargeT <= 0) {
-              this.pools.push({ id: this.fragId++, x: e.x, y: e.y, r: 58, armT: 1, t: 7 });
-              e.cd = 5;
-            }
-          } else if (e.cd <= 0 && td < 300) {
-            e.chargeT = 0.8;
-          } else {
-            gx = target.x;
-            gy = target.y;
-          }
-          break;
-      }
-    }
-    // caminho com A* e passos
-    if (speed > 0 && (gx !== e.x || gy !== e.y)) {
-      if (!this.nav.lineClear(e.x, e.y, gx, gy, this.worldT)) {
-        const path = this.nav.path(e.x, e.y, gx, gy, this.worldT);
-        if (path.length) {
-          gx = path[0].x;
-          gy = path[0].y;
-        }
-      }
-      const d = Math.hypot(gx - e.x, gy - e.y);
-      const k = 1 - Math.exp(-8 * dt);
-      if (d > 6) {
-        e.vx += (((gx - e.x) / d) * speed - e.vx) * k;
-        e.vy += (((gy - e.y) / d) * speed - e.vy) * k;
-      } else {
-        e.vx *= 0.8;
-        e.vy *= 0.8;
-      }
-    } else {
-      e.vx *= Math.exp(-6 * dt);
-      e.vy *= Math.exp(-6 * dt);
-    }
-    e.x += e.vx * dt;
-    e.y += e.vy * dt;
-    this.collideWorld(e, st.r);
-    // encostou num caçador: dano (com intervalo)
-    for (const p of this.players) {
-      if (!p.alive || !p.playing || p.team !== 0 || p.phaseT > 0) continue;
-      const d = dist(p.x, p.y, e.x, e.y);
-      if (d > st.r + C.PLAYER_R) continue;
-      const nx = (p.x - e.x) / (d || 1);
-      const ny = (p.y - e.y) / (d || 1);
-      p.x = e.x + nx * (st.r + C.PLAYER_R);
-      p.y = e.y + ny * (st.r + C.PLAYER_R);
-      this.collideWorld(p);
-      if (p.invulnT > 0) continue;
-      this.hurt(p, st.touch * (e.kind === 'rastejador' && Math.hypot(e.vx, e.vy) > 400 ? 1.6 : 1), null, 'echo');
-      p.invulnT = Math.max(p.invulnT, 0.7);
-      this.knock(p, nx * 300, ny * 300);
-    }
-  }
-
   // ------------------------------------------------------------------ modos
   /** ponto de nascimento de um time (perto da base) */
   teamSpawn(team: number, k = 0): Pt {
@@ -3573,321 +4070,6 @@ export class Game {
     const opts = [...this.arena.spawns].sort((a, b) => dist(a.x, a.y, home.x, home.y) - dist(b.x, b.y, home.x, home.y));
     const s = opts[Math.min(k, 2)];
     return { x: s.x, y: s.y };
-  }
-
-  private setupModeRound() {
-    this.hill = null;
-    this.storm = null;
-    this.waveQueue = [];
-    if (this.mode === 'chefe') this.setupHunt();
-    if (this.mode === 'bandeira') {
-      for (const f of this.flags) Object.assign(f, { x: f.home.x, y: f.home.y, carrier: null, atHome: true, dropT: 0 });
-    }
-    if (this.mode === 'rei') {
-      const c = this.arena.cores[(this.coreIndex + this.round - 1) % this.arena.cores.length];
-      this.hill = { x: c.x, y: c.y, r: 86, owner: null, contested: false, moveAt: 15, next: null };
-      for (const p of this.players) p.hillAcc = 0;
-    }
-    if (this.mode === 'royale') {
-      const c = this.arena.cores[Math.floor(Math.random() * this.arena.cores.length)];
-      this.stormFrom = { x: 640, y: 360, r: 800 };
-      this.stormTo = { x: c.x, y: c.y, r: 105 };
-      this.storm = { ...this.stormFrom };
-    }
-    if (this.mode === 'ondas') {
-      this.wave = this.round;
-      const humans = this.players.filter((p) => p.playing).length;
-      const scale = 0.7 + humans * 0.3;
-      const w = this.wave;
-      const list: EnemyKind[] = [];
-      const drones = Math.round((2 + w * 2) * scale);
-      const brutes = w >= 2 ? Math.round((w - 1) * scale) : 0;
-      for (let i = 0; i < drones; i++) list.push('drone');
-      for (let i = 0; i < brutes; i++) list.splice(Math.floor(Math.random() * (list.length + 1)), 0, 'brute');
-      const span = this.roundDur * 0.55;
-      list.forEach((kind, i) => this.waveQueue.push({ at: 1.5 + (i / Math.max(1, list.length)) * span, kind }));
-      if (w >= this.totalRounds) this.waveQueue.push({ at: 4, kind: 'boss' });
-      this.waveQueue.sort((a, b) => a.at - b.at);
-      this.events.push({ type: 'wave', n: w, boss: w >= this.totalRounds });
-    }
-  }
-
-  private updateMode(dt: number) {
-    if (this.mode === 'bandeira') this.updateFlags(dt);
-    if (this.mode === 'rei') this.updateHill(dt);
-    if (this.mode === 'royale') this.updateStorm(dt);
-    if (this.mode === 'ondas') this.updateWaves(dt);
-  }
-
-  private updateFlags(dt: number) {
-    for (const f of this.flags) {
-      if (f.carrier) {
-        const c = this.players.find((p) => p.id === f.carrier);
-        if (!c || !c.alive) {
-          f.carrier = null;
-          f.dropT = 10;
-          this.events.push({ type: 'flagDrop', team: f.team, x: f.x, y: f.y });
-          continue;
-        }
-        f.x = c.x;
-        f.y = c.y;
-        const own = this.flags[c.team];
-        if (own && own.atHome && dist(c.x, c.y, own.home.x, own.home.y) < 56) {
-          this.teamScore[c.team]++;
-          this.award(c, 5);
-          for (const m of this.players) if (m !== c && m.team === c.team) this.award(m, 2);
-          this.events.push({ type: 'capture', pid: c.id, team: c.team });
-          Object.assign(f, { x: f.home.x, y: f.home.y, carrier: null, atHome: true, dropT: 0 });
-        }
-        continue;
-      }
-      if (!f.atHome) {
-        f.dropT -= dt;
-        if (f.dropT <= 0) {
-          Object.assign(f, { x: f.home.x, y: f.home.y, atHome: true });
-          this.events.push({ type: 'flagReturn', team: f.team, x: f.x, y: f.y });
-          continue;
-        }
-      }
-      for (const p of this.players) {
-        if (!p.alive || !p.playing || p.team < 0) continue;
-        if (dist(p.x, p.y, f.x, f.y) > C.PLAYER_R + 20) continue;
-        if (p.team === f.team) {
-          if (!f.atHome) {
-            Object.assign(f, { x: f.home.x, y: f.home.y, atHome: true });
-            this.award(p, 1);
-            this.events.push({ type: 'flagReturn', team: f.team, x: f.x, y: f.y });
-          }
-        } else if (!this.flags.some((o) => o.carrier === p.id)) {
-          f.carrier = p.id;
-          f.atHome = false;
-          this.events.push({ type: 'flagTake', pid: p.id, team: f.team });
-        }
-        break;
-      }
-    }
-  }
-
-  private updateHill(dt: number) {
-    const h = this.hill;
-    if (!h) return;
-    const t = this.roundT;
-    if (!h.next && t >= h.moveAt - 3) {
-      const cores = this.arena.cores;
-      let c = cores[Math.floor(Math.random() * cores.length)];
-      for (let i = 0; i < 8 && dist(c.x, c.y, h.x, h.y) < 60; i++) c = cores[Math.floor(Math.random() * cores.length)];
-      h.next = { ...c };
-    }
-    if (h.next && t >= h.moveAt) {
-      h.x = h.next.x;
-      h.y = h.next.y;
-      h.next = null;
-      h.moveAt = t + 15;
-      this.events.push({ type: 'hillMove', x: h.x, y: h.y });
-    }
-    const inside = this.players.filter((p) => p.alive && p.playing && dist(p.x, p.y, h.x, h.y) < h.r);
-    h.contested = inside.length > 1;
-    h.owner = inside.length === 1 ? inside[0].id : null;
-    if (h.owner) {
-      const p = inside[0];
-      p.hillAcc += dt;
-      while (p.hillAcc >= 1) {
-        p.hillAcc -= 1;
-        this.award(p, 1);
-      }
-    }
-  }
-
-  private updateStorm(dt: number) {
-    const st = this.storm;
-    if (!st) return;
-    const a = 6;
-    const b = this.roundDur - 8;
-    const k = Math.max(0, Math.min(1, (this.roundT - a) / (b - a)));
-    const e = k * k * (3 - 2 * k);
-    st.x = this.stormFrom.x + (this.stormTo.x - this.stormFrom.x) * e;
-    st.y = this.stormFrom.y + (this.stormTo.y - this.stormFrom.y) * e;
-    st.r = this.stormFrom.r + (this.stormTo.r - this.stormFrom.r) * e;
-    for (const p of this.players) {
-      if (!p.alive || !p.playing) continue;
-      if (dist(p.x, p.y, st.x, st.y) <= st.r) continue;
-      p.stormAcc += (8 + 10 * k) * dt;
-      if (p.stormAcc >= 5) {
-        p.stormAcc -= 5;
-        this.hurt(p, 5, null, 'hazard');
-      }
-    }
-  }
-
-  private updateWaves(dt: number) {
-    while (this.waveQueue.length && this.waveQueue[0].at <= this.roundT) {
-      const q = this.waveQueue.shift()!;
-      this.spawnEnemy(q.kind);
-    }
-    this.updateEnemies(dt);
-  }
-
-  private spawnEnemy(kind: EnemyKind, near?: Pt) {
-    let pos: Pt | null = null;
-    if (near) {
-      for (let i = 0; i < 10 && !pos; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const x = near.x + Math.cos(a) * 70;
-        const y = near.y + Math.sin(a) * 70;
-        if (this.isFree(x, y, 20)) pos = { x, y };
-      }
-    }
-    if (!pos) {
-      const alive = this.players.filter((p) => p.alive && p.playing);
-      const cands = [...this.arena.spawns].sort((a, b) => {
-        const da = Math.min(...alive.map((p) => dist(a.x, a.y, p.x, p.y)), 9999);
-        const db = Math.min(...alive.map((p) => dist(b.x, b.y, p.x, p.y)), 9999);
-        return db - da;
-      });
-      const s = cands[Math.floor(Math.random() * Math.min(3, cands.length))];
-      pos = { x: s.x + (Math.random() - 0.5) * 30, y: s.y + (Math.random() - 0.5) * 30 };
-    }
-    const st = ENEMY_STATS[kind];
-    const humans = this.players.filter((p) => p.playing).length;
-    const hp = kind === 'boss' ? st.hp * (0.6 + humans * 0.4) : st.hp * (1 + (this.wave - 1) * 0.12);
-    this.enemies.push({ id: this.fragId++, kind, x: pos.x, y: pos.y, vx: 0, vy: 0, hp, maxHp: hp, cd: 1 + Math.random(), cd2: 3, dir: 0, hitFlash: 0, stunT: 0.4, slowT: 0, chargeT: 0 });
-    this.events.push({ type: 'enemySpawn', x: pos.x, y: pos.y, kind });
-  }
-
-  private updateEnemies(dt: number) {
-    for (const e of this.enemies) {
-      const st = ENEMY_STATS[e.kind];
-      if ((MINION_KINDS as string[]).includes(e.kind)) {
-        this.updateMinion(e, dt);
-        continue;
-      }
-      if (e.kind === 'pylon') {
-        e.hitFlash = Math.max(0, e.hitFlash - dt);
-        continue;
-      }
-      e.cd -= dt;
-      e.cd2 -= dt;
-      e.hitFlash = Math.max(0, e.hitFlash - dt);
-      e.stunT = Math.max(0, e.stunT - dt);
-      e.slowT = Math.max(0, e.slowT - dt);
-      let target: Player | null = null;
-      let bd = Infinity;
-      for (const p of this.players) {
-        if (!this.targetable(p)) continue;
-        const d = dist(p.x, p.y, e.x, e.y);
-        if (d < bd) {
-          bd = d;
-          target = p;
-        }
-      }
-      let mx = 0;
-      let my = 0;
-      let speed = st.speed * (e.slowT > 0 ? 0.55 : 1);
-      if (target && e.stunT <= 0) {
-        const ang = Math.atan2(target.y - e.y, target.x - e.x);
-        e.dir = ang;
-        const clear = this.nav.lineClear(e.x, e.y, target.x, target.y, this.worldT);
-        let goal = { x: target.x, y: target.y };
-        if (e.kind === 'drone') {
-          const side = (e.id % 2 ? 1 : -1) * (Math.PI / 2);
-          if (bd < 170) goal = { x: e.x - Math.cos(ang) * 100, y: e.y - Math.sin(ang) * 100 };
-          else if (bd < 260) goal = { x: e.x + Math.cos(ang + side) * 100, y: e.y + Math.sin(ang + side) * 100 };
-          if (e.cd <= 0 && clear && bd < 460) {
-            e.cd = 1.3 + Math.random() * 0.6;
-            this.enemyShot(e, ang, 360, 8);
-          }
-        } else if (e.kind === 'brute') {
-          if (e.chargeT > 0) {
-            e.chargeT -= dt;
-            speed = 470;
-            mx = Math.cos(e.dir);
-            my = Math.sin(e.dir);
-          } else if (bd < 210 && clear && e.cd2 <= 0) {
-            e.chargeT = 0.55;
-            e.cd2 = 3.2;
-          }
-        } else if (e.kind === 'boss') {
-          if (e.cd <= 0) {
-            e.cd = 2.3;
-            const n = 14;
-            const off = Math.random() * Math.PI;
-            for (let i = 0; i < n; i++) this.enemyShot(e, off + (i / n) * Math.PI * 2, 300, 10);
-          }
-          if (e.cd2 <= 0) {
-            e.cd2 = 7;
-            if (this.enemies.length < 14) {
-              this.spawnEnemy('drone', e);
-              this.spawnEnemy('drone', e);
-            }
-          }
-        }
-        if (!(e.kind === 'brute' && e.chargeT > 0)) {
-          let gx = goal.x;
-          let gy = goal.y;
-          if (!this.nav.lineClear(e.x, e.y, gx, gy, this.worldT)) {
-            const path = this.nav.path(e.x, e.y, gx, gy, this.worldT);
-            if (path.length) {
-              gx = path[0].x;
-              gy = path[0].y;
-            }
-          }
-          const d = Math.hypot(gx - e.x, gy - e.y);
-          if (d > 4) {
-            mx = (gx - e.x) / d;
-            my = (gy - e.y) / d;
-          }
-        }
-      }
-      const k = 1 - Math.exp(-8 * dt);
-      e.vx += (mx * speed - e.vx) * k;
-      e.vy += (my * speed - e.vy) * k;
-      // vórtices também puxam inimigos
-      for (const v of this.vortexes) {
-        const d = dist(e.x, e.y, v.x, v.y);
-        if (d < v.r && d > 1) {
-          e.vx += ((v.x - e.x) / d) * 700 * (1 - d / v.r) * dt * (e.kind === 'boss' ? 0.2 : 1);
-          e.vy += ((v.y - e.y) / d) * 700 * (1 - d / v.r) * dt * (e.kind === 'boss' ? 0.2 : 1);
-        }
-      }
-      e.x += e.vx * dt;
-      e.y += e.vy * dt;
-      this.collideWorld(e, st.r);
-      // encostou: dano
-      for (const p of this.players) {
-        if (!p.alive || !p.playing || p.phaseT > 0) continue;
-        const d = dist(p.x, p.y, e.x, e.y);
-        if (d > st.r + C.PLAYER_R) continue;
-        const nx = (p.x - e.x) / (d || 1);
-        const ny = (p.y - e.y) / (d || 1);
-        p.x = e.x + nx * (st.r + C.PLAYER_R);
-        p.y = e.y + ny * (st.r + C.PLAYER_R);
-        this.collideWorld(p);
-        if (p.invulnT > 0 || st.touch <= 0) continue;
-        this.hurt(p, st.touch * (e.chargeT > 0 ? 1.4 : 1), null, 'echo');
-        p.vx += nx * 480;
-        p.vy += ny * 480;
-        p.invulnT = Math.max(p.invulnT, 0.7);
-      }
-    }
-    this.enemies = this.enemies.filter((e) => e.hp > 0);
-  }
-
-  private enemyShot(e: Enemy, ang: number, speed: number, dmg: number) {
-    const r = ENEMY_STATS[e.kind].r;
-    this.bullets.push({
-      id: this.fragId++,
-      x: e.x + Math.cos(ang) * (r + 6),
-      y: e.y - GUN_Y + Math.sin(ang) * (r + 6),
-      vx: Math.cos(ang) * speed,
-      vy: Math.sin(ang) * speed,
-      owner: 'enemy',
-      dmg,
-      life: 1.6,
-      weapon: 'blaster',
-      pierce: false,
-      fromEcho: false,
-      hit: [],
-    });
   }
 
   hurtEnemy(e: Enemy, dmg: number, by: string | null) {
@@ -3920,7 +4102,7 @@ export class Game {
       this.events.push({ type: 'enemyKill', x: e.x, y: e.y, kind: e.kind, by: p ? p.id : null });
       if (e.kind === 'boss') this.explode(e.x, e.y, 140, 0, 'boss', false);
       if (Math.random() < (e.kind === 'drone' ? 0.12 : 0.4) && this.powerups.length < 6)
-        this.powerups.push({ id: this.fragId++, kind: randomPower('combate'), x: e.x, y: e.y, age: 0 });
+        this.powerups.push({ id: this.fragId++, kind: this.pickPower(), x: e.x, y: e.y, age: 0 });
     }
   }
 
@@ -4003,6 +4185,7 @@ export class Game {
   }
 
   timeLeft(): number {
+    if (this.sudden) return Math.max(0, this.suddenLimit - this.suddenT);
     return Math.max(0, this.roundDur - this.roundT);
   }
 }

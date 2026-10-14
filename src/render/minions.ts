@@ -87,8 +87,10 @@ export function drawMinion(g: Ctx, e: any, time: number) {
     g.ellipse(e.x, e.y, 20 + k * 60, (20 + k * 60) * 0.4, 0, 0, Math.PI * 2);
     g.stroke();
   }
+  const lunge = charging ? 8 + Math.sin(time * 16) * 3 : 0;
   g.save();
-  g.translate(e.x, e.y);
+  g.translate(e.x + Math.cos(e.dir) * lunge, e.y + Math.sin(e.dir) * lunge * 0.35 + (e.hitFlash > 0 ? 3 : 0));
+  if (e.hitFlash > 0) g.scale(1.08, 0.9);
   // um pouco maiores que o tamanho de colisão: leitura mais fácil no meio da luta
   g.scale(face * 1.25, 1.25);
   switch (e.kind) {

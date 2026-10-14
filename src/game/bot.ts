@@ -1,7 +1,8 @@
 import { ArenaDef, BORDER, WORLD_H, WORLD_W, bridgeState, inRect } from './arenas';
-import { GUN_Y, WEAPONS, isPrimary } from './weapons';
-import { BOSS, ULTS } from './balance';
+import { GUN_Y, isPrimary } from './weapons';
+import { BOSS } from './balance';
 import type { Difficulty, Game, Input, Player } from './sim';
+import { BASIC, SLOT_COST, WALL_REACH, botPower, kitOf, studioOf, wallSlam } from './elements';
 import * as C from './constants';
 
 const CELL = 20;
@@ -159,11 +160,24 @@ function octile(ax: number, ay: number, bx: number, by: number) {
  * Perfis de dificuldade. aim = erro de mira (rad) que muda devagar; lead = quanto antecipa o movimento;
  * react = tempo até atirar num alvo novo; burst/pause = rajadas e pausas (ninguém atira sem parar).
  */
-export const PROFILES: Record<Difficulty, { speedMul: number; avoid: number; think: number; dash: number; ability: number; sloppy: number; aim: number; lead: number; react: number; burst: number; pause: number }> = {
-  facil: { speedMul: 0.72, avoid: 0.55, think: 0.6, dash: 0.25, ability: 0.3, sloppy: 0.35, aim: 0.3, lead: 0.2, react: 0.75, burst: 0.8, pause: 0.9 },
-  normal: { speedMul: 0.86, avoid: 1.0, think: 0.4, dash: 0.6, ability: 0.7, sloppy: 0.12, aim: 0.15, lead: 0.6, react: 0.45, burst: 1.1, pause: 0.55 },
-  dificil: { speedMul: 0.97, avoid: 1.45, think: 0.25, dash: 0.9, ability: 1, sloppy: 0, aim: 0.09, lead: 0.85, react: 0.25, burst: 1.5, pause: 0.3 },
+/**
+ * Dificuldade muda o comportamento, não a vida nem o dano.
+ * speedMul fica em 1: o bot anda na mesma velocidade do jogador.
+ * aim = erro de mira (rad). react = espera antes de agir num alvo novo.
+ * dash e ability = chance de esquivar e de usar poder. sloppy = escolhas piores.
+ */
+export const PROFILES: Record<Difficulty, { speedMul: number; avoid: number; think: number; dash: number; ability: number; sloppy: number; aim: number; lead: number; react: number; burst: number; pause: number; focus: number }> = {
+  facil: { speedMul: 1, avoid: 0.28, think: 0.9, dash: 0.1, ability: 0.12, sloppy: 0.58, aim: 0.7, lead: 0.05, react: 1.35, burst: 0.45, pause: 1.6, focus: 1 },
+  normal: { speedMul: 1, avoid: 0.55, think: 0.6, dash: 0.24, ability: 0.32, sloppy: 0.3, aim: 0.4, lead: 0.22, react: 0.9, burst: 0.65, pause: 1.1, focus: 1 },
+  dificil: { speedMul: 1, avoid: 0.78, think: 0.45, dash: 0.36, ability: 0.44, sloppy: 0.16, aim: 0.26, lead: 0.4, react: 0.62, burst: 0.85, pause: 0.8, focus: 1 },
 };
+
+/** quem pode atirar no mesmo alvo: os mais perto primeiro, empate pelo id. Os outros só se posicionam. */
+export function fireSlot(ids: { id: string; d: number }[], me: string, cap: number): boolean {
+  const ranked = [...ids].sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : 1));
+  const i = ranked.findIndex((x) => x.id === me);
+  return i >= 0 && i < cap;
+}
 
 export class BotBrain {
   speedMul: number;
@@ -184,6 +198,7 @@ export class BotBrain {
   react: number;
   burst: number;
   pauseLen: number;
+  focus: number;
   /** alvo atual (para dividir alvos entre bots e para o tempo de reação) */
   targetId = '';
   seenT = 0;
@@ -199,6 +214,7 @@ export class BotBrain {
     this.react = p.react;
     this.burst = p.burst;
     this.pauseLen = p.pause;
+    this.focus = p.focus;
     this.speedMul = p.speedMul;
     this.avoid = p.avoid;
     this.thinkEvery = p.think;
@@ -423,45 +439,8 @@ function chooseTarget(game: Game, p: Player): { x: number; y: number } | null {
 }
 
 // ====================================================================== combate
-const RANGE: Record<string, number> = { blaster: 300, metralhadora: 240, escopeta: 150, laser: 430, foguete: 330, congelante: 260 };
-
-/** para onde o modo de jogo manda o bot ir (bandeira, rei da colina, zona da batalha real) */
-function objectiveGoal(game: Game, p: Player): { x: number; y: number; urgent: boolean } | null {
-  if (game.mode === 'bandeira' && p.team >= 0) {
-    const mine = game.flags[p.team];
-    const theirs = game.flags[1 - p.team];
-    if (!mine || !theirs) return null;
-    if (theirs.carrier === p.id) return { x: mine.home.x, y: mine.home.y, urgent: true };
-    if (mine.carrier) {
-      const c = game.players.find((o) => o.id === mine.carrier);
-      if (c) return { x: c.x, y: c.y, urgent: true };
-    }
-    if (!mine.atHome) return { x: mine.x, y: mine.y, urgent: true };
-    const idx = game.players.filter((o) => o.team === p.team).indexOf(p);
-    if (theirs.carrier) {
-      const c = game.players.find((o) => o.id === theirs.carrier);
-      if (c) return { x: c.x, y: c.y, urgent: false };
-    }
-    // um ataca, o outro defende (sozinho: ataca)
-    if (idx === 0 || game.players.filter((o) => o.team === p.team).length === 1) return { x: theirs.x, y: theirs.y, urgent: Math.random() < 0.7 };
-    return { x: mine.home.x + (Math.random() - 0.5) * 120, y: mine.home.y + (Math.random() - 0.5) * 120, urgent: false };
-  }
-  if (game.mode === 'rei' && game.hill) {
-    const h = game.hill.next ?? game.hill;
-    const d = Math.hypot(p.x - h.x, p.y - h.y);
-    if (d > 60) return { x: h.x, y: h.y, urgent: d > 120 };
-    return null;
-  }
-  if (game.mode === 'royale' && game.storm) {
-    const st = game.storm;
-    const d = Math.hypot(p.x - st.x, p.y - st.y);
-    if (d > st.r - 70) return { x: st.x, y: st.y, urgent: true };
-  }
-  return null;
-}
 
 export function botCombat(game: Game, p: Player, dt: number): Input {
-  if (p.boss) return botBoss(game, p, dt);
   const b = p.brain!;
   const out: Input = { mx: 0, my: 0, dash: false, ability: false, fire: false, item: false, aim: null };
   b.thinkT -= dt;
@@ -487,8 +466,7 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
   } else b.seenT += dt;
   // pouca vida: recua para pegar cura (ou usa o kit)
   const lowHp = p.hp < p.maxHp * 0.35;
-  const want = RANGE[p.weapon] ?? WEAPONS[p.weapon]?.range ?? 280;
-  const obj = objectiveGoal(game, p);
+  const want = 180;
   const dTarget = target ? Math.hypot(target.x - p.x, target.y - p.y) : Infinity;
 
   // objetivo de movimento
@@ -501,14 +479,11 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
   if (healPick) {
     gx = healPick.x;
     gy = healPick.y;
-  } else if (lowHp && target && dTarget < want + 80 && !(obj && obj.urgent)) {
+  } else if (lowHp && target && dTarget < want + 80) {
     // recua para trás de si, mantendo distância (dá chance à recuperação lenta)
     const ang = Math.atan2(target.y - p.y, target.x - p.x);
     gx = p.x - Math.cos(ang) * 170 + Math.cos(ang + Math.PI / 2) * (b.jitter > 0 ? 70 : -70);
     gy = p.y - Math.sin(ang) * 170 + Math.sin(ang + Math.PI / 2) * (b.jitter > 0 ? 70 : -70);
-  } else if (obj && (obj.urgent || dTarget > want + 160)) {
-    gx = obj.x;
-    gy = obj.y;
   } else if (pickup && Math.random() > b.sloppy) {
     gx = pickup.x;
     gy = pickup.y;
@@ -651,203 +626,55 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
   out.mx = dx;
   out.my = dy;
 
-  // mirar e atirar
-  if (target) {
-    const d = Math.hypot(target.x - p.x, target.y - p.y);
-    const clear = game.nav.lineClear(p.x, p.y, target.x, target.y, game.worldT);
-    if (clear && d < want + 140) {
-      // antecipa só parte do movimento (depende da dificuldade) e erra de forma "humana"
-      const lead = (d / 650) * b.lead;
-      const ax = target.x + target.vx * lead;
-      const ay = target.y + target.vy * lead;
-      // o erro muda de lado mais ou menos 1x por segundo e a mira desliza até ele (erra de verdade)
-      if (Math.random() < dt * 1.3) b.aimDrift = Math.random() * 2 - 1;
-      b.aimOff += (b.aimDrift * b.aimErr - b.aimOff) * Math.min(1, dt * 2.5);
-      const moving = Math.hypot(target.vx, target.vy) > 60 ? 1.3 : 0.8;
-      out.aim = Math.atan2(ay - p.y, ax - p.x) + b.aimOff * moving + (Math.random() - 0.5) * b.aimErr * 0.4;
-      // tempo de reação a um alvo novo + rajadas com pausas
-      if (b.restT > 0) b.restT -= dt;
-      else {
-        b.fireT += dt;
-        if (b.fireT > b.burst * (0.7 + Math.random() * 0.6)) {
-          b.fireT = 0;
-          b.restT = b.pauseLen * (0.6 + Math.random() * 0.8);
+  // X1 e 2x2: sem tiro. Escolhe um poder e tenta o combo que já está armado.
+  out.fire = false;
+    out.item = false;
+    if (b.restT > 0) b.restT -= dt;
+    const foe = target?.player;
+    if (foe && p.stunT <= 0) {
+      const d = Math.hypot(foe.x - p.x, foe.y - p.y);
+      const clear = game.nav.lineClear(p.x, p.y, foe.x, foe.y, game.worldT);
+      if (clear && d < 340) {
+        const ang = Math.atan2(foe.y - p.y, foe.x - p.x);
+        if (Math.random() < dt * 1.3) b.aimDrift = Math.random() * 2 - 1;
+        b.aimOff += (b.aimDrift * b.aimErr - b.aimOff) * Math.min(1, dt * 2.5);
+        out.aim = ang + b.aimOff * 0.25;
+        out.ca = out.aim;
+        out.cr = d;
+        let slot = botPower(
+          kitOf(p.char.id),
+          p.powerCd,
+          { burn: foe.burnT, frozen: foe.frozenT, gust: foe.gustT, shock: foe.shockT, root: foe.rootT },
+          d,
+          wallSlam(p.x, p.y, foe.x, foe.y, WALL_REACH, (x, y) => !game.isFree(x, y, 10)),
+        );
+        if (slot === 2 && p.ultCharge < 100) slot = null;
+        if (slot !== null && slot !== 2 && p.energy < SLOT_COST[slot]) slot = null;
+        if (slot !== null && b.seenT >= b.react && b.restT <= 0) {
+          if (slot === 0) out.ability = true;
+          else if (slot === 1) out.skill = true;
+          else if (slot === 2) out.ult = true;
+          else {
+            out.bonus = true;
+            out.item = true;
+          }
+          b.restT = Math.max(0.28, b.react * 0.55);
+        } else if (p.plasmaOn && p.plasmaCd <= 0 && b.seenT >= b.react && b.restT <= 0) {
+          const extra = studioOf(p.loadout.secondary);
+          if (extra && p.energy >= extra.cost && d < Math.max(extra.range, extra.step ?? 0)) {
+            out.plasma = true;
+            out.aim = ang;
+            out.ca = ang;
+            b.restT = Math.max(0.28, b.react * 0.55);
+          }
+        } else if (clear && d < BASIC.range - 8 && p.basicCd <= 0 && p.energy >= BASIC.cost && b.seenT >= b.react && b.restT <= 0) {
+          out.fire = true;
+          out.aim = ang;
+          out.ca = ang;
+          b.restT = 0.35;
         }
       }
-      out.fire = b.seenT >= b.react && b.restT <= 0;
-      if (p.item === 'kit' && p.hp < p.maxHp * 0.5) out.item = true;
-      if (p.item === 'bomba' && d < 240 && Math.random() < 0.04) out.item = true;
-      void WEAPONS;
-      if (p.item === 'mina' && d < 180 && Math.random() < 0.03) out.item = true;
     }
-    // habilidade
-    if (p.abilCd <= 0 && Math.random() < b.abilitySkill * 0.06) {
-      switch (p.char.ability.id) {
-        case 'investida':
-          out.ability = clear && d < 220;
-          if (out.ability) out.mx = (target.x - p.x) / (d || 1);
-          if (out.ability) out.my = (target.y - p.y) / (d || 1);
-          break;
-        case 'raio':
-          out.ability = d < 290;
-          break;
-        case 'gravidade':
-          out.ability = clear && d < 300;
-          break;
-        case 'gancho':
-          out.ability = clear && d > 120 && d < 330;
-          break;
-        case 'muralha':
-          out.ability = threat > 0.35;
-          break;
-        case 'fumaca':
-          out.ability = p.hp < 45 || threat > 0.5;
-          break;
-        case 'turbo':
-          out.ability = d > 350 || p.hp < 40;
-          break;
-        case 'fase':
-        case 'sombra':
-          out.ability = threat > 0.4 || p.hp < 35;
-          break;
-        case 'escudo':
-          out.ability = threat > 0.3;
-          break;
-        case 'teleporte':
-          out.ability = d > 380;
-          break;
-        case 'explosao':
-          out.ability = d < 150;
-          break;
-        case 'clone':
-        case 'torreta':
-          out.ability = clear && d < 420;
-          break;
-        case 'cura':
-          out.ability = p.hp < 60;
-          break;
-      }
-      if (out.ability && ['teleporte', 'sombra', 'investida', 'muralha', 'gancho', 'gravidade'].includes(p.char.ability.id)) {
-        out.ca = Math.atan2(target.y - p.y, target.x - p.x);
-        out.cr = d;
-      }
-    }
-    // habilidade do equipamento (E)
-    if (p.skillCd <= 0 && Math.random() < b.abilitySkill * 0.05) {
-      const toT = Math.atan2(target.y - p.y, target.x - p.x);
-      switch (p.loadout.skill) {
-        case 'rolamento':
-          out.skill = threat > 0.45;
-          out.ca = toT + (b.jitter > 0 ? 1 : -1) * Math.PI * 0.5;
-          break;
-        case 'armadilha':
-          out.skill = d < 300;
-          out.ca = toT;
-          out.cr = d;
-          break;
-        case 'barreira':
-          out.skill = threat > 0.4;
-          out.ca = toT;
-          break;
-        case 'marcador':
-          out.skill = clear && d < 480;
-          out.ca = toT;
-          break;
-        case 'estimulo':
-          out.skill = p.hp < p.maxHp * 0.6;
-          break;
-      }
-    }
-    // ultimate (R): mira onde o alvo vai estar
-    if (p.ultCharge >= 100 && Math.random() < b.abilitySkill * 0.04) {
-      const u = ULTS[p.loadout.ult];
-      const lead = u.windup;
-      const tx = target.x + target.vx * lead * 0.6;
-      const ty = target.y + target.vy * lead * 0.6;
-      out.ca = Math.atan2(ty - p.y, tx - p.x);
-      out.cr = Math.hypot(tx - p.x, ty - p.y);
-      if (u.id === 'meteoro') out.ult = d < u.range;
-      else if (u.id === 'feixe') out.ult = clear && d < u.range - 60;
-      else if (u.id === 'estase') out.ult = d < u.range;
-      else out.ult = d < 350;
-    }
-  }
-  if (p.dashCd <= 0 && threat > 0.5 && Math.random() < b.dashSkill * 0.3) out.dash = true;
-  if (p.bonusAb && target && Math.random() < b.abilitySkill * 0.03 && Math.hypot(target.x - p.x, target.y - p.y) < 260) out.bonus = true;
-  return out;
-}
-
-
-// ====================================================================== Chefe (bot)
-/** IA do Chefe: mantém distância média, usa golpes com aviso quando vale a pena */
-export function botBoss(game: Game, p: Player, dt: number): Input {
-  const b = p.brain!;
-  const out: Input = { mx: 0, my: 0, dash: false, ability: false, fire: false, item: false, aim: null };
-  b.thinkT -= dt;
-  const hunters = game.players.filter((o) => o.alive && o.playing && game.hostile(p, o) && game.targetable(o));
-  let target: Player | null = null;
-  let bd = Infinity;
-  for (const o of hunters) {
-    const d = Math.hypot(o.x - p.x, o.y - p.y) - (100 - Math.min(100, o.hp)) * 0.8;
-    if (d < bd) {
-      bd = d;
-      target = o;
-    }
-  }
-  if (!target) return out;
-  const d = Math.hypot(target.x - p.x, target.y - p.y);
-  const ang = Math.atan2(target.y - p.y, target.x - p.x);
-  if (b.thinkT <= 0) {
-    b.thinkT = 1.2 + Math.random();
-    b.jitter = Math.random() < 0.5 ? 1 : -1;
-  }
-  // movimento: aproxima, mantém ~220, gira em volta (e se protege perto dos geradores)
-  let gx = p.x;
-  let gy = p.y;
-  if (d > 300) {
-    gx = target.x;
-    gy = target.y;
-  } else if (d < 160) {
-    gx = p.x - Math.cos(ang) * 120;
-    gy = p.y - Math.sin(ang) * 120;
-  } else {
-    gx = p.x + Math.cos(ang + (Math.PI / 2) * b.jitter) * 120;
-    gy = p.y + Math.sin(ang + (Math.PI / 2) * b.jitter) * 120;
-  }
-  if (!game.nav.lineClear(p.x, p.y, gx, gy, game.worldT)) {
-    if (!b.path.length || Math.random() < 0.05) b.path = game.nav.path(p.x, p.y, gx, gy, game.worldT);
-    if (b.path.length) {
-      while (b.path.length > 1 && Math.hypot(b.path[0].x - p.x, b.path[0].y - p.y) < 16) b.path.shift();
-      gx = b.path[0].x;
-      gy = b.path[0].y;
-    }
-  } else b.path = [];
-  const m = Math.hypot(gx - p.x, gy - p.y);
-  if (m > 4) {
-    out.mx = (gx - p.x) / m;
-    out.my = (gy - p.y) / m;
-  }
-  const clear = game.nav.lineClear(p.x, p.y, target.x, target.y, game.worldT);
-  const lead = d / 560;
-  out.aim = Math.atan2(target.y + target.vy * lead - (p.y - GUN_Y), target.x + target.vx * lead - p.x) + (Math.random() - 0.5) * 0.12;
-  out.fire = clear && d < 460 && Math.random() < 0.8;
-  const S = BOSS.skills;
-  const ready = (k: keyof typeof S) => p.bossCd[k] <= 0 && game.bossPhase >= S[k].phase && p.castT <= 0;
-  const near = hunters.filter((o) => Math.hypot(o.x - p.x, o.y - p.y) < (S.impacto.radius ?? 175) - 20).length;
-  const roll = Math.random() < 0.5 * b.abilitySkill;
-  if (!roll) return out;
-  if (ready('impacto') && near >= 1 && (near >= 2 || Math.random() < 0.4)) out.ability = true;
-  else if (ready('chuva') && hunters.length) out.ult = true;
-  else if (ready('barragem') && d < 380 && Math.random() < 0.15) {
-    out.skill = true;
-    out.ca = ang;
-  } else if (ready('avanco') && clear && d > 120 && d < (S.avanco.range ?? 330) && Math.random() < 0.12) {
-    out.dash = true;
-    out.ca = ang;
-  } else if (ready('obsidiana') && Math.random() < 0.05) {
-    out.bonus = true;
-    out.ca = ang;
-    out.cr = d * 0.6;
-  }
+    if (p.dashCd <= 0 && threat > 0.5 && Math.random() < b.dashSkill * 0.3) out.dash = true;
   return out;
 }

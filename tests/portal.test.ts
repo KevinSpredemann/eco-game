@@ -10,7 +10,7 @@ describe('portais', () => {
   it('teleporta e só deixa usar de novo depois de 15 s', () => {
     const arena = getArena('lab');
     const [a, b] = arena.portals![0];
-    const g = new Game({ arena, humanChar: 'kael', bots: 0, difficulty: 'normal', ownEchoDamage: true, training: false, mode: 'combate', roster: [{ id: 'p0', char: 'kael', isBot: false }, { id: 'b0', char: 'nyx', isBot: false }] });
+    const g = new Game({ arena, humanChar: 'kael', bots: 0, difficulty: 'normal', ownEchoDamage: true, training: false, mode: 'dupla', roster: [{ id: 'p0', char: 'kael', isBot: false }, { id: 'b0', char: 'nyx', isBot: false }] });
     while (g.phase !== 'play') g.step(STEP, {});
     const me = g.human;
     const idle = { mx: 0, my: 0 } as Input;

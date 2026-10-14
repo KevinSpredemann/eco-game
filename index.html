@@ -24,6 +24,7 @@
         <div class="round" id="hud-round">RODADA 1/4</div>
         <div class="timer" id="hud-timer">30</div>
         <div class="objective" id="hud-objective"></div>
+        <div class="combo-hint" id="hud-combo" hidden></div>
         <div class="lead-note" id="lead-note" role="status" hidden></div>
       </div>
       <div class="hud-right">
@@ -40,6 +41,7 @@
     </div>
     <div id="sb-full" class="sb-full" hidden></div>
     <div id="banner" hidden><div class="banner-main"></div><div class="banner-sub"></div></div>
+    <div id="round-call" hidden><div class="rc-kicker"></div><div class="rc-title"></div><div class="rc-sub"></div></div>
     <div id="hint" hidden></div>
     <div id="rw-sum" hidden></div>
 
@@ -51,35 +53,47 @@
         <button id="btn-dash" class="tbtn dash"><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">IMPULSO</span></button>
         <button id="btn-fire" class="tbtn fire" hidden aria-label="Mirar e atirar: arraste para mirar"><span class="aring"></span><span class="aknob"></span><span class="tlabel">ATIRAR</span></button>
         <button id="btn-item" class="tbtn item" hidden><canvas class="ticon"></canvas><span class="tlabel">ITEM</span></button>
-        <button id="btn-bonus" class="tbtn bonus empty"><span class="bicon"></span><span class="tlabel">PODER</span></button>
+        <button id="btn-plasma" class="tbtn item" hidden><span class="tlabel">PLASMA</span></button>
+        <button id="btn-bonus" class="tbtn bonus empty"><canvas class="cd" width="120" height="120"></canvas><span class="bicon"></span><span class="tlabel">PODER</span></button>
         <button id="btn-skill" class="tbtn skill" hidden><canvas class="ticon"></canvas><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">HAB 2</span><span class="tcd"></span></button>
         <button id="btn-ult" class="tbtn ult" hidden><canvas class="ticon"></canvas><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">ULT</span><span class="tcd"></span></button>
       </div>
       <div id="aim-cancel" hidden>✕ Solte aqui para cancelar</div>
     </div>
 
-    <!-- Tela inicial -->
-    <button class="account-chip" id="account-chip" data-action="account" hidden>
-      <img class="ava" alt="" />
-      <span class="who"><b class="nm">Convidado</b><span class="lv">Entrar ou criar conta ›</span></span>
-      <span class="coins"><span class="coin" aria-hidden="true"></span><b class="cv">0</b></span>
-    </button>
+    <div id="mundo-ui" hidden></div>
 
+    <!-- Tela inicial -->
     <section id="screen-title" class="screen">
       <canvas class="title-art" id="title-canvas" aria-hidden="true"></canvas>
       <div class="title-shade" aria-hidden="true"></div>
-      <div class="title-inner">
-        <h1 class="logo" data-text="ECO">ECO</h1>
-        <p class="tagline">O passado também joga</p>
-        <button class="btn primary play-btn" data-action="play"><span class="chev">«</span><span>Jogar</span><span class="chev">»</span></button>
-        <div class="menu-tiles">
-          <button class="tile online-btn" data-action="online"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3.2" /><circle cx="16.5" cy="9" r="3.2" /><path d="M2.5 19c.6-3.2 3-5 5.5-5s4.9 1.8 5.5 5M11 19c.6-3.2 3-5 5.5-5s4.9 1.8 5.5 5" /></svg><span>Online</span></button>
-          <button class="tile" data-action="shop"><svg viewBox="0 0 24 24"><path d="M4 8h16l-1.5 11.5a2 2 0 0 1-2 1.5h-9a2 2 0 0 1-2-1.5z" /><path d="M8.5 8V6.5a3.5 3.5 0 0 1 7 0V8" /></svg><span>Loja</span></button>
-          <button class="tile" data-action="howto"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1.9-1.1 1.8M12 17h.01" /></svg><span>Como jogar</span></button>
-          <button class="tile" data-action="options"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" /></svg><span>Opções</span></button>
+      <div class="home-col lobby">
+        <div class="home-left">
+          <header class="home-brand">
+            <h1 class="logo" data-text="ECO">ECO</h1>
+            <p class="tagline">O PASSADO TAMBÉM JOGA</p>
+          </header>
+          <div class="home-actions">
+            <button class="btn primary play-btn" data-action="play">JOGAR</button>
+            <p class="title-foot" id="title-foot">Toque ou clique para ativar o som.</p>
+          </div>
+          <nav class="home-side" aria-label="Menu">
+            <button class="btn" type="button" data-action="shop">Loja</button>
+            <button class="btn home-edit" type="button" data-action="cosmetics">Personalizar</button>
+            <button class="btn ghost" type="button" data-action="options">Opções</button>
+            <button class="btn ghost" type="button" data-action="howto">Como jogar</button>
+            <button class="btn ghost" data-action="install" id="btn-install" hidden>Instalar app</button>
+          </nav>
         </div>
-        <button class="btn ghost small" data-action="install" id="btn-install" hidden>Instalar app</button>
-        <p class="title-foot" id="title-foot">Toque ou clique para ativar o som.</p>
+        <div class="home-hero-col">
+          <button class="account-chip with-hero" id="account-chip" data-action="account" hidden>
+            <img class="ava" alt="" />
+            <span class="who"><b class="nm">Convidado</b><span class="lv">Entrar ou criar conta ›</span></span>
+            <span class="coins"><span class="coin" aria-hidden="true"></span><b class="cv">0</b></span>
+          </button>
+          <div class="home-stage" id="home-stage"></div>
+        </div>
+        <div class="title-cast" id="title-cast" hidden></div>
       </div>
     </section>
 
@@ -88,14 +102,10 @@
       <div class="sheet fit">
         <header class="sheet-head">
           <button class="btn small ghost" data-action="back">‹ Voltar</button>
-          <div class="head-title"><span class="step-tag">Contra bots</span><h2>Escolha o modo</h2></div>
+          <div class="head-title"><span class="step-tag">O que você quer jogar</span><h2>Escolha o modo</h2></div>
           <span></span>
         </header>
         <div class="mode-grid" id="mode-grid"></div>
-        <div class="more-modes">
-          <span class="mm-label">Mais modos</span>
-          <div class="mm-row" id="more-modes"></div>
-        </div>
       </div>
     </section>
 
@@ -169,6 +179,25 @@
       </div>
     </section>
 
+    <!-- Personalizar -->
+    <section id="screen-cosmetics" class="screen fit" hidden>
+      <div class="sheet fit">
+        <header class="sheet-head">
+          <button class="btn small ghost" data-action="back">‹ Voltar</button>
+          <div class="head-title"><span class="step-tag" id="cos-coins">Saldo disponível: 0 moedas</span><h2>Personalizar</h2></div>
+          <span></span>
+        </header>
+        <div class="tabs" id="cos-tabs" role="tablist">
+          <button class="tab on" type="button" data-cos-tab="skin">Roupas</button>
+          <button class="tab" type="button" data-cos-tab="acc">Acessórios</button>
+          <button class="tab" type="button" data-cos-tab="weapon">Arma favorita</button>
+        </div>
+        <canvas id="cos-preview" width="360" height="220" aria-hidden="true"></canvas>
+        <div class="cos-grid" id="cos-grid"></div>
+        <p class="form-note">Seu personagem na tela inicial usa a roupa, o acessório e a arma escolhidos aqui. Itens pagos mostram quantas moedas faltam.</p>
+      </div>
+    </section>
+
     <!-- Online -->
     <section id="screen-online" class="screen fit" hidden>
       <div class="sheet fit narrow">
@@ -188,13 +217,7 @@
           <h3 class="section-label">Escolha o modo e chame os amigos</h3>
           <div class="mode-pills" id="online-modes">
             <button class="pill on" data-omode="duelo">Duelo x1</button>
-            <button class="pill" data-omode="combate">Combate</button>
-            <button class="pill" data-omode="nucleo">Núcleo</button>
-            <button class="pill" data-omode="bandeira">Bandeira 2x2</button>
-            <button class="pill" data-omode="rei">Rei da Colina</button>
-            <button class="pill" data-omode="ondas">Ondas (juntos)</button>
-            <button class="pill" data-omode="royale">Batalha Real</button>
-            <button class="pill" data-omode="chefe">Caça ao Chefe</button>
+            <button class="pill" data-omode="dupla">2x2</button>
           </div>
           <button class="btn primary" data-action="create-room">Criar sala e chamar amigos</button>
           </div>
@@ -208,7 +231,8 @@
           <div class="pane" data-pane-of="onl" data-pane="buscar" hidden>
           <h3 class="section-label">Jogar com desconhecidos</h3>
           <p class="form-note">Entra numa sala aberta. Começa quando lotar ou todos estiverem prontos; bots completam as vagas.</p>
-          <button class="btn quick-btn" data-action="quick-chefe">Buscar partida · Caça ao Chefe</button>
+          <button class="btn quick-btn" data-action="quick-duelo">Buscar partida · X1</button>
+          <button class="btn quick-btn" data-action="quick-dupla">Buscar partida · 2x2</button>
           </div>
           <p class="form-error" id="online-error" role="alert" hidden></p>
           <button class="btn small" data-action="online-retry" id="online-retry" hidden>Tentar de novo</button>
@@ -230,14 +254,14 @@
         <ul class="lobby-list" id="lobby-list"></ul>
         <div class="lobby-config" id="lobby-config">
           <label class="opt">Modo
-            <select id="lobby-mode"><option value="duelo">Duelo x1</option><option value="combate">Combate</option><option value="nucleo">Núcleo de Energia</option><option value="bandeira">Captura a Bandeira 2x2</option><option value="rei">Rei da Colina</option><option value="ondas">Sobrevivência (juntos)</option><option value="royale">Batalha Real</option><option value="chefe">Caça ao Chefe (3 contra 1)</option></select>
+            <select id="lobby-mode"><option value="duelo">Duelo x1</option><option value="dupla">2x2</option></select>
           </label>
           <label class="opt">Mapa <select id="lobby-arena"></select></label>
           <label class="opt">Bots <select id="lobby-bots"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
         </div>
         <div class="lobby-actions">
           <button class="btn" data-action="lobby-char">Trocar personagem</button>
-          <button class="btn" data-action="lobby-loadout">Equipamento</button>
+          <button class="btn" data-action="lobby-loadout">Poderes</button>
           <button class="btn" data-action="lobby-ready" id="lobby-ready">Estou pronto</button>
           <button class="btn primary" data-action="lobby-start" id="lobby-start">Começar</button>
         </div>
@@ -251,7 +275,7 @@
         <header class="sheet-head">
           <button class="btn small ghost" data-action="back">‹ Voltar</button>
           <div class="head-title">
-            <span class="step-tag" id="select-mode">Núcleo de Energia · passo 1 de 2</span>
+            <span class="step-tag" id="select-mode">2x2 · passo 1 de 3</span>
             <h2>Escolha seu personagem</h2>
           </div>
           <button class="btn small primary" data-action="to-map">Próximo ›</button>
@@ -284,9 +308,6 @@
         <div class="hero-panel map-panel">
           <div class="hp-info" id="map-info"></div>
           <div class="match-opts" id="match-opts">
-            <label class="opt" id="role-opt" hidden>Seu papel
-              <select id="sel-role"><option value="cacador">Caçador</option><option value="chefe">Chefe</option><option value="sorteio">Sorteio justo</option></select>
-            </label>
             <label class="opt"><span id="bots-label">Adversários</span>
               <select id="sel-bots"></select>
             </label>
@@ -373,36 +394,28 @@
           <button class="car-arrow left" id="howto-prev" aria-label="Anterior"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg></button>
           <div class="howto-grid" id="howto-grid">
           <div class="card">
-            <h4>Núcleo de Energia</h4>
-            <p>Pegue os cristais verdes (até 3) e entregue no núcleo: 3 pontos cada. A cada rodada, todo mundo deixa um <em>Eco</em>, um fantasma que repete o que você fez. Encostar num Eco tira 1 vida.</p>
-          </div>
-          <div class="card">
             <h4>Duelo x1</h4>
-            <p>Você contra um rival, com armas, bombas e poderes. Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Seus Ecos repetem os seus tiros também!</p>
+            <p>Online ou offline, você contra um rival, só com poderes. WASD anda. Q, E e F são os poderes, R é a ultimate, Z é o extra. Espaço esquiva. O clique esquerdo é um ataque básico curto. O direito cancela a mira. Cada poder gasta energia e recarrega sozinho. Sem energia o aviso é Energia insuficiente e a recarga não começa. Projétil gasta ao sair, mesmo se errar. Poder em área sem inimigo no círculo avisa Nenhum alvo válido e não gasta nada. Juntar os efeitos na ordem certa dá dano extra. Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Sem arma e sem munição. Em Opções dá para usar as setas ou ESDF.</p>
           </div>
           <div class="card">
-            <h4>Combate</h4>
-            <p>Até 4 jogadores, todos contra todos. Eliminar vale 2 pontos e ser o último de pé vale 3. Pegue armas (metralhadora, escopeta, laser) e itens (bombas e minas) pela arena.</p>
+            <h4>2x2</h4>
+            <p>Dois times, com os mesmos poderes do X1. Offline: você, um aliado bot e dois rivais bot. Online: sala com gente e bots. O time que sobrar vence a rodada. Melhor de 5. No fim do tempo, vale a vida e o dano do time. Sem arma.</p>
+          </div>
+          <div class="card">
+            <h4>ECO Mundo</h4>
+            <p>Solo. A vila é segura: tem loja e banco. O portal leva à floresta, e a floresta só carrega quando você entra. Três monstros e um chefe. Experiência vira pontos de vida, dano, velocidade e recarga. Equipe arma, armadura e relíquia. Morrer volta para a vila, tira 20% das moedas da bolsa e deixa uma tumba por 10 minutos. O banco não perde nada.</p>
           </div>
           <div class="card">
             <h4>Cristais de poder</h4>
-            <p>De vez em quando surge um cristal brilhante com o símbolo de um personagem. Passe por cima para pegar a habilidade dele e use uma vez com o botão PODER (ou R / botão direito do mouse).</p>
-          </div>
-          <div class="card">
-            <h4>Mais modos</h4>
-            <p><b>Captura a Bandeira:</b> 2 contra 2, leve a bandeira rival até a sua base.<br /><b>Rei da Colina:</b> fique sozinho na zona da coroa (+1 por segundo).<br /><b>Sobrevivência:</b> você e aliados contra 5 ondas de robôs e um chefão.<br /><b>Batalha Real:</b> a zona fecha; o último de pé vence.</p>
+            <p>No X1 e no 2x2 não há cristal de habilidade. Q, E e F são os três poderes. R é a ultimate. Z é o espaço extra. A marca do golpe dura poucos segundos: se a janela passar, o próximo poder volta ao efeito normal.</p>
           </div>
           <div class="card">
             <h4>Controles</h4>
-            <p><b>Computador:</b> WASD anda · mouse mira, clique atira · <b>Q</b> habilidade do personagem · <b>E</b> habilidade do equipamento · <b>R</b> ultimate · <b>Shift</b> impulso · <b>Espaço</b> item · <b>F</b> poder do cristal · <b>Esc</b> cancela a mira ou pausa. Segure Q, E ou R para ver a prévia e solte para usar. Dá para trocar as teclas em Opções.<br /><b>Celular:</b> analógico da esquerda anda. O da direita (ATIRAR) mira em qualquer direção e atira enquanto você segura; só tocar atira na mira automática. Toque numa habilidade para usar na direção da mira, ou arraste o botão para ver a área e solte. Para cancelar, solte em cima do "✕".</p>
-          </div>
-          <div class="card">
-            <h4>Caça ao Chefe</h4>
-            <p>3 caçadores contra 1 jogador que vira o Chefe (mais vida, golpes enormes). Os golpes do Chefe mostram a área antes de cair: saia dela. Acertar as <b>costas</b> dá 50% a mais de dano. Na fase 2 surgem <b>geradores</b> que protegem o Chefe: destrua-os. Na fase 3 rochas caem pela arena. O time tem vidas extras compartilhadas; se o tempo acabar, o Chefe vence.</p>
+            <p><b>Computador:</b> WASD anda · mouse mira · <b>1 2 3</b> preparam os poderes · <b>Q E F</b> poderes · <b>R</b> ultimate com a barra de carga · <b>Z</b> extra · clique esquerdo ataque básico · <b>Espaço</b> esquiva · <b>Shift</b> troca para a mira das setas · botão direito ou <b>Esc</b> cancela a mira. <b>Tab</b> abre o placar. Recarga, energia, carga, alvo inválido, atordoamento ou queda recusam o poder e não começam outra recarga. Em Opções: setas (Q W E R e Z) ou ESDF (Q W R, A e Z).<br /><b>Celular:</b> analógico da esquerda anda. Toque no poder para usar na mira, ou arraste para ver a área e solte. Para cancelar, solte em cima do "✕".</p>
           </div>
           <div class="card">
             <h4>Equipamento</h4>
-            <p>Antes da partida escolha a arma principal (a sua ou uma padrão), o item, a habilidade do E e a ultimate do R. Cada opção tem vantagens e limites, nada é só "mais forte". A ultimate carrega com o tempo e com a luta.</p>
+            <p>Antes da partida você vê os quatro golpes do personagem e um espaço extra. Rajada de Plasma entra nesse espaço depois da primeira partida. Não se compra. Se ainda estiver bloqueada, o aviso é Habilidade ainda não desbloqueada. O servidor confere o espaço no começo da partida. Arma, granada e ultimate não entram no X1 nem no 2x2. A roupa não muda o dano.</p>
           </div>
           <div class="card">
             <h4>Lendo os Ecos</h4>
@@ -414,7 +427,7 @@
           </div>
           <div class="card">
           <h4>Poderes</h4>
-          <p>Escudo, Ímã, Gelo nos Ecos, Turbo, Energia em dobro, Apagar Eco, Invisível e Cura aparecem pela arena. Nos modos com armas também caem metralhadora, escopeta, laser, lança-foguetes, raio congelante, vampiro, bombas e minas. É só encostar para pegar.</p>
+          <p>Na arena competitiva caem cura, escudo, turbo e outros apoios. Metralhadora, escopeta, laser, foguete, bomba e mina não aparecem no X1 nem no 2x2. O dano vem dos poderes.</p>
         </div>
           </div>
           <button class="car-arrow right" id="howto-next" aria-label="Próximo"><svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg></button>
@@ -458,9 +471,47 @@
           </label>
         </div>
         <div class="opts pane" data-pane-of="opt" data-pane="teclas" hidden>
-          <p class="form-note">WASD ou setas andam · mouse mira e clique atira · Esc cancela a mira ou pausa. Toque numa ação e aperte a nova tecla.</p>
+          <label class="row">Estilo no computador
+            <select id="opt-control">
+              <option value="classic">Clássico</option>
+              <option value="notebook">Notebook</option>
+            </select>
+          </label>
+          <label class="row">Movimento
+            <select id="opt-move">
+              <option value="wasd">WASD (padrão: Q E F, R e Z)</option>
+              <option value="arrows">Setas (Q W E R e Z)</option>
+              <option value="esdf">ESDF (Q W R, A e Z)</option>
+            </select>
+          </label>
+          <label class="row" id="opt-sens-row">Sensibilidade da mira <input type="range" id="opt-aim" min="40" max="180" /></label>
+          <label class="row">Como soltar o poder
+            <select id="opt-cast">
+              <option value="auto">Automático</option>
+              <option value="instant">Na hora, ao apertar</option>
+              <option value="release">Ao soltar, com a mira</option>
+              <option value="manual">Mira manual (clique confirma)</option>
+            </select>
+          </label>
+          <label class="row">Mira pelo teclado
+            <input type="checkbox" id="opt-kb-aim" />
+          </label>
+          <label class="row">Indicador de alcance
+            <select id="opt-range">
+              <option value="aiming">Só enquanto mira</option>
+              <option value="always">Sempre o alcance do Q</option>
+            </select>
+          </label>
+          <label class="row">Cancelar a mira
+            <select id="opt-cancel">
+              <option value="both">Esc ou botão direito</option>
+              <option value="esc">Só Esc</option>
+            </select>
+          </label>
+          <div id="opt-manual"></div>
+          <p class="form-note" id="opt-control-note"></p>
           <div class="keybinds" id="keybinds"></div>
-          <button class="btn small ghost" id="keys-reset">Voltar ao padrão</button>
+          <button class="btn small ghost" id="keys-reset">Voltar ao padrão deste estilo</button>
         </div>
       </div>
     </section>
@@ -471,7 +522,7 @@
         <h2>Pausado</h2>
         <div class="menu">
           <button class="btn primary" data-action="resume">Continuar</button>
-          <button class="btn" data-action="pause-loadout" id="pause-loadout">Equipamento (próxima rodada)</button>
+          <button class="btn" data-action="pause-loadout" id="pause-loadout">Poderes da partida</button>
           <button class="btn" data-action="restart">Reiniciar partida</button>
           <button class="btn" data-action="options">Opções</button>
           <button class="btn ghost" data-action="quit">Sair para o menu</button>
@@ -486,6 +537,7 @@
         <h2 id="res-title">Vitória!</h2>
         <ol class="podium" id="res-list"></ol>
         <p class="highlight" id="res-highlight"></p>
+        <p class="highlight" id="res-rematch" hidden></p>
         <p class="res-coins" id="res-coins" hidden></p>
         <div class="menu row-menu">
           <button class="btn primary" data-action="restart">Revanche</button>
@@ -499,7 +551,7 @@
       <div class="rotate-icon" aria-hidden="true">⟲</div>
       <p>Gire o celular para jogar na horizontal.</p>
     </div>
-    <div id="toast" hidden></div>
+    <div id="toasts" class="toast-stack" aria-live="polite"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

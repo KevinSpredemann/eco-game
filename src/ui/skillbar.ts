@@ -27,6 +27,8 @@ export interface SlotView {
   note?: string;
   /** descrição curta (aparece ao passar o mouse) */
   desc: string;
+  /** combo pronto neste poder */
+  hot?: boolean;
 }
 
 export function drawSlotArt(cv: HTMLCanvasElement, a: SlotArt) {
@@ -109,7 +111,9 @@ export function drawSlotArt(cv: HTMLCanvasElement, a: SlotArt) {
 /** pronta para usar? (mesma regra na barra do computador e nos botões do celular) */
 export function slotReady(s: SlotView) {
   if (s.off) return false;
-  return s.charge !== undefined ? s.charge >= 100 : s.secs <= 0;
+  if (s.secs > 0) return false;
+  if (s.charge !== undefined && s.charge < 100) return false;
+  return true;
 }
 
 export class SkillBar {
@@ -161,9 +165,10 @@ export class SkillBar {
       e.classList.toggle('ready', ready);
       e.classList.toggle('cool', !ready);
       e.classList.toggle('off', !!s.off);
+      e.classList.toggle('combo', !!s.hot);
       e.style.setProperty('--p', String(charge ? 1 - Math.min(100, s.charge ?? 0) / 100 : Math.max(0, Math.min(1, s.cd))));
       const num = e.querySelector('.sk-num')!;
-      const t = s.note ?? (charge ? (ready ? 'PRONTA' : `${Math.floor(s.charge ?? 0)}%`) : s.secs > 0 ? `${Math.ceil(s.secs)}s` : '');
+      const t = s.note ?? (s.secs > 0 ? `${Math.ceil(s.secs)}s` : charge ? (ready ? 'PRONTA' : `${Math.floor(s.charge ?? 0)}%`) : '');
       if (num.textContent !== t) num.textContent = t;
     }
   }

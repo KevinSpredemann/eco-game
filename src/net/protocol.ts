@@ -7,7 +7,7 @@ import { WEAPONS, type WeaponId, type ItemId } from '../game/weapons';
 
 export const WEAPON_IDS: WeaponId[] = Object.keys(WEAPONS) as WeaponId[];
 export const ENEMY_KINDS = ['drone', 'brute', 'boss', 'pylon', 'rastejador', 'carapaca', 'cuspidor', 'xama', 'semeador'] as const;
-export const ITEM_IDS: (ItemId | null)[] = [null, 'bomba', 'mina', 'gelo', 'kit'];
+export const ITEM_IDS: (ItemId | null)[] = [null, 'bomba', 'mina', 'gelo', 'kit', 'pulso'];
 export const CAST_KINDS: CastKind[] = ['meteoro', 'feixe', 'estase', 'impacto', 'chuva', 'barragem', 'avanco', 'obsidiana', 'fissura'];
 export const WALL_KINDS = ['gelo', 'barreira', 'obsidiana', 'caixa'] as const;
 
@@ -25,7 +25,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 3;
+export const PROTO = 10;
 
 export interface RoomInfo {
   code: string;
@@ -71,7 +71,8 @@ export type ClientMsg =
   | { t: 'ready'; on: boolean }
   | { t: 'skip' }
   | { t: 'leave' }
-  | { t: 'ping'; at: number };
+  | { t: 'ping'; at: number }
+  | { t: 'rematch'; on: boolean };
 
 export type ServerMsg =
   | { t: 'hello'; id: string; name: string; v?: number; resumed?: boolean }
@@ -79,11 +80,12 @@ export type ServerMsg =
   | { t: 'start'; info: StartInfo }
   | { t: 's'; s: Snapshot; ev: unknown[] }
   | { t: 'end'; info: EndInfo }
+  | { t: 'rematch'; state: 'wait' | 'no' | 'go'; by?: string }
   | { t: 'left'; why?: string }
   | { t: 'error'; msg: string }
   | { t: 'pong'; at: number };
 
-export const BTN = { dash: 1, ability: 2, fire: 4, item: 8, bonus: 16, skill: 32, ult: 64 };
+export const BTN = { dash: 1, ability: 2, fire: 4, item: 8, bonus: 16, skill: 32, ult: 64, plasma: 128 };
 
 // ------------------------------------------------------------------ snapshot
 export interface Snapshot {
@@ -94,6 +96,10 @@ export interface Snapshot {
   tb: boolean;
   rd: number;
   rt: number;
+  /** X1: morte súbita ligada e segundos que faltam; vencedor do round ('') */
+  sd?: 0 | 1;
+  sl?: number;
+  cw?: string;
   wt: number;
   core: [number, number];
   cn: [number, number] | 0;
@@ -108,6 +114,7 @@ export interface Snapshot {
   F: number[][];
   W: (number | string)[][];
   C: (number | string)[][];
+  GR?: number[][];
   E: (number | string)[][];
   EM?: (number | string)[][];
   ED?: EchoDigest[];
@@ -167,7 +174,12 @@ function flags(p: Player): number {
     (p.overT > 0 ? 262144 : 0) |
     (p.stasisT > 0 ? 524288 : 0) |
     (p.castT > 0 ? 1048576 : 0) |
-    (p.exhaustT > 0 ? 2097152 : 0)
+    (p.exhaustT > 0 ? 2097152 : 0) |
+    (p.burnT > 0 ? 4194304 : 0) |
+    (p.frozenT > 0 ? 8388608 : 0) |
+    (p.rootT > 0 ? 16777216 : 0) |
+    (p.healT > 0 ? 33554432 : 0) |
+    (p.ambushT > 0 ? 67108864 : 0)
   );
 }
 
@@ -181,6 +193,9 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     tb: g.tiebreak,
     rd: g.roundDur,
     rt: r2(g.roundT),
+    sd: g.sudden ? 1 : 0,
+    sl: r2(g.mode === 'duelo' && g.sudden ? Math.max(0, g.suddenLimit - g.suddenT) : 0),
+    cw: g.phase === 'call' ? (g.callWinner ?? '') : '',
     wt: r2(g.worldT),
     core: [g.core.x, g.core.y],
     cn: g.coreNext ? [g.coreNext.x, g.coreNext.y] : 0,
@@ -229,10 +244,23 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
       Math.round(p.stats.dmg),
       p.stats.obj,
       Math.ceil(p.portalCd),
+      r1(p.powerCd[0]),
+      r1(p.powerCd[1]),
+      r1(p.powerCd[2]),
+      r1(p.powerCd[3]),
+      r1(p.burnT),
+      r1(p.frozenT),
+      p.comboStacks,
+      r1(p.energy),
+      r1(p.plasmaCd),
+      r1(p.plasmaT),
+      p.plasmaOn ? 1 : 0,
+      r1(p.basicCd),
     ]),
     F: g.fragments.map((f) => [f.id, r1(f.x), r1(f.y), f.golden ? 1 : 0]),
     W: g.powerups.map((w) => [w.id, w.kind, r1(w.x), r1(w.y), r1(w.age)]),
-    C: g.clones.map((c) => [c.owner, r1(c.x), r1(c.y), r2(c.dir)]),
+    C: g.clones.map((c) => [c.owner, r1(c.x), r1(c.y), r2(c.dir), c.decoy ? 1 : 0]),
+    GR: g.groves.map((gr) => [gr.id, r1(gr.x), r1(gr.y), gr.r, r1(gr.t), gr.heal]),
     E: g.echoViews.map((e) => [e.key, r1(e.x), r1(e.y), r2(e.dir), (e.moving ? 1 : 0) | (e.active ? 2 : 0) | (e.disrupted ? 4 : 0) | (e.iced ? 8 : 0) | (e.expiring ? 16 : 0), r2(e.pulse), e.age, r2(e.warn ?? 0), r2(e.warnAng ?? 0), e.warnKind ?? 0, r1(e.offLeft ?? 0)]),
     EM: withEchoMeta ? g.echoViews.map((e) => [e.key, e.rec.playerId, e.rec.characterId, e.rec.color, e.rec.round]) : undefined,
     ED: withRoutes ? [...g.echoDigests.values()] : undefined,
@@ -240,7 +268,7 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     RL: withRoutes && g.phase === 'rewind' ? g.roundEchoLines : undefined,
     Z: g.arena.zones.map((_, i) => ({ off: '0', warn: '1', on: '2' })[g.zoneState(i)]).join(''),
     B: g.bullets.map((b) => [b.id, r1(b.x), r1(b.y), Math.round(b.vx), Math.round(b.vy), WEAPON_IDS.indexOf(b.weapon), b.fromEcho ? 1 : 0, r2(b.life), b.owner === 'enemy' ? 1 : 0]),
-    BM: g.bombs.map((b) => [b.id, r1(b.x), r1(b.y), r1(b.tx), r1(b.ty), r2(b.t)]),
+    BM: g.bombs.map((b) => [b.id, r1(b.x), r1(b.y), r1(b.tx), r1(b.ty), r2(b.t), b.pulse ? 1 : 0, b.ice ? 1 : 0]),
     M: g.mines.map((m) => [m.id, r1(m.x), r1(m.y), m.armT <= 0 ? 1 : 0]),
     T: g.turrets.map((t) => [t.id, t.owner, r1(t.x), r1(t.y), r2(t.aim), Math.ceil(t.hp)]),
     ts: g.teamScore,

@@ -8,8 +8,9 @@ import { CHARACTERS } from '../src/game/characters';
 import { BotBrain } from '../src/game/bot';
 import { Game, GameMode, Input, MIN_PLAYERS, MODE_RULES } from '../src/game/sim';
 import { Loadout, botLoadout, DEFAULT_LOADOUT, sanitizeLoadout } from '../src/game/balance';
-import { abilityLevel, buy, equip, matchReward, newProfile, owns, Profile, MatchMode, levelOf } from '../src/game/economy';
+import { abilityLevel, acceptedLoadout, buy, canEquipWeapon, equip, matchReward, newProfile, normalizeProfile, owns, Profile, EquipSlot, MatchMode, levelOf } from '../src/game/economy';
 import { BTN, ClientMsg, encodeSnapshot, echoSignature, EndInfo, LobbyPlayer, RoomInfo, ServerMsg, StartInfo, PROTO } from '../src/net/protocol';
+import { rematchStatus, RematchVote } from '../src/net/rematch';
 import { checkPassword, hashPassword, signToken, validPassword, validUsername, verifyToken } from './auth';
 import { FileStore, PgStore, Store, UserRecord } from './store';
 
@@ -54,8 +55,11 @@ function importGuest(p: Profile, guest: any) {
   p.xp = Math.min(20000, Number(guest.xp) || 0);
   p.wins = Math.min(5000, Number(guest.wins) || 0);
   p.matches = Math.min(20000, Number(guest.matches) || 0);
-  if (Array.isArray(guest.owned)) for (const it of guest.owned.slice(0, 60)) if (typeof it === 'string' && !p.owned.includes(it) && /^(char|skin|trail|gear):[a-z]+$/.test(it)) p.owned.push(it);
-  if (guest.equipped) for (const slot of ['char', 'skin', 'trail'] as const) if (owns(p, `${slot}:${guest.equipped[slot]}`)) p.equipped[slot] = guest.equipped[slot];
+  if (Array.isArray(guest.owned)) for (const it of guest.owned.slice(0, 80)) if (typeof it === 'string' && !p.owned.includes(it) && /^(char|skin|trail|gear|acc):[a-z0-9]+$/.test(it)) p.owned.push(it);
+  if (guest.equipped) {
+    for (const slot of ['char', 'skin', 'trail', 'acc'] as const) if (owns(p, `${slot}:${guest.equipped[slot]}`)) p.equipped[slot] = guest.equipped[slot];
+    if (canEquipWeapon(p, guest.equipped.weapon)) p.equipped.weapon = guest.equipped.weapon;
+  }
 }
 
 const loginAttempts = new Map<string, { n: number; at: number }>();
@@ -74,6 +78,7 @@ const http = createServer(async (req, res) => {
       const { hash, salt } = hashPassword(password);
       const profile = newProfile(username);
       importGuest(profile, guest);
+      normalizeProfile(profile);
       const u: UserRecord = { username, key, hash, salt, profile, lastRewardAt: 0, createdAt: Date.now() };
       if (!(await store.create(u))) return send(res, 409, { error: 'Esse apelido já existe. Escolha outro.' });
       return send(res, 200, { token: signToken(key, SECRET), profile: publicProfile(u) });
@@ -93,12 +98,14 @@ const http = createServer(async (req, res) => {
         return send(res, 401, { error: 'Apelido ou senha errados.' });
       }
       loginAttempts.delete(ip + key);
+      if (normalizeProfile(u.profile)) await store.save(u);
       return send(res, 200, { token: signToken(key, SECRET), profile: publicProfile(u) });
     }
 
     if (url.pathname === '/api/me') {
       const u = await userFrom(req);
       if (!u) return send(res, 401, { error: 'Entre de novo na sua conta.' });
+      if (normalizeProfile(u.profile)) await store.save(u);
       return send(res, 200, { profile: publicProfile(u) });
     }
 
@@ -116,8 +123,9 @@ const http = createServer(async (req, res) => {
       const u = await userFrom(req);
       if (!u) return send(res, 401, { error: 'Entre na sua conta.' });
       const { slot, id } = await readJson(req);
-      if (!['char', 'skin', 'trail'].includes(slot)) return send(res, 400, { error: 'Inválido.' });
-      const e = equip(u.profile, slot, String(id));
+      if (!['char', 'skin', 'trail', 'acc', 'weapon'].includes(slot)) return send(res, 400, { error: 'Inválido.' });
+      normalizeProfile(u.profile);
+      const e = equip(u.profile, slot as EquipSlot, String(id));
       if (e) return send(res, 400, { error: e });
       await store.save(u);
       return send(res, 200, { profile: publicProfile(u) });
@@ -129,12 +137,13 @@ const http = createServer(async (req, res) => {
       if (!u) return send(res, 401, { error: 'Entre na sua conta.' });
       const r = await readJson(req);
       if (Date.now() - u.lastRewardAt < 50_000) return send(res, 200, { coins: 0, profile: publicProfile(u) });
-      const mode = ([...Object.keys(MODE_RULES), 'treino'].includes(r.mode) ? r.mode : 'treino') as MatchMode;
+      const mode = (r.mode in MODE_RULES ? r.mode : 'duelo') as MatchMode;
       const coins = matchReward({ mode, placement: Number(r.placement) || 9, players: Math.min(4, Number(r.players) || 1), score: Math.min(200, Number(r.score) || 0), kills: Math.min(20, Number(r.kills) || 0), online: false });
       u.profile.coins += coins;
       u.profile.xp += coins;
       u.profile.matches++;
       if (Number(r.placement) === 1 && Number(r.players) > 1) u.profile.wins++;
+      normalizeProfile(u.profile);
       u.lastRewardAt = Date.now();
       await store.save(u);
       return send(res, 200, { coins, profile: publicProfile(u) });
@@ -192,6 +201,9 @@ interface Room {
   autoAt: number;
   /** escalação da partida em andamento (para quem reconecta no meio) */
   roster: RosterRow[];
+  /** votos de revanche do X1 (só os dois jogadores conectados) */
+  rematchVotes: Map<string, RematchVote>;
+  rematchAt: number;
 }
 
 const clients = new Map<string, Client>();
@@ -355,16 +367,6 @@ function startGame(r: Room, fill = false) {
     roster.push({ id: 'bot' + i, char: ch, skin: 'padrao', trail: 'nenhum', name: CHARACTERS.find((c) => c.id === ch)!.name + ' (bot)', isBot: true, loadout: botLoadout(ch) });
   }
   if (roster.length < 2) roster.push({ id: 'bot9', char: pool[0], skin: 'padrao', trail: 'nenhum', name: 'Bot', isBot: true });
-  if (r.mode === 'chefe') {
-    // rodízio justo: quem foi Chefe menos vezes; empate = sorteio
-    const least = Math.min(...humans.map((h) => h.bossTimes));
-    const cands = humans.filter((h) => h.bossTimes === least);
-    const pick = cands[Math.floor(Math.random() * cands.length)];
-    if (pick) {
-      pick.bossTimes++;
-      roster.find((x) => x.id === pick.id)!.boss = true;
-    }
-  }
   for (const m of r.members) m.ready = false;
   r.autoAt = 0;
   const game = new Game({
@@ -390,6 +392,8 @@ function startGame(r: Room, fill = false) {
   r.ticks = 0;
   r.pending = [];
   r.echoSig = '';
+  r.rematchVotes = new Map();
+  r.rematchAt = 0;
   for (const m of humans) m.input = { mx: 0, my: 0, dash: false, ability: false };
   for (const m of r.members) {
     const info: StartInfo = { you: m.id, mode: r.mode, arena: r.arena, roster };
@@ -407,7 +411,7 @@ function tick(r: Room, dt: number) {
   for (const m of r.members) {
     inputs[m.id] = m.input;
     // botões de toque único são consumidos no passo
-    m.input = { ...m.input, dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, ca: null, cr: null };
+    m.input = { ...m.input, dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, plasma: false, ca: null, cr: null };
   }
   g.step(dt, inputs);
   if (g.phase !== 'rewind' && r.skipVotes.size) r.skipVotes.clear();
@@ -441,6 +445,7 @@ setInterval(() => {
       }
     }
     if (r.autoAt) broadcastRoom(r);
+    if (!r.game && r.rematchAt && rematchStatus(rematchHumans(r), votesOf(r), Date.now(), r.rematchAt) === 'no') pushRematch(r);
   }
 }, 1000);
 
@@ -464,6 +469,7 @@ async function finishGame(r: Room) {
         u.profile.xp += coins;
         u.profile.matches++;
         if (g.winners.includes(p.id)) u.profile.wins++;
+        normalizeProfile(u.profile);
         await store.save(u);
       }
     }
@@ -479,7 +485,41 @@ async function finishGame(r: Room) {
     rewards,
   };
   for (const m of r.members) sendTo(m, { t: 'end', info });
+  r.rematchVotes = new Map();
+  r.rematchAt = 0;
   broadcastRoom(r);
+}
+
+function rematchHumans(r: Room) {
+  return r.members.filter((m) => !m.gone).map((m) => m.id);
+}
+
+function votesOf(r: Room): Record<string, RematchVote | undefined> {
+  const o: Record<string, RematchVote | undefined> = {};
+  for (const [id, v] of r.rematchVotes) o[id] = v;
+  return o;
+}
+
+function pushRematch(r: Room) {
+  if (r.mode !== 'duelo' || r.game) return;
+  const humans = rematchHumans(r);
+  const status = rematchStatus(humans, votesOf(r), Date.now(), r.rematchAt);
+  if (status === 'idle') return;
+  if (status === 'go') {
+    for (const m of r.members) sendTo(m, { t: 'rematch', state: 'go' });
+    r.rematchVotes = new Map();
+    r.rematchAt = 0;
+    startGame(r, false);
+    return;
+  }
+  if (status === 'no') {
+    for (const m of r.members) sendTo(m, { t: 'rematch', state: 'no' });
+    r.rematchVotes = new Map();
+    r.rematchAt = 0;
+    return;
+  }
+  const by = [...r.rematchVotes.entries()].find(([, v]) => v === 'yes')?.[0];
+  for (const m of r.members) sendTo(m, { t: 'rematch', state: 'wait', by });
 }
 
 const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: 16 * 1024 });
@@ -534,6 +574,7 @@ wss.on('connection', (ws) => {
         c.v = Number(m.v) || 0;
         const key = verifyToken(m.token, SECRET);
         const u = key ? await store.get(key) : null;
+        if (u && normalizeProfile(u.profile)) await store.save(u);
         c.userKey = u ? u.key : null;
         c.name = u ? u.username : cleanName(m.name) || 'Convidado';
         if (u && !resumed) {
@@ -556,9 +597,9 @@ wss.on('connection', (ws) => {
       case 'create': {
         if (!canEnter()) return;
         leaveRoom(c);
-        const mode: GameMode = validMode(m.mode) ? m.mode : 'combate';
+        const mode: GameMode = validMode(m.mode) ? m.mode : 'duelo';
         const arena = ARENAS.some((a) => a.id === m.arena) ? m.arena : 'lab';
-        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [] };
+        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [], rematchVotes: new Map(), rematchAt: 0 };
         rooms.set(r.code, r);
         c.room = r;
         c.ready = false;
@@ -610,9 +651,17 @@ wss.on('connection', (ws) => {
       case 'loadout': {
         let profile: Profile = newProfile();
         if (c.userKey) profile = (await store.get(c.userKey))?.profile ?? profile;
-        c.loadout = sanitizeLoadout(m.l, (k) => owns(profile, k));
+        c.loadout = acceptedLoadout(profile, m.l);
         // no meio da partida: vale a partir da próxima rodada
         if (c.room?.game) c.room.game.setLoadout(c.id, c.loadout);
+        break;
+      }
+      case 'rematch': {
+        const r = c.room;
+        if (!r || r.game || r.mode !== 'duelo') break;
+        if (!r.rematchAt) r.rematchAt = Date.now();
+        r.rematchVotes.set(c.id, m.on ? 'yes' : 'no');
+        pushRematch(r);
         break;
       }
       case 'skip': {
@@ -631,12 +680,12 @@ wss.on('connection', (ws) => {
       case 'quick': {
         // busca automática: entra numa sala aberta do modo ou abre uma nova
         if (!canEnter()) return;
-        const mode: GameMode = validMode(m.mode) ? m.mode : 'chefe';
+        const mode: GameMode = validMode(m.mode) ? m.mode : 'duelo';
         leaveRoom(c);
         let r = [...rooms.values()].find((x) => x.public && !x.game && x.mode === mode && x.members.length < maxPlayers(mode));
         if (!r) {
           const arena = ARENAS[Math.floor(Math.random() * ARENAS.length)].id;
-          r = { code: newCode(), host: c.id, mode, arena, bots: 0, members: [], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: true, autoAt: Date.now() + 25_000, roster: [] };
+          r = { code: newCode(), host: c.id, mode, arena, bots: 0, members: [], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: true, autoAt: Date.now() + 25_000, roster: [], rematchVotes: new Map(), rematchAt: 0 };
           rooms.set(r.code, r);
         }
         r.members.push(c);
@@ -650,7 +699,7 @@ wss.on('connection', (ws) => {
         const [mx, my, bits, aim, ca, cr] = m.i;
         const prev = c.input;
         const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? v : null);
-        const press = !!(bits & (BTN.dash | BTN.ability | BTN.item | BTN.bonus | BTN.skill | BTN.ult));
+        const press = !!(bits & (BTN.dash | BTN.ability | BTN.item | BTN.bonus | BTN.skill | BTN.ult | BTN.plasma));
         c.input = {
           mx: Math.max(-1, Math.min(1, Number(mx) || 0)),
           my: Math.max(-1, Math.min(1, Number(my) || 0)),
@@ -662,6 +711,7 @@ wss.on('connection', (ws) => {
           bonus: prev.bonus || !!(bits & BTN.bonus),
           skill: prev.skill || !!(bits & BTN.skill),
           ult: prev.ult || !!(bits & BTN.ult),
+          plasma: prev.plasma || !!(bits & BTN.plasma),
           aim: num(aim),
           ca: press ? num(ca) : prev.ca ?? null,
           cr: press ? (num(cr) === null ? null : Math.max(0, Math.min(2000, num(cr)!))) : prev.cr ?? null,

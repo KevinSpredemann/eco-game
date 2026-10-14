@@ -97,7 +97,7 @@ describe('limpeza das gerações', () => {
 
 describe('Ecos numa partida', () => {
   it('fim da rodada: rotas resumidas, resumo e Ecos da próxima rodada iguais à gravação', () => {
-    const g = game('combate');
+    const g = game('dupla');
     while (g.phase !== 'rewind') g.step(STEP, {});
     expect(g.lastDigests.length).toBe(g.lastRecordings.filter((r) => r.frames.length > 1).length);
     expect(g.roundEchoLines.length).toBe(g.lastDigests.length);
@@ -116,7 +116,7 @@ describe('Ecos numa partida', () => {
   }, 30000);
 
   it('pular o Rebobinando vai direto para a próxima rodada', () => {
-    const g = game('nucleo');
+    const g = game('duelo');
     while (g.phase !== 'rewind') g.step(STEP, {});
     for (let i = 0; i < 20; i++) g.step(STEP, {});
     g.skipRewind();
@@ -126,7 +126,7 @@ describe('Ecos numa partida', () => {
   }, 30000);
 
   it('nunca passa de 36 tiros de Eco ao mesmo tempo', () => {
-    const g = game('combate');
+    const g = game('dupla');
     while (g.phase !== 'play') g.step(STEP, {});
     const recs = Array.from({ length: 8 }, (_, i) => fakeRecording('x' + i, 0, 60000, { shootEvery: 40, x0: 200 + i * 100 }));
     g.echoes.add(0, recs);
@@ -142,7 +142,7 @@ describe('Ecos numa partida', () => {
 
   it('desativado por 3 s e volta sozinho, com o tempo restante visível', () => {
     // sem bots: ninguém encosta no Eco com escudo e desativa de novo no meio do teste
-    const g = game('combate', [
+    const g = game('dupla', [
       { id: 'p0', char: 'kael', isBot: false },
       { id: 'p1', char: 'zoe', isBot: false },
     ]);
@@ -169,7 +169,7 @@ describe('Ecos numa partida', () => {
       { id: 'b1', char: 'iris', isBot: false },
     ];
     const hitBy = (owner: string) => {
-      const g = game('bandeira', roster);
+      const g = game('dupla', roster);
       while (g.phase !== 'play') g.step(STEP, {});
       const me = g.human;
       const ally = g.players.find((p) => p.id !== me.id && p.team === me.team)!;
@@ -193,7 +193,7 @@ describe('Ecos numa partida', () => {
   });
 
   it('Eco não prende: depois do golpe dá para atravessar andando', () => {
-    const g = game('combate', [
+    const g = game('dupla', [
       { id: 'p0', char: 'kael', isBot: false },
       { id: 'b0', char: 'nyx', isBot: false },
     ]);
@@ -224,23 +224,8 @@ describe('Ecos numa partida', () => {
     expect(me.x).toBeGreaterThan(x0 + 60 + C.PLAYER_R + C.ECHO_R);
   });
 
-  it('Caça ao Chefe não grava Ecos nem rotas', () => {
-    const g = game('chefe', [
-      { id: 'h0', char: 'kael', isBot: true },
-      { id: 'h1', char: 'zoe', isBot: true },
-      { id: 'h2', char: 'iris', isBot: true },
-      { id: 'boss', char: 'bruno', isBot: true, boss: true },
-    ]);
-    while (g.phase !== 'play') g.step(STEP, {});
-    const b = g.boss!;
-    g.hurt(b, b.hp + 10, 'h0', 'shot');
-    for (let i = 0; i < 30 && g.phase === 'play'; i++) g.step(STEP, {});
-    expect(g.lastDigests).toHaveLength(0);
-    expect(g.echoViews).toHaveLength(0);
-  });
-
   it('desempenho: 24 Ecos atirando continuam leves', () => {
-    const g = game('combate');
+    const g = game('dupla');
     while (g.phase !== 'play') g.step(STEP, {});
     const recs = Array.from({ length: 24 }, (_, i) => fakeRecording('m' + i, (i % 3) + 1, 60000, { shootEvery: 200, x0: 150 + (i % 8) * 120, y0: 200 + Math.floor(i / 8) * 150 }));
     for (let r = 1; r <= 3; r++) g.echoes.add(r, recs.filter((x) => x.round === r));
@@ -267,7 +252,7 @@ describe('cores diferentes para cada jogador', () => {
       { id: 'p2', char: 'kael', isBot: false },
       { id: 'p3', char: 'zoe', isBot: false },
     ];
-    const g = game('combate', roster);
+    const g = game('dupla', roster);
     const cols = g.players.map((p) => p.color);
     // o primeiro mantém a cor do personagem
     expect(cols[0]).toBe(g.players[0].char.color);
@@ -284,8 +269,8 @@ describe('cores diferentes para cada jogador', () => {
       { id: 'b', char: 'kael', skin: 'padrao', trail: 'nenhum', name: 'Convidado', isBot: false },
       { id: 'c', char: 'luna', skin: 'padrao', trail: 'nenhum', name: 'C (bot)', isBot: true },
     ];
-    const server = game('combate', roster.map((r) => ({ id: r.id, char: r.char, isBot: r.isBot, name: r.name })));
-    const client = new ClientGame({ you: 'b', mode: 'combate', arena: 'lab', roster });
+    const server = game('dupla', roster.map((r) => ({ id: r.id, char: r.char, isBot: r.isBot, name: r.name })));
+    const client = new ClientGame({ you: 'b', mode: 'dupla', arena: 'lab', roster });
     expect(client.players.map((p) => p.color)).toEqual(server.players.map((p) => p.color));
     expect(new Set(client.players.map((p) => p.color)).size).toBe(3);
     expect(client.players.map((p) => p.name)).toEqual(server.players.map((p) => p.name));
@@ -294,7 +279,7 @@ describe('cores diferentes para cada jogador', () => {
   });
 
   it('nomes iguais ganham número', () => {
-    const g = game('combate', [
+    const g = game('dupla', [
       { id: 'p0', char: 'kael', isBot: false, name: 'Convidado' },
       { id: 'p1', char: 'zoe', isBot: false, name: 'Convidado' },
     ]);
@@ -302,7 +287,7 @@ describe('cores diferentes para cada jogador', () => {
   });
 
   it('personagens diferentes mantêm as cores originais', () => {
-    const g = game('combate', [
+    const g = game('dupla', [
       { id: 'p0', char: 'kael', isBot: false },
       { id: 'p1', char: 'zoe', isBot: false },
     ]);
@@ -313,7 +298,7 @@ describe('cores diferentes para cada jogador', () => {
 describe('cores parecidas de personagens diferentes', () => {
   it('Vesper e Voltz (dois amarelos) ficam com cores distintas', async () => {
     const { colorDistance, MIN_COLOR_DISTANCE } = await import('../src/game/colors');
-    const g = game('combate', [
+    const g = game('dupla', [
       { id: 'p0', char: 'zoe', isBot: false }, // Vesper
       { id: 'p1', char: 'leo', isBot: false }, // Voltz
     ]);

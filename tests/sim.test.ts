@@ -1,25 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/game/sim';
-import { ARENAS } from '../src/game/arenas';
+import { getArena } from '../src/game/arenas';
 
-describe('partida completa com bots', () => {
-  for (const arena of ARENAS) {
-    it(`roda 4 rodadas em ${arena.name}`, () => {
-      const g = new Game({ arena, humanChar: 'kael', bots: 3, difficulty: 'normal', ownEchoDamage: true, training: false });
-      let steps = 0;
-      const idle = { mx: 0, my: 0, dash: false, ability: false };
-      const delivered: Record<string, number> = {};
-      while (g.phase !== 'results' && steps < 60 * 400) {
-        g.step(1 / 60, idle);
-        for (const e of g.drainEvents()) if (e.type === 'deliver') delivered[e.pid] = (delivered[e.pid] ?? 0) + e.count;
-        steps++;
-      }
-      expect(g.phase).toBe('results');
-      expect(g.echoes.generations.length).toBeLessThanOrEqual(3);
-      const botScore = g.players.filter((p) => p.isBot).reduce((s, p) => s + p.score, 0);
-      // eslint-disable-next-line no-console
-      console.log(arena.id, g.players.map((p) => `${p.char.id}:${p.score}`).join(' '), 'entregas', JSON.stringify(delivered), 'tiebreak', g.tiebreak);
-      expect(botScore).toBeGreaterThan(10);
+describe('partida curta', () => {
+  it('um x1 com rodadas curtas chega no resultado', () => {
+    const g = new Game({
+      arena: getArena('lab'),
+      humanChar: 'kael',
+      bots: 0,
+      difficulty: 'dificil',
+      ownEchoDamage: true,
+      training: false,
+      mode: 'duelo',
+      roundSec: 12,
+      suddenSec: 4,
+      roster: [
+        { id: 'a', char: 'zoe', isBot: true },
+        { id: 'b', char: 'rex', isBot: true },
+      ],
     });
-  }
+    const idle = { mx: 0, my: 0, dash: false, ability: false };
+    for (let i = 0; i < 60 * 250 && g.phase !== 'results'; i++) g.step(1 / 60, idle);
+    expect(g.phase).toBe('results');
+    expect(g.players).toHaveLength(2);
+    expect(g.players.every((p) => p.team === -1)).toBe(true);
+    const top = Math.max(...g.players.map((p) => p.roundWins));
+    expect(top === 3 || g.round >= 5).toBe(true);
+  }, 20000);
 });

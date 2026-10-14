@@ -51,12 +51,16 @@ export class AudioEngine {
   vol = { master: 0.8, music: 0.55, sfx: 0.85, muted: false };
 
   unlock() {
+    const live = this.ctx as AudioContext | null;
+    if (live && live.state === 'closed') this.ctx = null;
     if (!this.ctx) {
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       if (!AC) return;
       this.attach(new AC());
     }
-    if (this.ctx!.state === 'suspended') (this.ctx as AudioContext).resume().catch(() => {});
+    const ctx = this.ctx as AudioContext;
+    const state = ctx.state as string;
+    if (state === 'suspended' || state === 'interrupted') ctx.resume().catch(() => {});
   }
 
   /** Monta o grafo de áudio em qualquer contexto (tempo real ou offline para exportar .wav). */
@@ -89,7 +93,7 @@ export class AudioEngine {
     (this.ctx as AudioContext | null)?.suspend?.().catch(() => {});
   }
   resume() {
-    (this.ctx as AudioContext | null)?.resume?.().catch(() => {});
+    this.unlock();
   }
 
   applyVolumes() {
@@ -205,6 +209,12 @@ export class AudioEngine {
       this.tone({ type: 'sine', freq: mtof(60 + n), dur: 0.4, gain: 0.12, when: t + i * 0.06, pan });
     });
     this.noise({ dur: 0.5, gain: 0.08, type: 'highpass', freq: 5000, when: t + 0.05, pan });
+  }
+  cast(pan?: number) {
+    this.tone({ type: 'square', freq: 540, freqEnd: 280, dur: 0.07, gain: 0.07, filter: 1800, pan });
+  }
+  fail(pan?: number) {
+    this.tone({ type: 'square', freq: 160, freqEnd: 90, dur: 0.12, gain: 0.09, filter: 900, pan });
   }
   dash(pan?: number) {
     this.noise({ dur: 0.22, gain: 0.25, type: 'bandpass', freq: 600, freqEnd: 3500, q: 2, pan });
@@ -455,6 +465,22 @@ export class AudioEngine {
         this.noise({ dur: 0.5, gain: 0.15, type: 'bandpass', freq: 2500, freqEnd: 200, q: 3, pan });
         break;
     }
+  }
+  /** aviso curto de round: vitória, derrota ou empate. A fanfarra da partida fica em victory/defeat. */
+  roundMark(kind: 'win' | 'loss' | 'draw') {
+    const t = this.now;
+    if (kind === 'win') {
+      [523, 784].forEach((f, i) => this.tone({ type: 'square', freq: f, dur: 0.12, gain: 0.1, when: t + i * 0.08, filter: 3500 }));
+    } else if (kind === 'loss') {
+      [392, 262].forEach((f, i) => this.tone({ type: 'triangle', freq: f, dur: 0.14, gain: 0.1, when: t + i * 0.09 }));
+    } else {
+      this.tone({ type: 'sine', freq: 494, dur: 0.16, gain: 0.1 });
+    }
+  }
+  sudden() {
+    const t = this.now;
+    this.tone({ type: 'sawtooth', freq: 220, freqEnd: 440, dur: 0.16, gain: 0.07, filter: 1800 });
+    this.tone({ type: 'square', freq: 660, dur: 0.1, gain: 0.06, when: t + 0.14, filter: 2000 });
   }
   victory() {
     const t = this.now;

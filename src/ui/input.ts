@@ -2,30 +2,192 @@ import type { Input } from '../game/sim';
 import type { AimKind } from '../game/balance';
 
 /** ações que podem ser remapeadas no teclado */
-export type Slot = 'ability' | 'skill' | 'ult' | 'dash' | 'item' | 'bonus';
+export type Slot = 'ability' | 'skill' | 'ult' | 'dash' | 'item' | 'bonus' | 'plasma';
 export type Action = Slot | 'fire';
 export type KeyBinds = Record<Action, string>;
 
-/** esquema inicial (estilo MOBA) */
-export const DEFAULT_KEYS: KeyBinds = {
+/**
+ * Padrão: WASD anda. Q, E e F são os três poderes, R é a ultimate, Z é o extra.
+ * Espaço esquiva. O clique esquerdo ataca e o direito cancela.
+ */
+export const WASD_KEYS: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyE',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'KeyX',
+  bonus: 'KeyF',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+/** Notebook: as mesmas teclas. O item vai para o X, porque o F é um poder. */
+export const WASD_NOTEBOOK: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyE',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'KeyX',
+  bonus: 'KeyF',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+/** Setas andam, então o W vira o segundo poder. Z continua o extra. */
+export const ARROW_LAYOUT: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'Digit1',
+  bonus: 'KeyE',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+export const ARROW_LAYOUT_NOTEBOOK: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'KeyF',
+  bonus: 'KeyE',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+/** ESDF anda. E e F não podem ser poderes: o segundo fica no W, o quarto no A, o extra no Z. */
+export const ESDF_KEYS: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'Digit1',
+  bonus: 'KeyA',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+/** Layout da rodada anterior: setas e Q W E R, com a Rajada no X. */
+export const LEGACY_QWER: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'Digit1',
+  bonus: 'KeyE',
+  plasma: 'KeyX',
+  fire: 'KeyJ',
+};
+export const LEGACY_QWER_NOTEBOOK: KeyBinds = { ...LEGACY_QWER, item: 'KeyF' };
+/** WASD antigo, com Shift na esquiva e a Rajada no X. */
+export const LEGACY_SHIFT: KeyBinds = {
   ability: 'KeyQ',
   skill: 'KeyE',
   ult: 'KeyR',
   dash: 'ShiftLeft',
   item: 'Space',
   bonus: 'KeyF',
+  plasma: 'KeyX',
   fire: 'KeyJ',
 };
+export const LEGACY_SHIFT_NOTEBOOK: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyE',
+  ult: 'KeyR',
+  dash: 'ShiftLeft',
+  item: 'KeyF',
+  bonus: 'Space',
+  plasma: 'KeyX',
+  fire: 'KeyJ',
+};
+export const LEGACY_ESDF: KeyBinds = { ...ESDF_KEYS, plasma: 'KeyX' };
+export const DEFAULT_KEYS: KeyBinds = { ...WASD_KEYS };
+export const NOTEBOOK_KEYS: KeyBinds = { ...WASD_NOTEBOOK };
+export type ControlStyle = 'classic' | 'notebook';
+export type MoveScheme = 'arrows' | 'wasd' | 'esdf';
+export function presetKeys(style: ControlStyle, scheme: MoveScheme = 'wasd'): KeyBinds {
+  if (scheme === 'arrows') return { ...(style === 'notebook' ? ARROW_LAYOUT_NOTEBOOK : ARROW_LAYOUT) };
+  if (scheme === 'esdf') return { ...ESDF_KEYS };
+  return { ...(style === 'notebook' ? WASD_NOTEBOOK : WASD_KEYS) };
+}
+
+/** A mira acompanha o cursor sem pular: cada quadro anda no máximo um pedaço. */
+export function stepAim(current: number, target: number, sens: number): number {
+  let d = target - current;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  const cap = 0.45 * Math.max(0.35, Math.min(2, sens));
+  if (Math.abs(d) > cap) d = Math.sign(d) * cap;
+  return current + d;
+}
+
+/** Puxa a mira para o inimigo mais alinhado, se ele estiver dentro do cone. */
+export function assistAim(aim: number, ox: number, oy: number, foes: { x: number; y: number }[], cone = 0.62, range = 460): number {
+  let bestDiff = 0;
+  let bestAbs = cone;
+  let found = false;
+  for (const f of foes) {
+    const dx = f.x - ox;
+    const dy = f.y - oy;
+    const d = Math.hypot(dx, dy);
+    if (d < 12 || d > range) continue;
+    let diff = Math.atan2(dy, dx) - aim;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const ad = Math.abs(diff);
+    if (ad < bestAbs) {
+      bestAbs = ad;
+      bestDiff = diff;
+      found = true;
+    }
+  }
+  return found ? aim + bestDiff * 0.78 : aim;
+}
+
+/** Inimigo mais perto, para a trava de mira do notebook. */
+export function nearestAim(ox: number, oy: number, foes: { id: string; x: number; y: number }[], max = 720): { id: string; aim: number } | null {
+  let best: { id: string; aim: number } | null = null;
+  let bd = max;
+  for (const f of foes) {
+    const d = Math.hypot(f.x - ox, f.y - oy);
+    if (d < 12 || d >= bd) continue;
+    bd = d;
+    best = { id: f.id, aim: Math.atan2(f.y - oy, f.x - ox) };
+  }
+  return best;
+}
+
+/**
+ * Mira pelo teclado. As setas escolhem a direção do tiro.
+ * Sem seta, a mira acompanha o passo. WASD continua só o movimento.
+ */
+export function keyboardAimAngle(prev: number, arrows: { x: number; y: number }, move: { x: number; y: number }): number {
+  if (arrows.x || arrows.y) return Math.atan2(arrows.y, arrows.x);
+  if (move.x || move.y) return Math.atan2(move.y, move.x);
+  return prev;
+}
+
+const PREPARE: Record<string, Slot> = { Digit1: 'ability', Digit2: 'skill', Digit3: 'bonus' };
+
+/** Clique curto no notebook ligava o tiro. O notebook agora atira só enquanto o botão está pressionado. */
+export function clickFireLatch(latch: boolean, heldMs: number, toggle: boolean): boolean {
+  if (!toggle || heldMs >= 280) return latch;
+  return !latch;
+}
 export const ACTION_LABEL: Record<Action, string> = {
-  ability: 'Habilidade do personagem',
-  skill: 'Habilidade do equipamento',
-  ult: 'Ultimate',
+  ability: 'Poder 1 (Q no padrão)',
+  skill: 'Poder 2 (E no padrão)',
+  ult: 'Ultimate (R no padrão)',
   dash: 'Impulso / esquiva',
   item: 'Item (granada, mina…)',
-  bonus: 'Poder do cristal / utilidade',
+  bonus: 'Poder 3 (F no padrão)',
+  plasma: 'Poder extra (Z no padrão)',
   fire: 'Atirar (além do clique)',
 };
-const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Escape', 'KeyP']);
+const PAUSE_KEYS = ['Escape', 'KeyP'];
+const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
+export function moveKeysFor(scheme: MoveScheme): string[] {
+  if (scheme === 'wasd') return [...PAUSE_KEYS, 'KeyW', 'KeyA', 'KeyS', 'KeyD', ...ARROW_KEYS];
+  if (scheme === 'esdf') return [...PAUSE_KEYS, 'KeyE', 'KeyS', 'KeyD', 'KeyF', ...ARROW_KEYS];
+  return [...PAUSE_KEYS, ...ARROW_KEYS];
+}
 
 export function keyLabel(code: string): string {
   if (!code) return '—';
@@ -51,8 +213,8 @@ export function keyLabel(code: string): string {
   };
   return map[code] ?? code.replace(/(Left|Right)$/, '');
 }
-export function isReservedKey(code: string) {
-  return MOVE_KEYS.has(code);
+export function isReservedKey(code: string, scheme: MoveScheme = 'wasd') {
+  return moveKeysFor(scheme).includes(code);
 }
 
 /** mira em andamento (segurando a tecla ou arrastando o botão) */
@@ -64,6 +226,37 @@ export interface Aiming {
 }
 
 /** Junta teclado + mouse + analógico virtual + botões de toque em um único Input por passo. */
+/** No celular, a ultimate mirada só confirma com arrasto. Cancelar (ou um toque seco) não gasta a carga. */
+export function confirmTouchCast(slot: string, kind: string, dragLen: number): boolean {
+  if (slot === 'ult' && kind !== 'instant' && dragLen < 18) return false;
+  return true;
+}
+
+export type CastChoice = 'auto' | 'instant' | 'manual' | 'release';
+export type CastStyle = 'instant' | 'manual' | 'release';
+
+/** Como o aperto vira golpe. Cancelar nunca entra aqui: quem cancela não chama estas funções. */
+export function resolveCastStyle(o: {
+  castMode: CastChoice;
+  control: 'classic' | 'notebook';
+  touch: boolean;
+  manual: boolean;
+  kind: AimKind;
+}): CastStyle {
+  if (o.manual || o.castMode === 'manual') return 'manual';
+  if (o.castMode === 'instant') return 'instant';
+  if (o.castMode === 'release') return o.kind === 'instant' ? 'instant' : 'release';
+  if (o.touch || o.control === 'notebook' || o.kind === 'instant') return 'instant';
+  return 'release';
+}
+
+export function queuesOnPress(style: CastStyle) {
+  return style === 'instant';
+}
+export function queuesOnRelease(style: CastStyle) {
+  return style === 'release';
+}
+
 export class InputManager {
   private keys = new Set<string>();
   private stick = { x: 0, y: 0, active: false, id: -1, cx: 0, cy: 0 };
@@ -77,10 +270,35 @@ export class InputManager {
   /** última direção mirada com o analógico direito (fica depois de soltar); null = mira automática */
   lastAim: number | null = null;
   binds: KeyBinds = { ...DEFAULT_KEYS };
+  control: ControlStyle = 'classic';
+  /** wasd é o padrão. arrows libera o W para um poder. esdf anda com E S D F. */
+  moveScheme: MoveScheme = 'wasd';
+  /** 1 = padrão; só o modo notebook suaviza a mira */
+  aimSens = 1;
+  /** tiro contínuo sem segurar o botão (não usado no notebook) */
+  fireLatch = false;
+  /** notebook: C trava a mira no inimigo mais perto */
+  lockOn = false;
+  onLock: ((on: boolean) => void) | null = null;
+  private mouseDownAt = 0;
+  private ateClick = false;
+  private rmbAim = false;
+  private aimAng: number | null = null;
   /** posição do mouse na tela (para mirar no computador) */
   mouse = { x: 0, y: 0, at: 0 };
   /** modo combate: Espaço vira item e o clique atira */
   combat = false;
+  /** X1 e 2x2: o botão direito cancela a mira e não solta o poder do F */
+  powers = false;
+  /** auto segue o estilo. manual espera o clique. release solta ao erguer a tecla. */
+  castMode: CastChoice = 'auto';
+  /** setas miram e WASD anda. Shift liga e desliga, se o Shift não for a esquiva. */
+  keyboardAim = false;
+  kbAim = 0;
+  onAimMode: ((on: boolean) => void) | null = null;
+  manualSlots = new Set<Slot>();
+  /** both: Esc e botão direito. esc: só Esc. */
+  cancelAimButtons: 'both' | 'esc' = 'both';
   touchMode = false;
   aiming: Aiming | null = null;
   /** como cada ação é mirada agora (depende do personagem/equipamento) */
@@ -110,9 +328,28 @@ export class InputManager {
       }
       this.keys.add(e.code);
       if (e.code === 'Escape' || e.code === 'KeyP') {
-        // Esc primeiro cancela a mira; depois pausa
+        // Esc primeiro cancela a mira; depois pausa. O tiro travado solta.
+        this.fireLatch = false;
+        this.lockOn = false;
         if (this.aiming) this.cancelAim();
         else this.onPause?.();
+        return;
+      }
+      if (this.control === 'notebook' && e.code === 'KeyC') {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        this.lockOn = !this.lockOn;
+        this.onLock?.(this.lockOn);
+        return;
+      }
+      if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && !this.shiftIsBound()) {
+        this.keyboardAim = !this.keyboardAim;
+        this.onAimMode?.(this.keyboardAim);
+        return;
+      }
+      const prep = PREPARE[e.code];
+      if (prep && !this.codeBound(e.code)) {
+        this.press(prep);
         return;
       }
       const slot = this.slotOf(e.code);
@@ -122,11 +359,13 @@ export class InputManager {
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
       const slot = this.slotOf(e.code);
-      if (slot && this.aiming && this.aiming.slot === slot && !this.aiming.touch) this.release();
+      if (slot && this.aiming && this.aiming.slot === slot && !this.aiming.touch && queuesOnRelease(this.styleOf(slot, this.aiming.kind))) this.release();
     });
     // trocou de app / aba: solta tudo (nada fica "preso" apertado)
     const releaseAll = () => {
       this.keys.clear();
+      this.fireLatch = false;
+      this.rmbAim = false;
       this.cancelAim();
       this.releaseSticks();
     };
@@ -257,8 +496,14 @@ export class InputManager {
             return;
           }
         }
+        const kindNow = this.aiming.kind;
         const { dx, dy } = this.aiming.touch;
         const len = Math.hypot(dx, dy);
+        // ultimate de área/linha: toque seco não gasta a carga; é preciso arrastar até o ponto
+        if (!confirmTouchCast(slot, kindNow, len)) {
+          this.cancelAim();
+          return;
+        }
         // arrastou o botão: mira do arrasto; só tocou: usa a mira do analógico direito (se tiver)
         const stickAim = this.manualAim();
         this.touchCast = len > 18 ? { ang: Math.atan2(dy, dx), ratio: Math.min(1, len / 90) } : stickAim !== null ? { ang: stickAim, ratio: 0.75 } : null;
@@ -279,6 +524,7 @@ export class InputManager {
     bindBtn('#btn-bonus', 'bonus');
     bindBtn('#btn-skill', 'skill');
     bindBtn('#btn-ult', 'ult');
+    bindBtn('#btn-plasma', 'plasma');
     // analógico direito (no lugar do ATIRAR): arrastar = mira em 360° e atira enquanto segura;
     // só tocar = atira na mira automática. Ao soltar, a última direção arrastada continua valendo.
     const fireBtn = touchRoot.querySelector<HTMLElement>('#btn-fire')!;
@@ -344,16 +590,27 @@ export class InputManager {
       this.mouse = { x: e.clientX, y: e.clientY, at: performance.now() };
       if (e.button === 0) {
         // clique confirma a mira (habilidades de área)
-        if (this.aiming && !this.aiming.touch) this.release();
-        else this.fireMouse = true;
+        if (this.aiming && !this.aiming.touch) {
+          this.release();
+          this.ateClick = true;
+        } else {
+          this.fireMouse = true;
+          this.mouseDownAt = performance.now();
+          this.ateClick = false;
+        }
       }
       if (e.button === 2) {
-        // botão direito: cancela a mira; sem mira, usa o poder do cristal
-        if (this.aiming) this.cancelAim();
+        if (this.aiming && this.cancelAimButtons === 'both') this.cancelAim();
+        else if (this.powers) {
+          /* no X1 e no 2x2 o direito não solta o F */
+        } else if (this.control === 'notebook') this.rmbAim = true;
         else this.press('bonus');
       }
     });
-    window.addEventListener('mouseup', () => (this.fireMouse = false));
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.fireMouse = false;
+      if (e.button === 2) this.rmbAim = false;
+    });
 
     window.addEventListener(
       'touchstart',
@@ -373,8 +630,16 @@ export class InputManager {
   /** solta os dois analógicos e o tiro (troca de app, fim de partida…) */
   releaseSticks() {
     this.fireMouse = false;
+    this.rmbAim = false;
     this.resetMoveStick();
     this.resetAimStick();
+  }
+
+  /** Mira do notebook: segue o cursor e limita o giro para o trackpad não pular. */
+  smoothAim(target: number): number {
+    if (this.aimAng === null) this.aimAng = target;
+    this.aimAng = stepAim(this.aimAng, target, this.aimSens);
+    return this.aimAng;
   }
 
   /** mira manual do analógico direito: arrastando agora ou a última direção; null = automática */
@@ -385,6 +650,13 @@ export class InputManager {
   /** o dedo está no analógico direito agora (para o indicador de mira) */
   get aimHeld() {
     return this.aimStick.active;
+  }
+
+  private codeBound(code: string) {
+    return (Object.values(this.binds) as string[]).includes(code);
+  }
+  private shiftIsBound() {
+    return this.codeBound('ShiftLeft') || this.codeBound('ShiftRight') || this.binds.dash === 'ShiftLeft' || this.binds.dash === 'ShiftRight';
   }
 
   private slotOf(code: string): Slot | null {
@@ -403,7 +675,8 @@ export class InputManager {
       this.onDenied?.(slot);
       return;
     }
-    if (kind === 'instant' || this.touchMode) {
+    const style = this.styleOf(slot, kind);
+    if (queuesOnPress(style) || (this.touchMode && confirmTouchCast(slot, kind, 0))) {
       this.queued.add(slot);
       return;
     }
@@ -418,6 +691,15 @@ export class InputManager {
     this.aiming = null;
     this.onAimChange?.(null);
   }
+  private styleOf(slot: Slot, kind: AimKind): CastStyle {
+    return resolveCastStyle({
+      castMode: this.castMode,
+      control: this.control,
+      touch: this.touchMode,
+      manual: this.manualSlots.has(slot),
+      kind,
+    });
+  }
   cancelAim() {
     if (!this.aiming) return;
     this.aiming = null;
@@ -430,15 +712,35 @@ export class InputManager {
     let mx = 0;
     let my = 0;
     const k = this.keys;
-    if (k.has('KeyA') || k.has('ArrowLeft')) mx -= 1;
-    if (k.has('KeyD') || k.has('ArrowRight')) mx += 1;
-    if (k.has('KeyW') || k.has('ArrowUp')) my -= 1;
-    if (k.has('KeyS') || k.has('ArrowDown')) my += 1;
+    const bound = new Set(Object.values(this.binds));
+    const held = (code: string) => k.has(code) && !bound.has(code);
+    let ax = 0;
+    let ay = 0;
+    if (k.has('ArrowLeft')) ax -= 1;
+    if (k.has('ArrowRight')) ax += 1;
+    if (k.has('ArrowUp')) ay -= 1;
+    if (k.has('ArrowDown')) ay += 1;
+    if (!this.keyboardAim) {
+      mx += ax;
+      my += ay;
+    }
+    if (this.moveScheme === 'wasd') {
+      if (held('KeyA')) mx -= 1;
+      if (held('KeyD')) mx += 1;
+      if (held('KeyW')) my -= 1;
+      if (held('KeyS')) my += 1;
+    } else if (this.moveScheme === 'esdf') {
+      if (held('KeyS')) mx -= 1;
+      if (held('KeyF')) mx += 1;
+      if (held('KeyE')) my -= 1;
+      if (held('KeyD')) my += 1;
+    }
     if (this.stick.active && (this.stick.x || this.stick.y)) {
       mx = this.stick.x;
       my = this.stick.y;
     }
-    const fire = this.fireTouch || this.fireMouse || k.has(this.binds.fire);
+    if (this.keyboardAim) this.kbAim = keyboardAimAngle(this.kbAim, { x: ax, y: ay }, { x: mx, y: my });
+    const fire = (this.fireTouch || this.fireMouse || this.fireLatch || k.has(this.binds.fire)) && !this.rmbAim;
     const q = this.queued;
     const out = {
       mx,
@@ -449,6 +751,7 @@ export class InputManager {
       bonus: q.has('bonus'),
       skill: q.has('skill'),
       ult: q.has('ult'),
+      plasma: q.has('plasma'),
       fire: fire && !this.aiming,
       aim: null as number | null,
       touchCast: q.size ? this.touchCast : null,
@@ -464,6 +767,10 @@ export class InputManager {
     this.aiming = null;
     this.touchCast = null;
     this.lastAim = null;
+    this.fireLatch = false;
+    this.lockOn = false;
+    this.rmbAim = false;
+    this.aimAng = null;
     this.releaseSticks();
   }
 }

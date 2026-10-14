@@ -1,9 +1,10 @@
-// Tela de equipamento: arma principal, item, habilidade (E) e ultimate (R), com desenho de cada peça.
+// Tela de equipamento: arma principal, item e poderes, com desenho de cada peça.
 // No topo ficam os 4 espaços do seu equipamento; embaixo, um carrossel (deslizar para o lado, igual aos
 // personagens e mapas) com as opções do espaço escolhido, e a ficha completa do item no centro.
 import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout } from '../game/balance';
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
+import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, describePower, kitOf, resolvedDamage, studioOf, type PowerDef } from '../game/elements';
 import { drawGear, GearKind } from './gearArt';
 import { Carousel, fitText } from './carousel';
 
@@ -21,7 +22,7 @@ export interface LoadoutDeps {
   buy: (key: string) => Promise<string | null>;
   toast: (s: string) => void;
   click: () => void;
-  keyOf: (slot: 'skill' | 'ult' | 'item') => string;
+  keyOf: (slot: 'ability' | 'skill' | 'ult' | 'bonus' | 'item' | 'plasma' | 'dash') => string;
 }
 
 const AIM_LABEL = { instant: 'Uso na hora', direction: 'Mira em direção', point: 'Mira em um ponto' } as const;
@@ -71,6 +72,11 @@ export class LoadoutScreen {
   /** de qual espaço é o carrossel montado agora (remonta só ao trocar de espaço) */
   private carTab: Tab | null = null;
   private opts: Opt[] = [];
+  /** extra que já estava salvo quando a tela abriu */
+  private openedSecondary: string | null = null;
+  private focusKind: 'kit' | 'extra' = 'kit';
+  private focusIndex = 0;
+  private focusExtra = 'plasma';
 
   constructor(
     private root: HTMLElement,
@@ -85,13 +91,116 @@ export class LoadoutScreen {
   open(opts: { charId: string; loadout: Loadout; subtitle: string; confirmText: string; onConfirm: (l: Loadout) => void }) {
     this.charId = opts.charId;
     this.l = sanitizeLoadout(opts.loadout, this.deps.owns);
+    this.openedSecondary = this.l.secondary ?? null;
+    this.focusKind = 'kit';
+    this.focusIndex = 0;
     this.onConfirm = opts.onConfirm;
     this.tab = 'primary';
     this.focus = '';
     this.carTab = null;
     this.root.querySelector('.lo-sub')!.textContent = opts.subtitle;
     this.root.querySelectorAll<HTMLElement>('[data-lo-confirm]').forEach((b) => (b.textContent = opts.confirmText));
-    this.render();
+    const title = this.root.querySelector('h2');
+    if (title) title.textContent = 'Poderes';
+    this.renderPowers();
+  }
+
+  /** X1 e 2x2: kit visual e troca do poder extra entre os liberados. */
+  private renderPowers() {
+    const kit = kitOf(this.charId);
+    const slotOf = ['ability', 'skill', 'ult', 'bonus'] as const;
+    const order = [0, 1, 3, 2];
+    const plasmaKey = this.deps.keyOf('plasma');
+    const slots = this.root.querySelector('.lo-slots')!;
+    const kitHtml = order
+      .map((i) => this.powerCard(kit.powers[i], this.deps.keyOf(slotOf[i]), SLOT_COST[i], `data-kit="${i}"`, this.focusKind === 'kit' && this.focusIndex === i, i === 0 ? `art/studio/chars/${this.charId}-poder.webp` : '', i))
+      .join('');
+    const current = studioOf(this.l.secondary);
+    const opened = studioOf(this.openedSecondary);
+    const extraHtml = STUDIO.map((s) => {
+      const owned = this.deps.owns('power:' + s.id);
+      const on = this.l.secondary === s.id;
+      const lock = owned ? '' : ' lock';
+      const mark = on ? ' on' : '';
+      const focus = this.focusKind === 'extra' && this.focusExtra === s.id ? ' focus' : '';
+      return `<button type="button" class="pw-card${mark}${lock}${focus}" draggable="${owned ? 'true' : 'false'}" data-sec="${s.id}" style="--c:${ELEMENT_COLOR[s.element]}">${this.powerFace(s, plasmaKey, s.cost, s.art)}${owned ? '' : `<em class="pw-lock">depois de ${s.unlockMatches} partida${s.unlockMatches === 1 ? '' : 's'}</em>`}</button>`;
+    }).join('');
+    slots.innerHTML = `<div class="lo-kit">${kitHtml}</div><div class="lo-swap"><div class="pw-now" id="pw-equipped">Extra ${plasmaKey}: <b>${current ? current.name : 'vazio'}</b> <span>na conta: ${opened ? opened.name : 'vazio'}</span></div><div class="lo-powers">${extraHtml}</div></div>`;
+    slots.querySelectorAll<HTMLElement>('[data-kit]').forEach((el) => {
+      el.addEventListener('click', () => {
+        this.deps.click();
+        this.focusKind = 'kit';
+        this.focusIndex = Number(el.dataset.kit);
+        this.renderPowers();
+      });
+    });
+    const equip = (id: string) => {
+      this.deps.click();
+      this.focusKind = 'extra';
+      this.focusExtra = id;
+      const row = STUDIO.find((s) => s.id === id);
+      if (!row || !this.deps.owns('power:' + id)) {
+        this.deps.toast(row && row.unlockMatches > 0 ? `Habilidade ainda não desbloqueada. Depois de ${row.unlockMatches} partida${row.unlockMatches === 1 ? '' : 's'}.` : 'Habilidade ainda não desbloqueada');
+        this.renderPowers();
+        return;
+      }
+      this.l = { ...this.l, secondary: this.l.secondary === id ? null : id };
+      this.renderPowers();
+    };
+    slots.querySelectorAll<HTMLButtonElement>('[data-sec]').forEach((el) => {
+      el.addEventListener('click', () => equip(el.dataset.sec || ''));
+      el.addEventListener('dragstart', (ev) => {
+        if (!this.deps.owns('power:' + (el.dataset.sec || ''))) {
+          ev.preventDefault();
+          return;
+        }
+        ev.dataTransfer?.setData('text/plain', el.dataset.sec || '');
+      });
+    });
+    const drop = slots.querySelector<HTMLElement>('#pw-equipped');
+    drop?.addEventListener('dragover', (ev) => ev.preventDefault());
+    drop?.addEventListener('drop', (ev) => {
+      ev.preventDefault();
+      const id = ev.dataTransfer?.getData('text/plain') || '';
+      if (id) equip(id);
+    });
+    const list = this.root.querySelector<HTMLElement>('.lo-list');
+    if (list) list.hidden = true;
+    const det = this.root.querySelector('.lo-detail')!;
+    det.innerHTML = this.powerDetail(kit.passiveName, kit.passiveDesc, plasmaKey, current, opened);
+  }
+
+  private powerCard(pw: PowerDef, key: string, cost: number, attrs: string, focus: boolean, art: string, slot = -1) {
+    return `<button type="button" class="pw-card${focus ? ' focus' : ''}" ${attrs} style="--c:${ELEMENT_COLOR[pw.element]}">${this.powerFace(pw, key, cost, art, slot)}</button>`;
+  }
+
+  private powerFace(pw: PowerDef, key: string, cost: number, art: string, slot = -1) {
+    const kind = pw.act === 'wall' ? 'wall' : pw.act === 'dash' ? 'dash' : pw.act === 'blink' ? 'blink' : pw.act === 'decoy' ? 'decoy' : pw.speed <= 0 ? 'aoe' : 'shot';
+    const icon = art
+      ? `<img class="pw-ico" alt="" src="/${art}" />`
+      : `<svg class="pw-ico" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="${ELEMENT_COLOR[pw.element]}" opacity="0.9"/><text x="32" y="38" text-anchor="middle" font-size="18" fill="#140c22" font-family="sans-serif">${key}</text></svg>`;
+    const hit = resolvedDamage(pw, slot >= 0 ? slot : undefined);
+    const dmg = Math.round((hit / 45) * 100);
+    const range = Math.round((Math.min(pw.range, 320) / 320) * 100);
+    const cd = Math.round((1 - Math.min(pw.cd, 8) / 8) * 100);
+    const price = slot === 2 ? 'carga' : `${cost} energia`;
+    return `${icon}<span class="pw-prev" data-kind="${kind}" aria-hidden="true"><i></i></span><span class="lo-slot-k">${key}</span><b>${pw.name}</b><span class="pw-bars" title="dano, alcance, recarga curta"><i style="width:${dmg}%"></i><i style="width:${range}%"></i><i style="width:${cd}%"></i></span><small>${price}</small>`;
+  }
+
+  private powerDetail(passiveName: string, passiveDesc: string, plasmaKey: string, current: StudioDef | null, opened: StudioDef | null) {
+    const slotOf = ['ability', 'skill', 'ult', 'bonus'] as const;
+    if (this.focusKind === 'extra') {
+      const s = STUDIO.find((x) => x.id === this.focusExtra) ?? STUDIO[0];
+      const owned = this.deps.owns('power:' + s.id);
+      const chosen = current?.name ?? 'vazio';
+      const before = opened?.name ?? 'vazio';
+      const lock = owned ? '' : ` Bloqueado até jogar ${s.unlockMatches} partida${s.unlockMatches === 1 ? '' : 's'}.`;
+      return `<div class="lo-dhead"><span class="lo-state ${this.l.secondary === s.id ? 'on' : ''}">${this.l.secondary === s.id ? 'Equipado' : owned ? 'Toque para equipar' : 'Bloqueado'}</span></div><p class="lo-cmp">Na conta: ${before}. Escolhido agora: ${chosen}.</p><p class="lo-desc">${describePower(s, plasmaKey, s.cost)} ${ELEMENT_FX[s.element]}.${lock} Arraste o card até o extra ou toque nele. Trancado não entra. O servidor confere de novo ao salvar.</p><p class="lo-cmp">${passiveName}: ${passiveDesc}</p>`;
+    }
+    const pw = kitOf(this.charId).powers[this.focusIndex];
+    const key = this.deps.keyOf(slotOf[this.focusIndex] ?? 'ability');
+    const cost = SLOT_COST[this.focusIndex] ?? SLOT_COST[0];
+    return `<div class="lo-dhead"><span class="lo-state on">${pw.name}</span></div><p class="lo-desc">${describePower(pw, key, cost, this.focusIndex)} ${ELEMENT_FX[pw.element]}. ${passiveDesc}</p><p class="lo-cmp">O kit do personagem não troca. Só o extra ${plasmaKey} troca, entre os que já liberaram. WASD anda. Q, E e F são os poderes. R é a ultimate e pede carga. Z é o extra. O direito cancela a mira.</p>`;
   }
 
   get value() {

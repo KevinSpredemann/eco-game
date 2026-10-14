@@ -1,3 +1,5 @@
+import { STUDIO_ARENAS } from './studioArenas';
+
 export const WORLD_W = 1280;
 export const WORLD_H = 720;
 export const BORDER = 30;
@@ -776,6 +778,7 @@ export const ARENAS: ArenaDef[] = [
     grip: 1,
     music: { root: 44, scale: PHRYG, bpm: 112 },
   },
+  ...STUDIO_ARENAS,
 ];
 
 export function getArena(id: string): ArenaDef {

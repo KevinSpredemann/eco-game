@@ -4,7 +4,8 @@ import * as C from '../game/constants';
 import { ENEMY_STATS, TEAM_COLORS } from '../game/sim';
 import type { EchoView, Game, GameEvent, Player } from '../game/sim';
 import { PowerId, getPower } from '../game/powerups';
-import { WEAPONS, BOMB_FUSE, BOMB_RADIUS, MAX_HP, GUN_Y } from '../game/weapons';
+import { WEAPONS, BOMB_FUSE, BOMB_RADIUS, MAX_HP, GUN_Y, PULSE_FUSE, PULSE_RADIUS } from '../game/weapons';
+import { ELEMENT_COLOR, type Element } from '../game/elements';
 import { TRAILS } from '../game/economy';
 import { sampleRecording } from '../systems/echo/recorder';
 import { BOSS, SKILLS, ULTS } from '../game/balance';
@@ -12,6 +13,7 @@ import { drawMonster } from './monster';
 import { drawMarkIcon, drawRouteAhead, drawRoutePreview, traceRoute } from './echoFx';
 import { digestAt, type EchoDigest } from '../systems/echo/digest';
 import { drawCrate, drawMinion, drawPools, drawResSpot, isMinion } from './minions';
+import { corpsePose, gritSpecks } from './visuals';
 import { AimPreview, drawAimPreview, drawBossOver, drawBossUnder, drawCastsGround, drawPylon, drawStatus, drawTraps } from './combatFx';
 import { Expr, SpriteCache, WALK_FRAMES, drawCharacter, drawSymbol, facingOf, rr } from './sprites';
 
@@ -50,6 +52,8 @@ export class Renderer {
   private anim = new Map<string, { recoil: number; cast: number; windup: number; slam: number; roar: number; hurt: number; shoot: number }>();
   /** quem caiu: animação de queda */
   private falls: { p: Player; x: number; y: number; flip: boolean; t: number; boss: boolean }[] = [];
+  private corpses: { x: number; y: number; t: number; kind: string }[] = [];
+  private moteAt = 0;
   /** de onde veio o dano que o jogador local levou (arcos em volta dele) */
   private hitDirs: { ang: number; t: number; src: string }[] = [];
   /** quando cada jogador levou dano por último (para mostrar a recuperação) */
@@ -137,6 +141,7 @@ export class Renderer {
   setArena(a: ArenaDef) {
     this.arena = a;
     this.particles = [];
+    this.corpses = [];
     this.echoWasActive.clear();
     this.buildBase(a);
   }
@@ -245,6 +250,14 @@ export class Renderer {
         g.lineTo(fr.x + fr.w, y);
       }
       g.stroke();
+      g.fillStyle = '#1a1428';
+      for (const s of gritSpecks((a.id.charCodeAt(0) + Math.floor(fr.x)) >>> 0, 110, fr.w, fr.h)) {
+        g.globalAlpha = s.a;
+        g.beginPath();
+        g.ellipse(fr.x + s.x, fr.y + s.y, s.r, s.r * 0.55, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
       this.decorate(g, a, fr, rand);
       g.restore();
       if (a.islands) {
@@ -839,8 +852,9 @@ export class Renderer {
             this.flashColor = '#ff2a4a';
           }
           const from = e.from ? pc(e.from) : null;
-          const label = e.by === 'own' ? 'SEU ECO!' : e.by === 'echo' ? (from ? `ECO DE ${(from.name || from.char.name).replace(/ \(bot\)$/, '').toUpperCase()}` : 'ECO!') : e.by === 'fall' ? 'QUEDA!' : '';
-          this.text(e.x, e.y - 40, label ? `-1 ♥ ${label}` : '-1 ♥', '#ff6b6b', 20);
+          const who = from ? (from.name || from.char.name).replace(/ \(bot\)$/, '').toUpperCase() : '';
+          const label = e.by === 'own' ? 'SEU ECO' : e.by === 'echo' ? 'ECO DA RODADA ANTERIOR' : e.by === 'fall' ? 'QUEDA!' : '';
+          this.text(e.x, e.y - 40, label ? `-1 ♥ ${label}${who && e.by === 'echo' ? ` · ${who}` : ''}` : '-1 ♥', e.by === 'echo' || e.by === 'own' ? '#9fdcff' : '#ff6b6b', 16);
           // perda do coração bem visível (anel vermelho em volta)
           this.ring(e.x, e.y - 30, '#ff4a6a', 56);
           if (e.lost) {
@@ -1004,6 +1018,8 @@ export class Renderer {
           if (e.kind === 'boss') this.shake = Math.max(this.shake, 12);
           break;
         case 'enemyKill':
+          this.corpses.push({ x: e.x, y: e.y, t: 0, kind: e.kind });
+          if (this.corpses.length > 12) this.corpses.shift();
           this.burst(e.x, e.y - 18, '#c8d0e0', e.kind === 'boss' ? 60 : 18, e.kind === 'boss' ? 420 : 240);
           this.burst(e.x, e.y - 18, '#ff8a3c', e.kind === 'boss' ? 40 : 10, 260);
           this.ring(e.x, e.y - 18, '#ffb347', e.kind === 'boss' ? 200 : 50);
@@ -1030,14 +1046,18 @@ export class Renderer {
           const p = pc(e.pid);
           const big = p?.boss ? 40 : 0;
           const jx = (Math.random() - 0.5) * 26;
-          const txt = e.k === 'heal' ? `+${e.n}` : e.k === 'shield' ? `${e.n}⛉` : e.k === 'dodge' ? 'ESQUIVOU' : e.k === 'weak' ? `${e.n}!` : String(e.n);
+          const txt = e.k === 'heal' ? `+${e.n}` : e.k === 'shield' ? `${e.n} ESCUDO` : e.k === 'dodge' ? 'ESQUIVOU' : e.k === 'immune' ? 'IMUNE' : e.k === 'block' ? 'BLOQUEOU' : e.k === 'weak' ? `${e.n}!` : String(e.n);
           const SRC: Record<string, string> = { eco: '#9fdcff', perigo: '#ffb347', explosao: '#ffd23e', criatura: '#a6ff6a', golpe: '#d9a6ff' };
-          const col = e.k === 'heal' ? '#5dffb8' : e.k === 'shield' ? '#7ff0ff' : e.k === 'dodge' ? '#3ee8ff' : e.k === 'weak' ? '#ffe14a' : e.src && SRC[e.src] ? SRC[e.src] : e.pid === this.meId(game) ? '#ff6b6b' : '#ffffff';
+          const col = e.k === 'heal' ? '#5dffb8' : e.k === 'shield' ? '#7ff0ff' : e.k === 'block' ? '#9ad8ff' : e.k === 'immune' ? '#f4f4ff' : e.k === 'dodge' ? '#3ee8ff' : e.k === 'weak' ? '#ffe14a' : e.src && SRC[e.src] ? SRC[e.src] : e.pid === this.meId(game) ? '#ff6b6b' : '#ffffff';
           if (e.k === 'hp' || e.k === 'shield') this.lastHit.set(e.pid, performance.now() / 1000);
           if (e.pid === this.meId(game) && (e.k === 'hp' || e.k === 'shield') && e.sx !== undefined && e.sy !== undefined) {
             const h = game.human;
             this.hitDirs.push({ ang: Math.atan2(e.sy - h.y, e.sx - h.x), t: 0.9, src: e.src ?? 'arma' });
             if (this.hitDirs.length > 6) this.hitDirs.shift();
+          }
+          if (e.note && e.pid === this.meId(game) && e.k === 'hp') {
+            this.text(e.x, e.y - 86, `${e.note}: −${e.n}`, '#9fdcff', 13);
+            this.ring(e.x, e.y - 20, '#9fdcff', 48);
           }
           // golpes rápidos no mesmo alvo viram UM número que vai somando (não empilha dezenas de números)
           if (e.k === 'hp' || e.k === 'shield' || e.k === 'heal') {
@@ -1064,6 +1084,10 @@ export class Renderer {
         case 'stunned':
           this.text(e.x, e.y - 100, 'TONTO!', '#ffd23e', 14);
           break;
+        case 'combo':
+          this.text(e.x, e.y - 108, `${e.name} +${e.bonus}`, '#ffe14a', 18);
+          this.ring(e.x, e.y - 20, '#ffe14a', 54);
+          break;
         case 'mark':
           this.ring(e.x, e.y - 28, '#ff5a3c', 40);
           break;
@@ -1075,8 +1099,10 @@ export class Renderer {
         case 'skill': {
           this.animOf(e.pid).cast = 1;
           const p = pc(e.pid);
-          const col = p?.color ?? '#fff';
-          this.ring(e.x, e.y - 10, col, 44);
+          const el = e.skill as Element;
+          const col = e.skill === 'plasma' ? '#c86bff' : ELEMENT_COLOR[el] ?? p?.color ?? '#fff';
+          this.ring(e.x, e.y - 10, col, e.r && e.r > 20 ? Math.min(e.r, 140) : 44);
+          if (!this.reducedEffects && ELEMENT_COLOR[el]) this.burst(e.x, e.y - 10, col, 12, 180);
           if (e.skill === 'rolamento') this.burst(e.x, e.y, '#bff4ff', 10, 160);
           if (e.skill === 'estimulo') this.ring(e.x, e.y, '#5dffb8', SKILLS.estimulo.radius ?? 160);
           break;
@@ -1340,6 +1366,16 @@ export class Renderer {
 
   private burst(x: number, y: number, color: string, n: number, sp: number) {
     if (this.reducedEffects) n = Math.ceil(n / 3);
+    if (this.particles.length > 150) {
+      let drop = this.particles.length - 90;
+      this.particles = this.particles.filter((p) => {
+        if (drop > 0 && p.kind === 'spark') {
+          drop--;
+          return false;
+        }
+        return true;
+      });
+    }
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = sp * (0.3 + Math.random() * 0.7);
@@ -1396,7 +1432,13 @@ export class Renderer {
       }
       this.drawEchoes(game, time);
       this.drawClones(game, time);
+      this.drawCorpses(dt);
       this.drawEnemies(game, time);
+      if (game.phase === 'play' && !this.reducedEffects && time - this.moteAt > 0.5 && this.particles.length < 48) {
+        this.moteAt = time;
+        const h = game.human;
+        this.particles.push({ x: h.x + (Math.random() - 0.5) * 380, y: h.y + (Math.random() - 0.5) * 240, vx: 6, vy: -14, life: 0, max: 1.5, color: 'rgba(255,255,255,0.45)', size: 1.5, kind: 'spark' });
+      }
       this.drawAbilityOrbs(game, time);
       const ps = game.players.filter((p) => p.playing && p.alive).sort((p1, p2) => p1.y - p2.y);
       for (const p of ps) this.drawTrail(p, time);
@@ -2038,6 +2080,18 @@ export class Renderer {
       ctx.globalCompositeOperation = 'lighter';
       this.sprites.draw(ctx, img, e.x, e.y + 4, flip, SPRITE_SCALE);
       ctx.globalCompositeOperation = 'source-over';
+      // contorno holográfico: o Eco não se confunde com um jogador ou um bot
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, alpha + 0.25);
+      ctx.strokeStyle = e.iced ? '#b8e6ff' : '#d7f7ff';
+      ctx.shadowColor = e.rec.color;
+      ctx.shadowBlur = 12;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(e.x, e.y - 28, 16, 30, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
       if (e.iced) {
         ctx.strokeStyle = 'rgba(200,240,255,0.9)';
         ctx.lineWidth = 2;
@@ -2087,13 +2141,21 @@ export class Renderer {
 
   private drawClones(game: Game, time: number) {
     const ctx = this.ctx;
+    for (const g of game.groves ?? []) {
+      ctx.strokeStyle = hexA('#3dcc6a', 0.55);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2);
+      ctx.stroke();
+      if (!this.reducedEffects && Math.random() < 0.3 && this.particles.length < 120) this.burst(g.x, g.y, '#5dffb8', 2, 40);
+    }
     for (const c of game.clones) {
       const owner = game.players.find((p) => p.id === c.owner);
       if (!owner) continue;
       const { facing, flip } = facingOf(c.dir);
       const frame = Math.floor(time * 14) % WALK_FRAMES;
       const img = this.sprites.get(owner.char, facing, frame, true, '#7dffef');
-      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(time * 30);
+      ctx.globalAlpha = c.decoy ? 0.55 : 0.5 + 0.3 * Math.sin(time * 30);
       this.sprites.draw(ctx, img, c.x, c.y + 4, flip, SPRITE_SCALE * 0.85);
       ctx.globalAlpha = 1;
     }
@@ -2112,16 +2174,20 @@ export class Renderer {
     // sombra + anel de cor
     ctx.globalAlpha = alpha;
     if (p.boss) drawBossUnder(ctx, p, time);
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
     ctx.beginPath();
-    ctx.ellipse(p.x, p.y + 3, 15, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x + 3, p.y + 6, 22, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.34)';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 3, 12, 4.5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = p.color;
     ctx.lineWidth = human ? 3.5 : 2.5;
     ctx.beginPath();
     ctx.ellipse(p.x, p.y + 3, C.PLAYER_R + 3, (C.PLAYER_R + 3) * 0.5, 0, 0, Math.PI * 2);
     ctx.stroke();
-    if (p.team >= 0 && game.mode === 'bandeira') {
+    if (p.team >= 0 && game.mode === 'dupla') {
       // anel do time
       ctx.strokeStyle = TEAM_COLORS[p.team];
       ctx.lineWidth = 3;
@@ -2140,7 +2206,9 @@ export class Renderer {
       ctx.stroke();
     }
     // lento (gelo / areia / fumaça)
-    if (p.slowT > 0) {
+    if (p.burnT > 0 && !this.reducedEffects && Math.random() < 0.35)
+      this.particles.push({ x: p.x + (Math.random() - 0.5) * 16, y: p.y - 28, vx: (Math.random() - 0.5) * 20, vy: -50 - Math.random() * 30, life: 0, max: 0.45, color: '#ff7a3a', size: 2.4, kind: 'spark' });
+    if (p.slowT > 0 || p.frozenT > 0) {
       ctx.strokeStyle = 'rgba(160,230,255,0.8)';
       ctx.lineWidth = 2;
       for (let k = 0; k < 3; k++) {
@@ -2196,10 +2264,11 @@ export class Renderer {
     const rk = an.recoil * an.recoil * 3;
     const rx = -Math.cos(p.aim) * rk;
     const ry = -Math.sin(p.aim) * rk * 0.5;
+    const powers = game.mode === 'duelo' || game.mode === 'dupla';
+    if (game.combat && human && p.alive && !powers) this.drawAimGuide(game, p, time);
     ctx.save();
     ctx.translate(rx, ry);
-    if (game.combat && human && p.alive) this.drawAimGuide(game, p, time);
-    if (gunBehind) this.drawGun(p);
+    if (gunBehind && !powers) this.drawGun(p);
     // vida: inclina ao correr, pula de alegria, amassa ao levar dano
     const sp = Math.hypot(p.vx, p.vy);
     const lean = p.moving ? Math.max(-0.14, Math.min(0.14, (p.vx / C.SPEED) * 0.09)) : 0;
@@ -2238,7 +2307,7 @@ export class Renderer {
         this.particles.push({ x: p.x - Math.cos(p.dir) * 8 + (Math.random() - 0.5) * 8, y: p.y + 2, vx: -p.vx * 0.12, vy: -20 - Math.random() * 20, life: 0, max: 0.45, color: dc, size: 3 + Math.random() * 2, kind: 'spark' });
       }
     }
-    if (game.combat && !gunBehind) this.drawGun(p);
+    if (game.combat && !gunBehind && !powers) this.drawGun(p);
     ctx.restore();
     if (p.hitFlash > 0) {
       ctx.globalAlpha = p.hitFlash * 2;
@@ -2286,7 +2355,7 @@ export class Renderer {
         ctx.stroke();
       }
       const lh = this.lastHit.get(p.id) ?? -99;
-      drawStatus(ctx, game, p, time, game.mode !== 'nucleo' && !p.boss && p.hp < p.maxHp && performance.now() / 1000 - lh > 4);
+      drawStatus(ctx, game, p, time, !p.boss && p.hp < p.maxHp && performance.now() / 1000 - lh > 4);
     }
     // seta para o núcleo quando estiver carregando energia
     if (human && p.carry > 0) {
@@ -2397,15 +2466,17 @@ export class Renderer {
     }
     for (const bm of game.bombs) {
       if (bm.t < 0.35) continue;
-      const k = (bm.t - 0.35) / BOMB_FUSE;
-      ctx.strokeStyle = `rgba(255,90,60,${0.25 + k * 0.5})`;
+      const fuse = bm.pulse ? PULSE_FUSE : BOMB_FUSE;
+      const k = (bm.t - 0.35) / fuse;
+      const rad = bm.pulse ? PULSE_RADIUS : bm.ice ? 110 : BOMB_RADIUS;
+      ctx.strokeStyle = bm.pulse ? `rgba(190,140,255,${0.3 + k * 0.5})` : `rgba(255,90,60,${0.25 + k * 0.5})`;
       ctx.lineWidth = 2;
       ctx.setLineDash([8, 6]);
       ctx.beginPath();
-      ctx.arc(bm.tx, bm.ty, BOMB_RADIUS, 0, Math.PI * 2);
+      ctx.arc(bm.tx, bm.ty, rad, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = `rgba(255,90,60,${0.08 + k * 0.12})`;
+      ctx.fillStyle = bm.pulse ? `rgba(180,120,255,${0.1 + k * 0.14})` : `rgba(255,90,60,${0.08 + k * 0.12})`;
       ctx.fill();
     }
   }
@@ -2475,6 +2546,9 @@ export class Renderer {
         ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
         ctx.fill();
         continue;
+      }
+      if (!this.reducedEffects && this.particles.length < 120 && Math.random() < 0.4) {
+        this.particles.push({ x: b.x - (b.vx / sp) * 10, y: b.y - (b.vy / sp) * 10, vx: 0, vy: 0, life: 0, max: 0.22, color: col, size: 3, kind: 'spark' });
       }
       if (b.weapon === 'foguete') {
         ctx.save();
@@ -2552,7 +2626,7 @@ export class Renderer {
       ctx.fill();
       ctx.stroke();
       const lit = bm.t > 0.35 && Math.sin(time * (14 + bm.t * 30)) > 0;
-      ctx.fillStyle = lit ? '#ff3a1e' : '#ffb347';
+      ctx.fillStyle = bm.pulse ? (lit ? '#d7b4ff' : '#7a5cff') : lit ? '#ff3a1e' : '#ffb347';
       ctx.beginPath();
       ctx.arc(x + 4, y - 7, 3, 0, Math.PI * 2);
       ctx.fill();
@@ -2596,6 +2670,12 @@ export class Renderer {
       drawPowerIcon(ctx, pw.kind, 0, 0, 1, def.color);
       ctx.restore();
       label(ctx, pw.x, pw.y - 52 + bob, def.short.toUpperCase(), def.color, 13);
+      const me = game.human;
+      if (me?.alive && Math.hypot(me.x - pw.x, me.y - pw.y) < 110) {
+        label(ctx, pw.x, pw.y - 70 + bob, def.name, '#ffffff', 12);
+        const hint = def.desc.length > 46 ? def.desc.slice(0, 44) + '…' : def.desc;
+        label(ctx, pw.x, pw.y - 86 + bob, hint, def.color, 11);
+      }
     }
   }
 
@@ -2650,8 +2730,14 @@ export class Renderer {
     // começo do Rebobinando: some com os textos que sobraram da rodada (não cobrem a arena)
     if (game.phaseT < 0.1) for (const p of this.particles) if (p.kind === 'text' && p.life < p.max - 0.15) p.life = p.max - 0.15;
     // tom azul por cima da arena (o passado)
-    ctx.fillStyle = 'rgba(30,60,120,0.22)';
+    ctx.fillStyle = 'rgba(20,40,110,0.4)';
     ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    const pulse = 0.85 + Math.sin(time * 6) * 0.15;
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    label(ctx, WORLD_W / 2, 58, 'REBOBINANDO', '#f4fbff', 32);
+    label(ctx, WORLD_W / 2, 96, 'ECO GRAVADO · volta na próxima rodada', '#b7ecff', 16);
+    ctx.restore();
     for (const d of digests) {
       const col = d.color;
       // parte já rebobinada (de agora até o fim): tracejado claro
@@ -2754,7 +2840,7 @@ export class Renderer {
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     ctx.fillStyle = Math.sin(time * 8) > -0.3 ? '#7ff0ff' : 'rgba(127,240,255,0.5)';
-    ctx.fillText('◀◀ REBOBINANDO', bx, by - 13);
+    ctx.fillText('◀◀ ECO', bx, by - 13);
     const sec = Math.ceil(tms / 1000);
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffffff';
@@ -2780,7 +2866,6 @@ export class Renderer {
 
   private drawPrepHints(game: Game, time: number) {
     const ctx = this.ctx;
-    if (game.mode === 'nucleo') label(ctx, game.core.x, game.core.y - C.CORE_R - 14, 'NÚCLEO', '#5dff8a', 16);
     const p = game.human;
     if (p.playing) {
       const r = 34 + Math.sin(time * 6) * 4;
@@ -3035,6 +3120,33 @@ export class Renderer {
     }
   }
 
+  private drawCorpses(dt: number) {
+    const ctx = this.ctx;
+    for (const c of this.corpses) {
+      c.t += dt;
+      const pose = corpsePose(c.t);
+      if (pose.done) continue;
+      ctx.save();
+      ctx.globalAlpha = pose.alpha;
+      ctx.translate(c.x, c.y + pose.dy);
+      ctx.rotate(pose.rot);
+      ctx.scale(1.15, pose.squash);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath();
+      ctx.ellipse(2, 4, 16, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = c.kind === 'drone' ? '#8d97ad' : '#c45a4a';
+      ctx.strokeStyle = '#120c26';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 14, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    this.corpses = this.corpses.filter((c) => !corpsePose(c.t).done);
+  }
+
   private drawEnemies(game: Game, time: number) {
     const ctx = this.ctx;
     for (const e of (game as any).enemies ?? []) {
@@ -3054,8 +3166,12 @@ export class Renderer {
       ctx.ellipse(e.x, e.y + 3, r * 0.9, r * 0.35, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.save();
-      ctx.translate(e.x, e.y + hover);
-      if (e.hitFlash > 0) ctx.filter = 'brightness(2.2)';
+      ctx.translate(e.x, e.y + hover + (e.hitFlash > 0 ? 4 : 0));
+      if (e.hitFlash > 0) {
+        ctx.scale(1.06, 0.88);
+        ctx.filter = 'brightness(2.2)';
+      }
+      if (e.chargeT > 0) ctx.translate(Math.cos(e.dir) * 10, Math.sin(e.dir) * 4);
       const eye = e.stunT > 0 ? '#ffd23e' : '#ff3b3b';
       if (e.kind === 'drone') {
         // corpo esférico com hélices

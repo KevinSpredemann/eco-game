@@ -1,0 +1,50 @@
+# Preview da branch feature/eco-balance-and-fixes.
+# Crie um Blueprint NOVO apontando para ESTE arquivo.
+# Não troque o caminho do Blueprint que já publica eco-game e eco-server.
+# Este arquivo não declara esses serviços e não usa o banco de produção.
+
+services:
+  # jogo (PWA) desta branch. O endereço público aparece no Render depois de criar o Blueprint.
+  - type: web
+    name: eco-game-preview
+    runtime: static
+    branch: feature/eco-balance-and-fixes
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # hostname do servidor de preview; o jogo acrescenta https
+      - key: VITE_SERVER_URL
+        fromService:
+          type: web
+          name: eco-server-preview
+          property: host
+    headers:
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+
+  # servidor de preview: mesmas regras novas do X1. Contas ficam num arquivo local, não no Neon.
+  - type: web
+    name: eco-server-preview
+    runtime: node
+    plan: free
+    region: virginia
+    branch: feature/eco-balance-and-fixes
+    buildCommand: npm ci && npm run build:server
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: SECRET
+        generateValue: true
+      - key: DATA_FILE
+        value: /tmp/eco-preview-users.json

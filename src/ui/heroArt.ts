@@ -17,6 +17,7 @@ export class HeroScene {
   private h = 0;
   private raf = 0;
   locked = false;
+  lockNote = '';
 
   /** transparente = sem fundo (para usar sobre outra cena, ex.: tela inicial) */
   constructor(
@@ -24,10 +25,11 @@ export class HeroScene {
     private transparent = false,
   ) {}
 
-  set(c: CharacterDef, locked: boolean) {
+  set(c: CharacterDef, locked: boolean, note = '') {
     if (this.c?.id !== c.id) this.parts = [];
     this.c = c;
     this.locked = locked;
+    this.lockNote = note;
     this.t = 0;
   }
 
@@ -176,7 +178,7 @@ export class HeroScene {
     if (this.locked) {
       // selo de bloqueado (o poder aparece como amostra)
       g.font = `700 ${Math.max(11, h * 0.028)}px "Chakra Petch", sans-serif`;
-      const txt = 'BLOQUEADO · AMOSTRA DO PODER';
+      const txt = this.lockNote || `${this.c?.name ?? 'Personagem'} · bloqueado`;
       const tw = g.measureText(txt).width + 22;
       g.fillStyle = 'rgba(8,6,22,0.8)';
       g.strokeStyle = '#ffd23e';

@@ -1,14 +1,17 @@
 // Espelho da partida online no aparelho: recebe o estado do servidor, suaviza o movimento
 // dos outros e prevê o movimento do próprio jogador para responder na hora.
-import { ArenaDef, getArena, isGround } from '../game/arenas';
+import { ArenaDef, BORDER, WORLD_H, WORLD_W, getArena, inRect, isGround, windState } from '../game/arenas';
+import { sweepCircle } from '../game/sweep';
+import { choosePortalExit, portalPairAt } from '../game/portals';
 import { getCharacter, withLevel, withSkin } from '../game/characters';
 import * as C from '../game/constants';
 import { ENEMY_STATS, FlagState, Game, GameEvent, GameMode, Hill, Input, MODE_RULES, Player, Storm } from '../game/sim';
 import type { PowerId } from '../game/powerups';
-import { loadoutPrimary } from '../game/weapons';
+import { GUN_Y, loadoutPrimary } from '../game/weapons';
 import type { EchoDigest, RoundEchoLine } from '../systems/echo/digest';
 import { assignUniqueColors, assignUniqueNames } from '../game/colors';
 import { BOSS, COMBAT, DEFAULT_LOADOUT, Loadout, sanitizeLoadout } from '../game/balance';
+import { speedMul } from '../game/elements';
 import { CAST_KINDS, ENEMY_KINDS, ITEM_IDS, Snapshot, StartInfo, WALL_KINDS, WEAPON_IDS } from './protocol';
 import type { EchoRecording } from '../shared/types';
 
@@ -25,6 +28,7 @@ export class ClientGame {
   fragments: any[] = [];
   powerups: { id: number; kind: PowerId; x: number; y: number; age: number }[] = [];
   clones: any[] = [];
+  groves: { id: number; owner: string; team: number; x: number; y: number; r: number; t: number; acc: number; heal: number }[] = [];
   echoViews: any[] = [];
   bullets: any[] = [];
   bombs: any[] = [];
@@ -54,12 +58,15 @@ export class ClientGame {
   coreNext: { x: number; y: number } | null = null;
   goldenSpot: { x: number; y: number } | null = null;
   goldenDone = false;
-  phase: 'prep' | 'play' | 'rewind' | 'results' = 'prep';
+  phase: 'prep' | 'play' | 'rewind' | 'call' | 'results' = 'prep';
   phaseT = 0;
   round = 1;
   totalRounds = 4;
   tiebreak = false;
   roundDur = 30;
+  sudden = false;
+  suddenLeft = 0;
+  callWinner: string | null = null;
   roundT = 0;
   worldT = 0;
   objective: any = 'dourado';
@@ -79,6 +86,10 @@ export class ClientGame {
   private echoTarget = new Map<string, { x: number; y: number }>();
   /** posição prevista do jogador local */
   private pred: { x: number; y: number } | null = null;
+  /** velocidade prevista (gelo escorrega; sem isso o online empurra você para o perigo que o servidor vê) */
+  private predV = { x: 0, y: 0 };
+  /** mira manual deste quadro: o snapshot não apaga o analógico */
+  private aimLock = false;
   lastSnapAt = 0;
 
   constructor(info: StartInfo) {
@@ -88,7 +99,7 @@ export class ClientGame {
     this.rules = MODE_RULES[this.mode];
     this.totalRounds = this.rules.rounds;
     for (const r of info.roster) {
-      const ch = withSkin(withLevel(getCharacter(r.char), r.lv, info.mode === 'ondas'), r.skin);
+      const ch = withSkin(withLevel(getCharacter(r.char), r.lv, false), r.skin);
       const p = blankPlayer(r.id, r.name, ch, r.isBot, r.skin, r.trail, sanitizeLoadout(r.loadout));
       p.boss = !!r.boss;
       if (p.boss) this.bossId = p.id;
@@ -103,7 +114,7 @@ export class ClientGame {
     return this.players.find((p) => p.id === this.localId) ?? this.players[0];
   }
   get combat() {
-    return this.mode !== 'nucleo';
+    return true;
   }
   hostile(a: { id: string; team: number }, b: { id: string; team: number }) {
     return Game.prototype.hostile.call(this, a, b);
@@ -114,14 +125,15 @@ export class ClientGame {
   hitR(p: Player) {
     return p.boss ? BOSS.hitR : C.PLAYER_R;
   }
-  enemyHostileTo(p: { team: number }) {
-    return !(this.mode === 'chefe' && p.team === 1);
+  enemyHostileTo(_p: { team: number }) {
+    return true;
   }
   zoneState(i: number): 'off' | 'warn' | 'on' {
     const c = this.zones[i];
     return c === '2' ? 'on' : c === '1' ? 'warn' : 'off';
   }
   timeLeft() {
+    if (this.sudden) return Math.max(0, this.suddenLeft);
     return Math.max(0, this.roundDur - this.roundT);
   }
   drainEvents(): GameEvent[] {
@@ -143,6 +155,9 @@ export class ClientGame {
     this.tiebreak = s.tb;
     this.roundDur = s.rd;
     this.roundT = s.rt;
+    this.sudden = s.sd === 1;
+    this.suddenLeft = s.sl ?? 0;
+    this.callWinner = s.ph === 'call' ? (s.cw ? s.cw : null) : null;
     this.worldT = s.wt;
     this.core = { x: s.core[0], y: s.core[1] };
     this.coreNext = s.cn ? { x: s.cn[0], y: s.cn[1] } : null;
@@ -156,7 +171,7 @@ export class ClientGame {
     this.zones = s.Z;
 
     for (const row of s.P) {
-      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd] = row as any[];
+      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks, energy, plasmaCd, plasmaT, plasmaOn, basicCd] = row as any[];
       const p = this.players.find((q) => q.id === id);
       if (!p) continue;
       const wasAlive = p.alive;
@@ -183,6 +198,18 @@ export class ClientGame {
       p.stasisT = fl & 524288 ? 1 : 0;
       p.castT = fl & 1048576 ? 1 : 0;
       p.exhaustT = fl & 2097152 ? 1 : 0;
+      p.burnT = burnT ?? (fl & 4194304 ? 1 : 0);
+      p.frozenT = frozenT ?? (fl & 8388608 ? 1 : 0);
+      p.rootT = fl & 16777216 ? 1 : 0;
+      p.healT = fl & 33554432 ? 1 : 0;
+      p.ambushT = fl & 67108864 ? 1 : 0;
+      p.basicCd = basicCd ?? 0;
+      p.powerCd = [pcd0 ?? 0, pcd1 ?? 0, pcd2 ?? 0, pcd3 ?? 0];
+      p.comboStacks = stacks ?? 0;
+      p.energy = energy ?? 100;
+      p.plasmaCd = plasmaCd ?? 0;
+      p.plasmaT = plasmaT ?? 0;
+      p.plasmaOn = !!plasmaOn;
       p.maxHp = maxHp ?? COMBAT.maxHp;
       p.skillCd = skillCd ?? 0;
       p.ultCharge = ult ?? 0;
@@ -209,7 +236,7 @@ export class ClientGame {
       p.abilCd = abilCd;
       p.dashCd = dashCd;
       p.shieldHp = shieldHp;
-      if (p.id !== this.localId) p.aim = aim;
+      if (p.id !== this.localId || !this.aimLock) p.aim = aim;
       p.power = pw ? { id: pw, t: pwt } : null;
       p.hitFlash = hitFlash;
       p.vx = vx;
@@ -220,7 +247,10 @@ export class ClientGame {
       if (far || !wasAlive || prevPhase !== this.phase) {
         p.x = x;
         p.y = y;
-        if (id === this.localId) this.pred = { x, y };
+        if (id === this.localId) {
+          this.pred = { x, y };
+          this.predV = { x: vx, y: vy };
+        }
       }
     }
     if (s.EM) {
@@ -262,9 +292,10 @@ export class ClientGame {
     this.echoViews = views;
     this.fragments = s.F.map(([id, x, y, g]) => ({ id, x, y, golden: !!g, vx: 0, vy: 0, age: 1, pickDelay: 0 }));
     this.powerups = s.W.map(([id, kind, x, y, age]) => ({ id: id as number, kind: kind as PowerId, x: x as number, y: y as number, age: age as number }));
-    this.clones = s.C.map(([owner, x, y, dir]) => ({ owner, x, y, dir, t: 1 }));
+    this.clones = s.C.map(([owner, x, y, dir, decoy]) => ({ owner, x, y, dir, t: 1, decoy: !!decoy }));
+    this.groves = (s.GR ?? []).map(([id, x, y, r, t, heal]) => ({ id, owner: '', team: -1, x, y, r, t, acc: 0, heal }));
     this.bullets = s.B.map(([id, x, y, vx, vy, wi, fe, life, en]) => ({ id, x, y, vx, vy, weapon: WEAPON_IDS[wi] ?? 'blaster', fromEcho: !!fe, life, owner: en ? 'enemy' : '' }));
-    this.bombs = s.BM.map(([id, x, y, tx, ty, t]) => ({ id, x, y, tx, ty, t, sx: x, sy: y }));
+    this.bombs = s.BM.map(([id, x, y, tx, ty, t, pulse, ice]) => ({ id, x, y, tx, ty, t, sx: x, sy: y, pulse: !!pulse, ice: !!ice }));
     this.mines = s.M.map(([id, x, y, armed]) => ({ id, x, y, armT: armed ? 0 : 1 }));
     this.turrets = s.T.map(([id, owner, x, y, aim, hp]) => ({ id, owner, x, y, aim, t: 1, cd: 0, hp: hp ?? COMBAT.turret.hp }));
     this.teamScore = s.ts ?? [0, 0];
@@ -305,7 +336,12 @@ export class ClientGame {
 
   /** avança a visualização entre um pacote e outro */
   update(dt: number, input: Input) {
+    if (typeof input.aim === 'number' && isFinite(input.aim)) {
+      this.human.aim = input.aim;
+      this.aimLock = true;
+    } else this.aimLock = false;
     if (this.phase === 'play') this.roundT += dt;
+    if (this.sudden && this.phase === 'play') this.suddenLeft = Math.max(0, this.suddenLeft - dt);
     this.worldT += dt;
     this.phaseT += dt;
     const k = 1 - Math.exp(-dt * 14);
@@ -321,10 +357,36 @@ export class ClientGame {
           mx /= m;
           my /= m;
         }
-        const speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * (p.slowT > 0 ? 0.6 : 1) * (p.castT > 0 ? COMBAT.castMove : 1) * (p.boss ? BOSS.speedMul : 1) * (p.stunT > 0 ? 0 : 1);
-        this.pred.x += mx * speed * dt;
-        this.pred.y += my * speed * dt;
+        const onIce = (this.arena.ice ?? []).some((r) => inRect(this.pred!.x, this.pred!.y, r));
+        const grip = onIce ? 0.12 : this.arena.grip;
+        const kIce = 1 - Math.exp(-12 * grip * dt);
+        const speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * (p.slowT > 0 ? 0.6 : 1) * (p.castT > 0 ? COMBAT.castMove : 1) * (p.boss ? BOSS.speedMul : 1) * (p.stunT > 0 ? 0 : 1) * speedMul(p.char.id, p.comboStacks);
+        this.predV.x += (mx * speed - this.predV.x) * kIce;
+        this.predV.y += (my * speed - this.predV.y) * kIce;
+        this.pred.x += this.predV.x * dt;
+        this.pred.y += this.predV.y * dt;
+        if (this.arena.wind) {
+          const w = windState(this.arena.wind, this.worldT);
+          if (w.phase === 'blow') this.pred.x += w.dir * this.arena.wind.force * dt;
+        }
         collideWorld.call(this as any, this.pred);
+        if ((p.portalCd ?? 0) <= 0) {
+          const gate = portalPairAt(this.arena.portals, this.pred.x, this.pred.y);
+          if (gate) {
+            const dir = Math.hypot(this.predV.x, this.predV.y) > 30 ? Math.atan2(this.predV.y, this.predV.x) : p.dir;
+            const exit = choosePortalExit(
+              this.arena,
+              gate.to,
+              dir,
+              this.worldT,
+              (i) => this.zoneState(i) === 'on',
+              (x, y) => isFree.call(this as any, x, y, C.PLAYER_R),
+            );
+            this.pred.x = exit.x;
+            this.pred.y = exit.y;
+            p.portalCd = C.PORTAL_CD;
+          }
+        }
         if (this.arena.islands && !isGround(this.arena, this.pred.x, this.pred.y, this.worldT)) {
           // deixa o servidor decidir a queda
         }
@@ -358,8 +420,26 @@ export class ClientGame {
       }
     }
     for (const b of this.bullets) {
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
+      if (b.life <= 0 || (b.vx === 0 && b.vy === 0)) continue;
+      const x1 = b.x + b.vx * dt;
+      const y1 = b.y + b.vy * dt;
+      const rects = this.iceWalls.length ? [...this.arena.walls, ...this.iceWalls] : this.arena.walls;
+      const hit = sweepCircle(b.x, b.y + GUN_Y, x1, y1 + GUN_Y, 3, rects, this.arena.pillars, {
+        minX: BORDER + 3,
+        minY: BORDER + 3,
+        maxX: WORLD_W - BORDER - 3,
+        maxY: WORLD_H - BORDER - 3,
+      });
+      if (hit === null) {
+        b.x = x1;
+        b.y = y1;
+      } else {
+        b.x += (x1 - b.x) * hit;
+        b.y += (y1 - b.y) * hit;
+        b.vx = 0;
+        b.vy = 0;
+        b.life = 0;
+      }
     }
     for (const b of this.bombs) b.t += dt;
     for (const c of this.casts) c.t += dt;
@@ -399,6 +479,19 @@ function blankPlayer(id: string, name: string, char: ReturnType<typeof getCharac
     phaseT: 0,
     shieldT: 0,
     portalCd: 0,
+    burnT: 0,
+    frozenT: 0,
+    gustT: 0,
+    shockT: 0,
+    burnAcc: 0,
+    burnDps: 0,
+    burnFrom: '',
+    powerCd: [0, 0, 0, 0],
+    energy: 100,
+    plasmaCd: 0,
+    plasmaT: 0,
+    plasmaOn: !!loadout.secondary,
+    comboStacks: 0,
     hidden: false,
     tookDamage: false,
     tripleDone: false,
@@ -448,6 +541,16 @@ function blankPlayer(id: string, name: string, char: ReturnType<typeof getCharac
     ccResistT: 0,
     stasisT: 0,
     castT: 0,
+    pendingCast: null,
+    basicCd: 0,
+    rootT: 0,
+    rootResistT: 0,
+    flowT: 0,
+    ambushT: 0,
+    healT: 0,
+    dashDmg: 0,
+    dashEl: null,
+    dashHit: [],
     lastHurtAt: 0,
     exhaustT: 0,
     boss: false,

@@ -52,8 +52,8 @@ export function getPower(id: PowerId): PowerDef {
   return POWERS.find((p) => p.id === id)!;
 }
 
-export function randomPower(mode: 'nucleo' | 'combate' = 'nucleo', rand = Math.random): PowerId {
-  const pool = POWERS.filter((p) => p.modes.includes(mode));
+export function randomPower(rand = Math.random): PowerId {
+  const pool = POWERS.filter((p) => p.id !== 'ima');
   const total = pool.reduce((s, p) => s + p.weight, 0);
   let r = rand() * total;
   for (const p of pool) {
