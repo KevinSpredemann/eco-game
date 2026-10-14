@@ -12,6 +12,7 @@ import { drawMonster } from './monster';
 import { drawMarkIcon, drawRouteAhead, drawRoutePreview, traceRoute } from './echoFx';
 import { digestAt, type EchoDigest } from '../systems/echo/digest';
 import { drawCrate, drawMinion, drawPools, drawResSpot, isMinion } from './minions';
+import { corpsePose, gritSpecks } from './visuals';
 import { AimPreview, drawAimPreview, drawBossOver, drawBossUnder, drawCastsGround, drawPylon, drawStatus, drawTraps } from './combatFx';
 import { Expr, SpriteCache, WALK_FRAMES, drawCharacter, drawSymbol, facingOf, rr } from './sprites';
 
@@ -50,6 +51,8 @@ export class Renderer {
   private anim = new Map<string, { recoil: number; cast: number; windup: number; slam: number; roar: number; hurt: number; shoot: number }>();
   /** quem caiu: animação de queda */
   private falls: { p: Player; x: number; y: number; flip: boolean; t: number; boss: boolean }[] = [];
+  private corpses: { x: number; y: number; t: number; kind: string }[] = [];
+  private moteAt = 0;
   /** de onde veio o dano que o jogador local levou (arcos em volta dele) */
   private hitDirs: { ang: number; t: number; src: string }[] = [];
   /** quando cada jogador levou dano por último (para mostrar a recuperação) */
@@ -137,6 +140,7 @@ export class Renderer {
   setArena(a: ArenaDef) {
     this.arena = a;
     this.particles = [];
+    this.corpses = [];
     this.echoWasActive.clear();
     this.buildBase(a);
   }
@@ -245,6 +249,14 @@ export class Renderer {
         g.lineTo(fr.x + fr.w, y);
       }
       g.stroke();
+      g.fillStyle = '#1a1428';
+      for (const s of gritSpecks((a.id.charCodeAt(0) + Math.floor(fr.x)) >>> 0, 110, fr.w, fr.h)) {
+        g.globalAlpha = s.a;
+        g.beginPath();
+        g.ellipse(fr.x + s.x, fr.y + s.y, s.r, s.r * 0.55, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
       this.decorate(g, a, fr, rand);
       g.restore();
       if (a.islands) {
@@ -1005,6 +1017,8 @@ export class Renderer {
           if (e.kind === 'boss') this.shake = Math.max(this.shake, 12);
           break;
         case 'enemyKill':
+          this.corpses.push({ x: e.x, y: e.y, t: 0, kind: e.kind });
+          if (this.corpses.length > 12) this.corpses.shift();
           this.burst(e.x, e.y - 18, '#c8d0e0', e.kind === 'boss' ? 60 : 18, e.kind === 'boss' ? 420 : 240);
           this.burst(e.x, e.y - 18, '#ff8a3c', e.kind === 'boss' ? 40 : 10, 260);
           this.ring(e.x, e.y - 18, '#ffb347', e.kind === 'boss' ? 200 : 50);
@@ -1401,7 +1415,13 @@ export class Renderer {
       }
       this.drawEchoes(game, time);
       this.drawClones(game, time);
+      this.drawCorpses(dt);
       this.drawEnemies(game, time);
+      if (game.phase === 'play' && !this.reducedEffects && time - this.moteAt > 0.5 && this.particles.length < 48) {
+        this.moteAt = time;
+        const h = game.human;
+        this.particles.push({ x: h.x + (Math.random() - 0.5) * 380, y: h.y + (Math.random() - 0.5) * 240, vx: 6, vy: -14, life: 0, max: 1.5, color: 'rgba(255,255,255,0.45)', size: 1.5, kind: 'spark' });
+      }
       this.drawAbilityOrbs(game, time);
       const ps = game.players.filter((p) => p.playing && p.alive).sort((p1, p2) => p1.y - p2.y);
       for (const p of ps) this.drawTrail(p, time);
@@ -2129,9 +2149,13 @@ export class Renderer {
     // sombra + anel de cor
     ctx.globalAlpha = alpha;
     if (p.boss) drawBossUnder(ctx, p, time);
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
     ctx.beginPath();
-    ctx.ellipse(p.x, p.y + 3, 15, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x + 3, p.y + 6, 22, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.34)';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 3, 12, 4.5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = p.color;
     ctx.lineWidth = human ? 3.5 : 2.5;
@@ -3065,6 +3089,33 @@ export class Renderer {
     }
   }
 
+  private drawCorpses(dt: number) {
+    const ctx = this.ctx;
+    for (const c of this.corpses) {
+      c.t += dt;
+      const pose = corpsePose(c.t);
+      if (pose.done) continue;
+      ctx.save();
+      ctx.globalAlpha = pose.alpha;
+      ctx.translate(c.x, c.y + pose.dy);
+      ctx.rotate(pose.rot);
+      ctx.scale(1.15, pose.squash);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath();
+      ctx.ellipse(2, 4, 16, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = c.kind === 'drone' ? '#8d97ad' : '#c45a4a';
+      ctx.strokeStyle = '#120c26';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 14, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    this.corpses = this.corpses.filter((c) => !corpsePose(c.t).done);
+  }
+
   private drawEnemies(game: Game, time: number) {
     const ctx = this.ctx;
     for (const e of (game as any).enemies ?? []) {
@@ -3084,8 +3135,12 @@ export class Renderer {
       ctx.ellipse(e.x, e.y + 3, r * 0.9, r * 0.35, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.save();
-      ctx.translate(e.x, e.y + hover);
-      if (e.hitFlash > 0) ctx.filter = 'brightness(2.2)';
+      ctx.translate(e.x, e.y + hover + (e.hitFlash > 0 ? 4 : 0));
+      if (e.hitFlash > 0) {
+        ctx.scale(1.06, 0.88);
+        ctx.filter = 'brightness(2.2)';
+      }
+      if (e.chargeT > 0) ctx.translate(Math.cos(e.dir) * 10, Math.sin(e.dir) * 4);
       const eye = e.stunT > 0 ? '#ffd23e' : '#ff3b3b';
       if (e.kind === 'drone') {
         // corpo esférico com hélices
