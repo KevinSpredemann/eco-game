@@ -96,6 +96,19 @@ export class HomeHero {
     return { top, floor, maxH: Math.max(120, floor - top), maxW, x: left + maxW / 2, left };
   }
 
+  /** Base do botão Como jogar, no mesmo eixo do canvas. Sem o botão ao lado, usa o fallback. */
+  private footLine(fallback: number): number {
+    const parent = (this.cv.parentElement ?? this.cv).getBoundingClientRect();
+    const btn = document.querySelector('#screen-title [data-action="howto"]');
+    const stage = document.getElementById('home-stage');
+    if (!btn || !stage) return fallback;
+    const b = btn.getBoundingClientRect();
+    const s = stage.getBoundingClientRect();
+    const beside = b.height > 4 && b.right <= s.left + 12 && b.bottom > s.top && b.bottom < s.bottom;
+    if (!beside) return fallback;
+    return b.bottom - parent.top;
+  }
+
   /** Corpo desenhado, em unidades locais (pés na origem). Medido de verdade, uma vez por personagem. */
   private figure(): { box: InkBox; img: HTMLImageElement | null } {
     const c = this.char!;
@@ -115,19 +128,20 @@ export class HomeHero {
     g.fillStyle = '#07041a';
     g.fillRect(0, 0, this.w, this.h);
     const col = c.glow ?? c.color;
-    const { top, floor, maxW, maxH, x, left } = this.stage();
+    const { top, maxW, maxH, x, left } = this.stage();
     const { box, img } = this.figure();
     const spanH = Math.max(8, box.bottom - box.top);
     const spanW = Math.max(8, box.right - box.left);
     // Cerca de 78% da altura do palco. O limiar da medida ignora a sombra, senão o corpo fica pequeno.
     const s = Math.min((maxH * 0.78) / spanH, (maxW * 0.9) / spanW);
-    const midY = top + maxH / 2;
     const originX = x - ((box.left + box.right) / 2) * s;
-    const originY = midY - ((box.top + box.bottom) / 2) * s;
     const bodyH = spanH * s;
-    const feetY = originY + box.bottom * s;
+    // Mesmo tamanho de antes. Os pés sobem até a base do botão Como jogar, lida do layout.
+    const feetY = this.footLine(top + maxH / 2 + spanH * s * 0.5);
+    const originY = feetY - box.bottom * s;
+    const bodyMid = originY + ((box.top + box.bottom) / 2) * s;
     const glowR = Math.min(bodyH * 0.62, Math.max(48, x - left - 6));
-    const glow = g.createRadialGradient(x, midY, 8, x, midY, glowR);
+    const glow = g.createRadialGradient(x, bodyMid, 8, x, bodyMid, glowR);
     glow.addColorStop(0, hexA(col, 0.34));
     glow.addColorStop(0.55, hexA(col, 0.1));
     glow.addColorStop(1, hexA(col, 0));
