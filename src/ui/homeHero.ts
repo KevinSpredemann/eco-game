@@ -4,7 +4,7 @@ import { accessoryById } from '../game/economy';
 import { WEAPONS, loadoutPrimary } from '../game/weapons';
 import { drawCharacter } from '../render/chars';
 import { accessoryBehind, drawAccessory } from '../render/accessories';
-import { dpr, hexA, paintStudio } from './portraits';
+import { dpr, hexA, studioSprite } from './portraits';
 
 export class HomeHero {
   running = false;
@@ -79,23 +79,29 @@ export class HomeHero {
     this.draw();
   }
 
-  /** Caixa do palco, já com folga para o balanço. O desenho inteiro cabe aqui. */
+  /** Área útil da coluna da direita. O personagem fica no centro dela. */
   private stage() {
     const parent = (this.cv.parentElement ?? this.cv).getBoundingClientRect();
     const box = document.getElementById('home-stage')?.getBoundingClientRect();
     if (!box || box.width < 8) {
-      const maxH = this.h * 0.72;
-      const maxW = this.w * 0.4;
-      return { floor: this.h * 0.9, x: this.w * 0.72, maxW, maxH, s: Math.min(maxH / 96, maxW / 72) };
+      const top = this.h * 0.16;
+      const floor = this.h * 0.94;
+      const maxW = this.w * 0.42;
+      return { top, floor, maxH: floor - top, maxW, x: this.w * 0.72, left: this.w * 0.54 };
     }
-    const top = box.top - parent.top + 8;
-    const floor = box.bottom - parent.top - 10;
-    const maxH = Math.max(120, floor - top);
-    const maxW = Math.max(80, box.width - 32);
-    // Vetor: halo perto de y=-82, pés perto de y=6, asas até x=±36.
-    const s = Math.min(maxH / 96, maxW / 72);
-    const x = box.left - parent.left + box.width / 2;
-    return { floor, s, x, maxW, maxH };
+    const top = box.top - parent.top + 6;
+    const floor = box.bottom - parent.top - 8;
+    const left = box.left - parent.left + 8;
+    const maxW = Math.max(80, box.width - 16);
+    return { top, floor, maxH: Math.max(120, floor - top), maxW, x: left + maxW / 2, left };
+  }
+
+  /** Corpo desenhado, em unidades locais (pés na origem). Medido de verdade, uma vez por personagem. */
+  private figure(): { box: InkBox; img: HTMLImageElement | null } {
+    const c = this.char!;
+    const img = studioSprite(c.art);
+    if (img?.complete && img.naturalWidth > 0) return { box: studioInk(img), img };
+    return { box: vectorInk(c, this.acc), img: null };
   }
 
   private draw() {
@@ -109,11 +115,21 @@ export class HomeHero {
     g.fillStyle = '#07041a';
     g.fillRect(0, 0, this.w, this.h);
     const col = c.glow ?? c.color;
-    const { floor, s, x, maxW, maxH } = this.stage();
-    const glowR = Math.min(maxW * 0.46, maxH * 0.38);
-    const glow = g.createRadialGradient(x, floor - maxH * 0.42, 8, x, floor - maxH * 0.34, Math.max(glowR, 80));
+    const { top, floor, maxW, maxH, x, left } = this.stage();
+    const { box, img } = this.figure();
+    const spanH = Math.max(8, box.bottom - box.top);
+    const spanW = Math.max(8, box.right - box.left);
+    // Cerca de 78% da altura do palco. O limiar da medida ignora a sombra, senão o corpo fica pequeno.
+    const s = Math.min((maxH * 0.78) / spanH, (maxW * 0.9) / spanW);
+    const midY = top + maxH / 2;
+    const originX = x - ((box.left + box.right) / 2) * s;
+    const originY = midY - ((box.top + box.bottom) / 2) * s;
+    const bodyH = spanH * s;
+    const feetY = originY + box.bottom * s;
+    const glowR = Math.min(bodyH * 0.62, Math.max(48, x - left - 6));
+    const glow = g.createRadialGradient(x, midY, 8, x, midY, glowR);
     glow.addColorStop(0, hexA(col, 0.34));
-    glow.addColorStop(0.55, hexA(col, 0.08));
+    glow.addColorStop(0.55, hexA(col, 0.1));
     glow.addColorStop(1, hexA(col, 0));
     g.fillStyle = glow;
     g.fillRect(0, 0, this.w, this.h);
@@ -122,38 +138,109 @@ export class HomeHero {
     if (!this.reduce) {
       for (let i = 0; i < 16; i++) {
         const t = this.phase * 0.45 + i * 1.7;
-        const x = ((i * 0.17) % 1) * this.w + Math.sin(t) * 10;
-        const y = ((i * 0.13 + this.phase * 0.015) % 1) * this.h;
+        const px = ((i * 0.17) % 1) * this.w + Math.sin(t) * 10;
+        const py = ((i * 0.13 + this.phase * 0.015) % 1) * this.h;
         g.globalAlpha = 0.18 + 0.22 * (0.5 + 0.5 * Math.sin(t));
         g.fillStyle = i % 2 ? col : '#3ee8ff';
         g.beginPath();
-        g.arc(x, y, 1.1 + (i % 3) * 0.45, 0, Math.PI * 2);
+        g.arc(px, py, 1.1 + (i % 3) * 0.45, 0, Math.PI * 2);
         g.fill();
       }
       g.globalAlpha = 1;
     }
 
     const breath = this.reduce ? 1 : 1 + Math.sin(this.phase) * 0.012;
-    g.fillStyle = hexA(col, 0.2);
+    g.fillStyle = hexA(col, 0.22);
     g.beginPath();
-    g.ellipse(x + drift, floor, Math.min(150, maxW * 0.22), Math.min(16, maxH * 0.035), 0, 0, Math.PI * 2);
+    g.ellipse(originX + drift, feetY, Math.min(bodyH * 0.28, maxW * 0.22), Math.min(18, bodyH * 0.04), 0, 0, Math.PI * 2);
     g.fill();
 
     const acc = accessoryById(this.acc);
     g.save();
     const bob = this.reduce ? 0 : Math.sin(this.phase * 1.6) * 3.5;
-    g.translate(x + drift, floor + bob);
-    // Folha 320×376. Até 2× o arquivo, para continuar nítida e caber na coluna.
-    const sheetW = Math.min(maxW, maxH * (320 / 376));
-    const posed = paintStudio(g, c.art, sheetW, 2);
-    if (!posed) {
-      g.scale(s * breath, s * breath);
+    g.translate(originX + drift, originY + bob);
+    g.scale(s * breath, s * breath);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    if (img) g.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight, img.naturalWidth, img.naturalHeight);
+    else {
       if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
       drawCharacter(g, c, 'down', this.phase, false);
       if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
     }
     g.restore();
   }
+}
+
+type InkBox = { top: number; bottom: number; left: number; right: number };
+
+const inkCache = new Map<string, InkBox>();
+const FALLBACK: InkBox = { top: -78, bottom: 6, left: -20, right: 20 };
+
+function inkOf(data: Uint8ClampedArray, w: number, h: number, ox: number, oy: number, scale: number): InkBox | null {
+  let minx = w;
+  let miny = h;
+  let maxx = -1;
+  let maxy = -1;
+  for (let y = 0; y < h; y += 2) {
+    for (let x = 0; x < w; x += 2) {
+      if (data[(y * w + x) * 4 + 3] < 96) continue;
+      if (x < minx) minx = x;
+      if (y < miny) miny = y;
+      if (x > maxx) maxx = x;
+      if (y > maxy) maxy = y;
+    }
+  }
+  if (maxx < 0) return null;
+  return {
+    left: (minx - ox) / scale,
+    right: (maxx - ox) / scale,
+    top: (miny - oy) / scale,
+    bottom: (maxy - oy) / scale,
+  };
+}
+
+function vectorInk(c: CharacterDef, accId: string): InkBox {
+  const key = `v:${c.id}:${accId}:${c.suit}:${c.hair}:${c.color}`;
+  const hit = inkCache.get(key);
+  if (hit) return hit;
+  const S = 4;
+  const W = 720;
+  const H = 880;
+  const ox = 360;
+  const oy = 760;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  if (!g) return FALLBACK;
+  g.translate(ox, oy);
+  g.scale(S, S);
+  const acc = accessoryById(accId);
+  if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+  drawCharacter(g, c, 'down', 0, false);
+  if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+  const box = inkOf(g.getImageData(0, 0, W, H).data, W, H, ox, oy, S) ?? FALLBACK;
+  inkCache.set(key, box);
+  return box;
+}
+
+function studioInk(img: HTMLImageElement): InkBox {
+  const key = `s:${img.src}:${img.naturalWidth}x${img.naturalHeight}`;
+  const hit = inkCache.get(key);
+  if (hit) return hit;
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = h;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  if (!g) return FALLBACK;
+  g.drawImage(img, 0, 0);
+  // Mesma origem do desenho: centro em x, pés no rodapé da folha.
+  const box = inkOf(g.getImageData(0, 0, w, h).data, w, h, w / 2, h, 1) ?? FALLBACK;
+  inkCache.set(key, box);
+  return box;
 }
 
 /** Prévia grande da personalização: roupa, acessório e arma no mesmo desenho da tela inicial. */
