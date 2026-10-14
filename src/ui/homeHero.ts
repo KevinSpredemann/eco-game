@@ -1,8 +1,7 @@
-// Tela inicial: o personagem principal, grande, com a roupa, o acessório e a arma favorita.
+// Tela inicial: só o personagem, grande, à direita. Sem arma e sem ficha.
 import type { CharacterDef } from '../game/characters';
 import { accessoryById } from '../game/economy';
 import { WEAPONS, loadoutPrimary } from '../game/weapons';
-import { ELEMENT_COLOR, ELEMENT_NAME, kitOf } from '../game/elements';
 import { drawCharacter } from '../render/chars';
 import { accessoryBehind, drawAccessory } from '../render/accessories';
 import { hexA, paintStudio } from './portraits';
@@ -16,7 +15,6 @@ export class HomeHero {
   private phase = 0;
   private char: CharacterDef | null = null;
   private acc = 'nenhum';
-  private weapon = 'assinatura';
   private reduce = false;
 
   constructor(private cv: HTMLCanvasElement) {
@@ -24,10 +22,9 @@ export class HomeHero {
     window.addEventListener('resize', () => this.running && this.fit());
   }
 
-  set(c: CharacterDef, acc: string, weapon: string) {
+  set(c: CharacterDef, acc: string, _weapon?: string) {
     this.char = c;
     this.acc = acc || 'nenhum';
-    this.weapon = weapon || 'assinatura';
     this.writeCaption();
   }
 
@@ -71,14 +68,7 @@ export class HomeHero {
 
   private writeCaption() {
     const el = document.getElementById('title-cast');
-    const c = this.char;
-    if (!el || !c) return;
-    const acc = accessoryById(this.acc);
-    const kit = kitOf(c.id);
-    const main = kit.powers[0];
-    const visual = this.weapon && this.weapon !== 'assinatura' ? `Visual: ${WEAPONS[loadoutPrimary(c.id, this.weapon)].name}` : '';
-    const bits = [`Poder: ${main.name} (${ELEMENT_NAME[main.element]})`, kit.passiveName, acc.id === 'nenhum' ? '' : acc.name, visual].filter(Boolean).join(' · ');
-    el.innerHTML = `<b style="color:${c.color}">${c.name.toUpperCase()}</b><span class="role">${c.title}</span><span class="line">${bits}</span>`;
+    if (el) el.replaceChildren();
   }
 
   private tick(dt: number) {
@@ -92,18 +82,16 @@ export class HomeHero {
   private stage() {
     const parent = (this.cv.parentElement ?? this.cv).getBoundingClientRect();
     const box = document.getElementById('home-stage')?.getBoundingClientRect();
-    const cap = document.getElementById('title-cast')?.getBoundingClientRect().height ?? 72;
-    if (!box) {
-      const top = cap + 16;
-      const floor = this.h * 0.62;
-      const avail = Math.max(120, floor - top);
-      return { floor, s: Math.min(avail / 70, (this.w * 0.72) / 36) };
+    if (!box || box.width < 8) {
+      const floor = this.h * 0.86;
+      return { floor, s: Math.min((this.h * 0.7) / 68, (this.w * 0.42) / 34), x: this.w * 0.72 };
     }
-    const top = box.top - parent.top + 8;
-    const floor = box.bottom - parent.top - cap - 12;
-    const avail = Math.max(96, floor - top);
-    const s = Math.min(avail / 70, (box.width * 0.78) / 36);
-    return { floor, s };
+    const top = box.top - parent.top + 4;
+    const floor = box.bottom - parent.top - 18;
+    const avail = Math.max(140, floor - top);
+    const s = Math.min(avail / 64, (box.width * 0.86) / 32);
+    const x = box.left - parent.left + box.width / 2;
+    return { floor, s, x };
   }
 
   private draw() {
@@ -115,9 +103,10 @@ export class HomeHero {
     g.fillStyle = '#07041a';
     g.fillRect(0, 0, this.w, this.h);
     const col = c.glow ?? c.color;
-    const glow = g.createRadialGradient(this.w / 2, this.h * 0.34, 8, this.w / 2, this.h * 0.36, Math.max(this.w, this.h) * 0.55);
-    glow.addColorStop(0, hexA(col, 0.28));
-    glow.addColorStop(0.55, hexA(col, 0.06));
+    const { floor, s, x } = this.stage();
+    const glow = g.createRadialGradient(x, floor - s * 30, 8, x, floor - s * 18, Math.max(s * 40, 220));
+    glow.addColorStop(0, hexA(col, 0.34));
+    glow.addColorStop(0.55, hexA(col, 0.08));
     glow.addColorStop(1, hexA(col, 0));
     g.fillStyle = glow;
     g.fillRect(0, 0, this.w, this.h);
@@ -137,29 +126,21 @@ export class HomeHero {
       g.globalAlpha = 1;
     }
 
-    const { floor, s } = this.stage();
     const breath = this.reduce ? 1 : 1 + Math.sin(this.phase) * 0.012;
     g.fillStyle = hexA(col, 0.2);
     g.beginPath();
-    g.ellipse(this.w / 2 + drift, floor, Math.max(70, s * 16), Math.max(10, s * 3.2), 0, 0, Math.PI * 2);
+    g.ellipse(x + drift, floor, Math.max(70, s * 16), Math.max(10, s * 3.2), 0, 0, Math.PI * 2);
     g.fill();
 
     const acc = accessoryById(this.acc);
     g.save();
-    g.translate(this.w / 2 + drift, floor);
+    g.translate(x + drift, floor);
     g.scale(s * breath, s * breath);
-    const posed = paintStudio(g, c.art, 36);
+    const posed = paintStudio(g, c.art, 42);
     if (!posed) {
       if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
       drawCharacter(g, c, 'down', this.phase, false);
       if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
-    }
-    if (this.weapon && this.weapon !== 'assinatura') paintWeapon(g, c.id, this.weapon);
-    else {
-      g.fillStyle = ELEMENT_COLOR[kitOf(c.id).powers[0].element];
-      g.beginPath();
-      g.arc(16, -28, 5, 0, Math.PI * 2);
-      g.fill();
     }
     g.restore();
   }

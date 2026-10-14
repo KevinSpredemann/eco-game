@@ -74,24 +74,25 @@
       <canvas class="title-art" id="title-canvas" aria-hidden="true"></canvas>
       <div class="title-shade" aria-hidden="true"></div>
       <div class="home-col lobby">
-        <header class="home-brand">
-          <h1 class="logo" data-text="ECO">ECO</h1>
-          <p class="tagline">O PASSADO TAMBÉM JOGA</p>
-        </header>
-        <nav class="home-side" aria-label="Menu">
-          <button class="btn" type="button" data-action="shop">Loja</button>
-          <button class="btn home-edit" type="button" data-action="cosmetics">Personalizar</button>
-          <button class="btn ghost" type="button" data-action="options">Opções</button>
-          <button class="btn ghost" type="button" data-action="howto">Como jogar</button>
-          <button class="btn ghost" data-action="install" id="btn-install" hidden>Instalar app</button>
-        </nav>
-        <div class="home-stage" id="home-stage">
-          <div class="title-cast" id="title-cast"></div>
+        <div class="home-left">
+          <header class="home-brand">
+            <h1 class="logo" data-text="ECO">ECO</h1>
+            <p class="tagline">O PASSADO TAMBÉM JOGA</p>
+          </header>
+          <div class="home-actions">
+            <button class="btn primary play-btn" data-action="play">JOGAR</button>
+            <p class="title-foot" id="title-foot">Toque ou clique para ativar o som.</p>
+          </div>
+          <nav class="home-side" aria-label="Menu">
+            <button class="btn" type="button" data-action="shop">Loja</button>
+            <button class="btn home-edit" type="button" data-action="cosmetics">Personalizar</button>
+            <button class="btn ghost" type="button" data-action="options">Opções</button>
+            <button class="btn ghost" type="button" data-action="howto">Como jogar</button>
+            <button class="btn ghost" data-action="install" id="btn-install" hidden>Instalar app</button>
+          </nav>
         </div>
-        <div class="home-actions">
-          <button class="btn primary play-btn" data-action="play">JOGAR</button>
-          <p class="title-foot" id="title-foot">Toque ou clique para ativar o som.</p>
-        </div>
+        <div class="home-stage" id="home-stage"></div>
+        <div class="title-cast" id="title-cast" hidden></div>
       </div>
     </section>
 
