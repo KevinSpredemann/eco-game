@@ -172,6 +172,7 @@ function bindOptions() {
     input.fireLatch = false;
     applySettings();
     renderKeybinds();
+    renderManualAim();
     audio.click();
   });
   const cast = $<HTMLSelectElement>('#opt-cast');
@@ -206,6 +207,7 @@ function bindOptions() {
       input.binds = settings.keys;
       applySettings();
       renderKeybinds();
+      renderManualAim();
       audio.click();
     });
   }
@@ -254,6 +256,7 @@ function renderKeybinds() {
         input.binds = settings.keys;
         saveSettings(settings);
         renderKeybinds();
+        renderManualAim();
         if (other) toast(`${keyLabel(code)} estava em "${ACTION_LABEL[other]}": as duas trocaram.`);
       };
     }),
@@ -265,6 +268,7 @@ $('#keys-reset').addEventListener('click', () => {
   input.fireLatch = false;
   saveSettings(settings);
   renderKeybinds();
+  renderManualAim();
   audio.click();
 });
 
