@@ -5396,6 +5396,239 @@ body.rewinding #hud-status {
   align-items: center;
   flex-wrap: wrap;
 }
+.mundo-map {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  right: 12px;
+  width: min(180px, 34vw);
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 120, 255, 0.35);
+  pointer-events: none;
+}
+.mundo-region {
+  position: absolute;
+  top: calc(max(10px, env(safe-area-inset-top)) + min(128px, 24vw));
+  right: 12px;
+  margin: 4px 0 0;
+  width: min(180px, 34vw);
+  text-align: right;
+  font-size: 0.78rem;
+  text-shadow: 0 1px 2px #000;
+}
+.mundo-quest {
+  position: absolute;
+  top: max(52px, calc(env(safe-area-inset-top) + 42px));
+  left: 12px;
+  width: min(280px, 46vw);
+  pointer-events: auto;
+}
+.mundo-quest button {
+  width: 100%;
+  text-align: left;
+  background: rgba(14, 12, 28, 0.72);
+  color: var(--ink);
+  border: 1px solid rgba(140, 120, 255, 0.35);
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+.mundo-quest p {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: rgba(14, 12, 28, 0.72);
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+.mundo-notes {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 70vw);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+.mundo-notes p {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(14, 12, 28, 0.88);
+  border: 1px solid rgba(62, 232, 255, 0.35);
+  text-align: center;
+  font-size: 0.82rem;
+}
+.mundo-context {
+  position: absolute;
+  left: 12px;
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 168px);
+  width: min(280px, 70vw);
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(14, 12, 28, 0.9);
+  border: 1px solid rgba(141, 255, 196, 0.4);
+  pointer-events: none;
+}
+.mundo-context p {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+}
+.mundo-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 132px);
+  transform: translateX(-50%);
+  pointer-events: auto;
+  background: rgba(14, 12, 28, 0.92);
+  color: #e9fff4;
+  border: 1px solid #8dffc4;
+  border-radius: 999px;
+  padding: 8px 14px;
+  box-shadow: 0 0 0 2px rgba(141, 255, 196, 0.25);
+}
+.mundo-dock {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+.mundo-portrait,
+.mundo-bar,
+.mundo-gear {
+  pointer-events: auto;
+}
+.mundo-portrait {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(14, 12, 28, 0.9);
+  border: 1px solid rgba(140, 120, 255, 0.35);
+}
+#mundo-face {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  background: #1a1430;
+}
+.mundo-vitals {
+  min-width: 120px;
+}
+.mundo-vitals b,
+.mundo-vitals small {
+  display: block;
+  font-size: 0.75rem;
+}
+.mundo-en {
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.mundo-en > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #3ee8ff;
+}
+.mundo-gear {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mundo-gear .gear {
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  padding: 3px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+}
+.mundo-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.mundo-bar .slot {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  border: 1px solid rgba(180, 160, 255, 0.45);
+  background: #24183a;
+  color: #f4f1ff;
+  overflow: hidden;
+}
+.mundo-bar .slot .key,
+.mundo-bar .slot .cost,
+.mundo-bar .slot .num {
+  position: absolute;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+.mundo-bar .slot .key { left: 4px; top: 4px; }
+.mundo-bar .slot .cost { right: 4px; bottom: 4px; color: #7af0ff; }
+.mundo-bar .slot .num {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.9rem;
+}
+.mundo-bar .slot .mask {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  background: rgba(0, 0, 0, 0.62);
+}
+.mundo-bar .slot .tip {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: 58px;
+  transform: translateX(-50%);
+  width: 180px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(14, 12, 28, 0.96);
+  border: 1px solid rgba(140, 120, 255, 0.4);
+  text-align: left;
+  z-index: 2;
+}
+.mundo-bar .slot:hover .tip,
+.mundo-bar .slot:focus-visible .tip { display: block; }
+.mundo-bar .slot.poor { border-color: #ff8a8a; }
+.mundo-bar .ico-basic { background: radial-gradient(circle at 50% 60%, #9ef0ff, #24183a 70%); }
+.mundo-bar .ico-sig { background: radial-gradient(circle at 50% 60%, #c084fc, #24183a 70%); }
+.mundo-bar .ico-shot { background: radial-gradient(circle at 50% 60%, #3ee8ff, #24183a 70%); }
+.mundo-bar .ico-dash { background: radial-gradient(circle at 30% 60%, #8dffc4, #24183a 72%); }
+.mundo-bar .ico-shield { background: radial-gradient(circle at 50% 60%, #9ecbff, #24183a 70%); }
+.mundo-bar .ico-blast { background: radial-gradient(circle at 50% 60%, #ffd23e, #24183a 70%); }
+.mundo-bar .ico-trap { background: radial-gradient(circle at 50% 60%, #d6ff4a, #24183a 70%); }
+.mundo-bar .ico-dodge { background: radial-gradient(circle at 50% 60%, #ff8ad4, #24183a 70%); }
+.mundo-ledger { margin: 0; padding-left: 18px; }
+.mundo-panel h3 { margin: 6px 0 0; font-size: 0.78rem; letter-spacing: 0.04em; }
+@media (max-width: 800px) {
+  .mundo-dock { flex-wrap: wrap; }
+  .mundo-bar .slot { width: 42px; height: 42px; }
+  .mundo-portrait { flex: 1; }
+  .mundo-context { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 210px); }
+  .mundo-prompt { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 168px); }
+}
 
 /* início centrado: logo, herói, JOGAR. Modos ficam na tela seguinte. */
 #screen-title .home-col {
