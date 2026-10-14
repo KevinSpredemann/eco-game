@@ -1,6 +1,6 @@
 import type { Difficulty } from '../game/sim';
 import { DEFAULT_LOADOUT, type Loadout } from '../game/balance';
-import { DEFAULT_KEYS, WASD_KEYS, WASD_NOTEBOOK, presetKeys, type CastChoice, type ControlStyle, type KeyBinds, type MoveScheme } from './input';
+import { DEFAULT_KEYS, presetKeys, type CastChoice, type ControlStyle, type KeyBinds, type MoveScheme } from './input';
 
 export interface Settings {
   master: number;
@@ -85,6 +85,23 @@ export const DEFAULTS: Settings = {
   quality: typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4 ? 'media' : 'alta',
 };
 
+/**
+ * Saves from before QWER stored Q/E/R/F and Shift, often without the newer
+ * plasma/fire binds, so an exact key match never fired. Arrows (the default
+ * when the field is missing) must take Q/W/E/R and Space once. An explicit
+ * wasd or esdf scheme, or a skill key that already left E, stays as saved.
+ */
+export function migrateMoveKeys(raw: { moveScheme?: unknown; control?: unknown; keys?: Partial<KeyBinds> | null }): KeyBinds | null {
+  const scheme: MoveScheme = raw.moveScheme === 'wasd' || raw.moveScheme === 'esdf' ? raw.moveScheme : 'arrows';
+  if (scheme !== 'arrows') return null;
+  const k = raw.keys;
+  if (!k || k.skill !== 'KeyE') return null;
+  if (k.dash !== 'ShiftLeft' && k.dash !== 'ShiftRight') return null;
+  if (k.bonus != null && k.bonus !== 'KeyF' && k.bonus !== 'Space') return null;
+  const notebook = raw.control === 'notebook' || k.item === 'KeyF' || k.bonus === 'Space';
+  return presetKeys(notebook ? 'notebook' : 'classic', 'arrows');
+}
+
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
@@ -92,11 +109,9 @@ export function loadSettings(): Settings {
       const v = JSON.parse(raw);
       const mode = v.castMode === 'instant' || v.castMode === 'manual' || v.castMode === 'release' || v.castMode === 'auto' ? v.castMode : DEFAULTS.castMode;
       const scheme: MoveScheme = v.moveScheme === 'wasd' || v.moveScheme === 'esdf' ? v.moveScheme : 'arrows';
-      let keys: KeyBinds = { ...DEFAULT_KEYS, ...(v.keys ?? {}) };
-      if (v.moveScheme == null && (sameKeys(v.keys, WASD_KEYS) || sameKeys(v.keys, WASD_NOTEBOOK))) {
-        keys = presetKeys(sameKeys(v.keys, WASD_NOTEBOOK) ? 'notebook' : 'classic', 'arrows');
-      }
-      return {
+      const migrated = migrateMoveKeys(v);
+      const keys: KeyBinds = migrated ?? { ...DEFAULT_KEYS, ...(v.keys ?? {}) };
+      const next: Settings = {
         ...DEFAULTS,
         ...v,
         castMode: mode,
@@ -107,16 +122,13 @@ export function loadSettings(): Settings {
         keys,
         loadout: { ...DEFAULT_LOADOUT, ...(v.loadout ?? {}) },
       };
+      if (migrated) saveSettings(next);
+      return next;
     }
   } catch {
     /* armazenamento indisponível: usa padrões */
   }
   return { ...DEFAULTS, keys: { ...DEFAULT_KEYS }, loadout: { ...DEFAULT_LOADOUT } };
-}
-
-function sameKeys(a: Partial<KeyBinds> | undefined, b: KeyBinds) {
-  if (!a) return false;
-  return (Object.keys(b) as (keyof KeyBinds)[]).every((k) => a[k] === b[k]);
 }
 
 export function saveSettings(s: Settings) {

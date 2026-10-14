@@ -4,7 +4,8 @@ import { getArena } from '../src/game/arenas';
 import { DUEL, duelTiebreak, roundBanner } from '../src/game/duel';
 import { REWIND_TIME } from '../src/game/constants';
 import { CHAR_PRICES, grantStarters, newProfile, owns, STARTER_CHARS } from '../src/game/economy';
-import { NOTEBOOK_KEYS, assistAim, clickFireLatch, nearestAim, presetKeys, stepAim } from '../src/ui/input';
+import { NOTEBOOK_KEYS, WASD_KEYS, WASD_NOTEBOOK, assistAim, clickFireLatch, nearestAim, presetKeys, stepAim } from '../src/ui/input';
+import { migrateMoveKeys } from '../src/ui/settings';
 import { ClientGame } from '../src/net/clientGame';
 import { encodeSnapshot } from '../src/net/protocol';
 
@@ -298,6 +299,17 @@ describe('controles de notebook e elenco inicial', () => {
     expect(presetKeys('classic', 'wasd').item).toBe('Space');
     expect(presetKeys('classic', 'wasd').skill).toBe('KeyE');
     expect(presetKeys('classic', 'esdf').bonus).toBe('KeyA');
+    const partial = { ability: 'KeyQ', skill: 'KeyE', ult: 'KeyR', dash: 'ShiftLeft', item: 'Space', bonus: 'KeyF' };
+    expect(migrateMoveKeys({ keys: partial })?.skill).toBe('KeyW');
+    expect(migrateMoveKeys({ keys: partial })?.dash).toBe('Space');
+    expect(migrateMoveKeys({ keys: partial })?.bonus).toBe('KeyE');
+    expect(migrateMoveKeys({ moveScheme: 'arrows', keys: { ...WASD_KEYS } })?.item).toBe('Digit1');
+    expect(migrateMoveKeys({ control: 'notebook', keys: { skill: 'KeyE', dash: 'ShiftRight', bonus: 'Space', item: 'KeyF' } })).toEqual(NOTEBOOK_KEYS);
+    expect(migrateMoveKeys({ keys: WASD_NOTEBOOK })?.bonus).toBe('KeyE');
+    expect(migrateMoveKeys({ moveScheme: 'wasd', keys: WASD_KEYS })).toBeNull();
+    expect(migrateMoveKeys({ moveScheme: 'esdf', keys: { skill: 'KeyE', dash: 'ShiftLeft', bonus: 'KeyF' } })).toBeNull();
+    expect(migrateMoveKeys({ keys: { skill: 'KeyW', dash: 'Space', bonus: 'KeyE' } })).toBeNull();
+    expect(migrateMoveKeys({ keys: { skill: 'KeyE', dash: 'Space', bonus: 'KeyF' } })).toBeNull();
     expect(assistAim(0, 0, 0, [{ x: 100, y: 8 }])).toBeGreaterThan(0);
     expect(assistAim(0, 0, 0, [{ x: -200, y: 0 }])).toBe(0);
     expect(nearestAim(0, 0, [{ id: 'far', x: 300, y: 0 }, { id: 'near', x: 40, y: 0 }])?.id).toBe('near');
