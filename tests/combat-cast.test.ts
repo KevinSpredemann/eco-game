@@ -78,6 +78,36 @@ describe('colisão e ciclo do golpe', () => {
     expect(before - b.hp).toBe(kitOf('kai').powers[0].dmg);
   });
 
+  it('pilar no caminho segura o projétil e o segundo inimigo atrás não leva dano', () => {
+    const g = fight([
+      { id: 'a', char: 'kai' },
+      { id: 'b', char: 'luna' },
+      { id: 'c', char: 'luna' },
+    ]);
+    const [a, b, c] = g.players;
+    a.x = 400;
+    a.y = 300;
+    b.x = 470;
+    b.y = 300;
+    c.x = 640;
+    c.y = 300;
+    const hb = b.hp;
+    const hc = c.hp;
+    g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle, c: idle });
+    for (let i = 0; i < 40 && b.hp === hb; i++) g.step(STEP, { a: idle, b: idle, c: idle });
+    expect(hb - b.hp).toBe(kitOf('kai').powers[0].dmg);
+    expect(c.hp).toBe(hc);
+    const blocked = fight();
+    const [s, t] = blocked.players;
+    s.x = 400;
+    s.y = 300;
+    t.x = 700;
+    t.y = 300;
+    blocked.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
+    for (let i = 0; i < 40; i++) blocked.step(STEP, { a: idle, b: idle });
+    expect(t.hp).toBe(t.maxHp);
+  });
+
   it('parede fina entre os dois segura o projétil', () => {
     const g = fight();
     const [a, b] = g.players;
