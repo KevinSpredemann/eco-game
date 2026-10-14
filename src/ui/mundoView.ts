@@ -2,6 +2,8 @@
 import { getCharacter } from '../game/characters';
 import { MUNDO_KEY, parseMundo } from '../game/mundo/blob';
 import { REGIONS } from '../game/mundo/regions';
+import { NPCS, PATHS, PROPS, type NpcDef } from '../game/mundo/scenery';
+import { drawNpcMarker, drawProp, drawStream } from '../render/mundoArt';
 import { GEAR_COST, MAT_PRICE, POTION_COST, derived, xpForLevel } from '../game/mundo/rules';
 import { MundoWorld, type Actor } from '../game/mundo/sim';
 import type { MundoGear, Rarity, StatId } from '../game/mundo/types';
@@ -21,7 +23,7 @@ const MONSTER_COLOR: Record<string, string> = {
   boss: '#ff8a1e',
 };
 
-type Panel = 'none' | 'shop' | 'bank' | 'tomb' | 'stats';
+type Panel = 'none' | 'shop' | 'bank' | 'tomb' | 'stats' | 'talk';
 
 export class MundoController {
   private world: MundoWorld;
@@ -38,6 +40,8 @@ export class MundoController {
   private abilityPulse = false;
   private interactPulse = false;
   private panel: Panel = 'none';
+  private talk: NpcDef | null = null;
+  private talkAt = 0;
   private cam = { s: 1, ox: 0, oy: 0, w: 1, h: 1, dpr: 1 };
   private bits: { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string }[] = [];
   private lite: boolean;
@@ -166,6 +170,20 @@ export class MundoController {
     return { mx, my, aim, fire: this.mouse.down || this.aimId != null, ability: this.abilityPulse || this.keys.has('KeyQ') };
   }
 
+  private nearestNpc(): NpcDef | null {
+    let best: NpcDef | null = null;
+    let reach = 78;
+    for (const n of NPCS) {
+      if (n.region !== this.world.regionId) continue;
+      const dist = Math.hypot(this.world.player.x - n.x, this.world.player.y - n.y);
+      if (dist < reach) {
+        reach = dist;
+        best = n;
+      }
+    }
+    return best;
+  }
+
   private interact() {
     const near = this.world.near();
     if (near === 'shop') this.openPanel('shop');
@@ -173,8 +191,37 @@ export class MundoController {
     else if (near === 'tomb') {
       this.flash(this.world.claimTomb());
       this.persist();
-    } else if (this.world.save.points > 0) this.openPanel('stats');
-    else this.flash('Nada por perto. Portais ficam na borda do mapa.');
+    } else {
+      const npc = this.nearestNpc();
+      if (npc) this.openTalk(npc);
+      else if (this.world.save.points > 0) this.openPanel('stats');
+      else this.flash('Nada por perto. Portais ficam na borda do mapa.');
+    }
+  }
+
+  private openTalk(npc: NpcDef) {
+    this.talk = npc;
+    this.talkAt = 0;
+    this.panel = 'talk';
+    this.paintTalk();
+  }
+
+  private paintTalk() {
+    const npc = this.talk;
+    const box = this.root.querySelector('#mundo-panel') as HTMLElement | null;
+    if (!npc || !box) return;
+    box.hidden = false;
+    const last = this.talkAt >= npc.lines.length - 1;
+    const line = npc.lines[this.talkAt] ?? '';
+    box.innerHTML = `<header><b>${npc.name}</b><button type="button" class="btn small ghost" data-x>Fechar</button></header><p>${npc.role}</p><p>${line}</p><button type="button" class="btn" data-next>${last ? 'Fechar' : 'Continuar'}</button>`;
+    box.querySelector('[data-x]')?.addEventListener('click', () => this.closePanel());
+    box.querySelector('[data-next]')?.addEventListener('click', () => {
+      if (last) this.closePanel();
+      else {
+        this.talkAt += 1;
+        this.paintTalk();
+      }
+    });
   }
 
   private openPanel(kind: Panel) {
@@ -280,6 +327,7 @@ export class MundoController {
 
   private closePanel() {
     this.panel = 'none';
+    this.talk = null;
     const box = this.root.querySelector('#mundo-panel') as HTMLElement | null;
     if (box) box.hidden = true;
   }
@@ -366,12 +414,21 @@ export class MundoController {
     ctx.fillRect(0, 0, cssW, cssH);
     ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * ox, dpr * oy);
     ctx.drawImage(this.floor(reg.id), 0, 0, reg.w, reg.h);
-    this.drawProps(ctx, reg.id);
-    this.drawPortal(ctx);
-    this.drawTomb(ctx);
-    for (const d of this.world.drops) this.drawDrop(ctx, d.x, d.y);
-    for (const m of this.world.monsters) this.drawMonster(ctx, m);
-    this.drawPlayer(ctx);
+    const animT = this.world.clock / 1000;
+    if (reg.id === 'floresta' && !this.lite) drawStream(ctx, animT);
+    const layers: { y: number; draw: () => void }[] = [];
+    for (const prop of PROPS[reg.id]) layers.push({ y: prop.y, draw: () => drawProp(ctx, prop, animT) });
+    for (const b of reg.blocks) layers.push({ y: b.y + b.h, draw: () => this.drawBlock(ctx, b, reg.id, animT) });
+    for (const t of reg.trees) layers.push({ y: t.y, draw: () => drawProp(ctx, { kind: 'tree', x: t.x, y: t.y, r: t.r }, animT) });
+    for (const npc of NPCS) if (npc.region === reg.id) layers.push({ y: npc.y, draw: () => this.drawNpc(ctx, npc, animT) });
+    layers.push({ y: this.world.region.portal.y, draw: () => this.drawPortal(ctx) });
+    const tomb = this.world.save.tomb;
+    if (tomb && tomb.region === reg.id) layers.push({ y: tomb.y, draw: () => this.drawTomb(ctx) });
+    for (const d of this.world.drops) layers.push({ y: d.y, draw: () => this.drawDrop(ctx, d.x, d.y) });
+    for (const m of this.world.monsters) layers.push({ y: m.y, draw: () => this.drawMonster(ctx, m) });
+    layers.push({ y: this.world.player.y, draw: () => this.drawPlayer(ctx) });
+    layers.sort((a, b) => a.y - b.y);
+    for (const layer of layers) layer.draw();
     for (const sh of this.world.shots) {
       ctx.fillStyle = sh.team === 0 ? '#9ef0ff' : '#ffb347';
       ctx.beginPath();
@@ -383,14 +440,15 @@ export class MundoController {
     if (!this.lite) {
       const g = ctx.createRadialGradient(cssW * 0.5, cssH * 0.45, cssH * 0.2, cssW * 0.5, cssH * 0.5, cssH * 0.78);
       g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(1, 'rgba(0,0,0,0.38)');
+      g.addColorStop(1, reg.id === 'floresta' ? 'rgba(6,18,12,0.5)' : 'rgba(0,0,0,0.38)');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, cssW, cssH);
     }
     const near = this.world.near();
+    const npc = near ? null : this.nearestNpc();
     const hint = this.root.querySelector('#mundo-hint');
     if (hint && this.panel === 'none' && this.hold <= 0) {
-      hint.textContent = near === 'shop' ? 'Loja · E ou Interagir' : near === 'bank' ? 'Banco · E ou Interagir' : near === 'tomb' ? 'Tumba · E para pegar' : 'WASD anda · mouse atira · Q habilidade · E interage. O portal troca de região.';
+      hint.textContent = near === 'shop' ? 'E — Abrir loja' : near === 'bank' ? 'E — Acessar banco' : near === 'tomb' ? 'E — Abrir tumba' : npc ? `E — Falar com ${npc.name}` : `${reg.name} · WASD anda · mouse atira · Q habilidade · E interage`;
     }
   }
 
@@ -406,9 +464,11 @@ export class MundoController {
     g.scale(sc, sc);
     g.fillStyle = id === 'vila' ? '#314228' : '#1c3320';
     g.fillRect(0, 0, reg.w, reg.h);
-    g.fillStyle = id === 'vila' ? '#6d5a3c' : '#3d4630';
-    if (id === 'vila') g.fillRect(400, 600, 1300, 80);
-    else g.fillRect(140, 960, 900, 80);
+    const paths = PATHS[id as 'vila'] ?? [];
+    for (const path of paths) {
+      g.fillStyle = path.kind === 'stone' ? '#6a675c' : path.kind === 'wood' ? '#7a5a38' : id === 'vila' ? '#6d5a3c' : '#3d4630';
+      g.fillRect(path.x, path.y, path.w, path.h);
+    }
     const light = g.createRadialGradient(reg.w * 0.5, reg.h * 0.2, 40, reg.w * 0.55, reg.h * 0.15, reg.w * 0.7);
     light.addColorStop(0, 'rgba(255,236,196,0.18)');
     light.addColorStop(1, 'rgba(0,0,0,0)');
@@ -426,44 +486,16 @@ export class MundoController {
     return cv;
   }
 
-  private drawProps(ctx: CanvasRenderingContext2D, id: string) {
-    const reg = REGIONS[id as 'vila'];
-    for (const b of reg.blocks) {
-      this.blitShadow(ctx, b.x + b.w / 2, b.y + b.h, b.w * 0.7);
-      ctx.fillStyle = id === 'vila' ? '#6a4a32' : '#4a4034';
-      ctx.fillRect(b.x, b.y, b.w, b.h);
-      ctx.fillStyle = id === 'vila' ? '#8a3a3a' : '#2a3a28';
-      ctx.fillRect(b.x - 6, b.y - 16, b.w + 12, 20);
-    }
-    for (const t of reg.trees) {
-      this.blitShadow(ctx, t.x, t.y + 6, t.r * 1.6);
-      ctx.fillStyle = '#5a3a22';
-      ctx.fillRect(t.x - 4, t.y - 10, 8, 18);
-      ctx.fillStyle = id === 'vila' ? '#3e8a45' : '#1f6a32';
-      ctx.beginPath();
-      ctx.arc(t.x, t.y - 16, t.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    const regNow = this.world.region;
-    if (regNow.shop) this.sign(ctx, regNow.shop.x, regNow.shop.y, 'Loja', '#ffd23e');
-    if (regNow.bank) this.sign(ctx, regNow.bank.x, regNow.bank.y, 'Banco', '#7eb6ff');
+  private drawBlock(ctx: CanvasRenderingContext2D, b: { x: number; y: number; w: number; h: number }, id: string, t: number) {
+    drawProp(ctx, { kind: id === 'vila' ? 'house' : 'ruin', x: b.x + b.w / 2, y: b.y + b.h, w: b.w, h: b.h }, t);
   }
 
-  private sign(ctx: CanvasRenderingContext2D, x: number, y: number, label: string, color: string) {
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, y, 70, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    this.blitShadow(ctx, x, y + 8, 28);
-    ctx.fillStyle = '#3a2a18';
-    ctx.fillRect(x - 16, y - 28, 32, 26);
-    ctx.fillStyle = color;
-    ctx.font = '700 14px "Chakra Petch", sans-serif';
+  private drawNpc(ctx: CanvasRenderingContext2D, npc: NpcDef, t: number) {
+    drawNpcMarker(ctx, npc.x, npc.y, npc.color, t);
+    ctx.fillStyle = npc.color;
+    ctx.font = '700 12px "Chakra Petch", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(label, x, y - 34);
+    ctx.fillText(npc.name, npc.x, npc.y - 44);
   }
 
   private drawPortal(ctx: CanvasRenderingContext2D) {
@@ -592,6 +624,10 @@ export class MundoController {
     if (this.lite || this.bits.length > 36) return;
     const p = this.world.player;
     if (p.hit > 0.12) this.bits.push({ x: p.x, y: p.y - 30, vx: 20, vy: -30, life: 0.35, max: 0.35, color: '#ffd0d0' });
+    const moving = this.keys.size > 0 || !!this.stick;
+    if (moving && this.world.clock % 180 < 40) {
+      this.bits.push({ x: p.x + (this.world.clock % 2 ? 6 : -6), y: p.y + 2, vx: 0, vy: 8, life: 0.28, max: 0.28, color: this.world.regionId === 'vila' ? '#c4a574' : '#6a8a58' });
+    }
   }
 
   private drawBits(ctx: CanvasRenderingContext2D) {

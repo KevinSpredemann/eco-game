@@ -1,3 +1,4 @@
+import { propSolids } from './scenery';
 import type { MonsterKind, MundoRegionId } from './types';
 
 export const PORTAL_R = 52;
@@ -24,8 +25,8 @@ export const REGIONS: Record<MundoRegionId, RegionDef> = {
   vila: {
     id: 'vila',
     name: 'Vila',
-    w: 1800,
-    h: 1200,
+    w: 2200,
+    h: 1500,
     safe: true,
     spawn: { x: 420, y: 640 },
     arrival: { x: 1480, y: 640 },
@@ -47,8 +48,8 @@ export const REGIONS: Record<MundoRegionId, RegionDef> = {
   floresta: {
     id: 'floresta',
     name: 'Floresta',
-    w: 2800,
-    h: 2000,
+    w: 3200,
+    h: 2300,
     safe: false,
     spawn: { x: 280, y: 1000 },
     arrival: { x: 300, y: 1000 },
@@ -85,6 +86,9 @@ export function blocked(region: RegionDef, x: number, y: number, rad = 16): bool
   }
   for (const t of region.trees) {
     if (Math.hypot(x - t.x, y - t.y) < t.r * 0.55 + rad * 0.35) return true;
+  }
+  for (const b of propSolids(region.id)) {
+    if (x > b.x - rad && x < b.x + b.w + rad && y > b.y - rad && y < b.y + b.h + rad) return true;
   }
   return false;
 }
