@@ -1,6 +1,23 @@
 import type { Difficulty } from '../game/sim';
 import { DEFAULT_LOADOUT, type Loadout } from '../game/balance';
-import { DEFAULT_KEYS, presetKeys, type CastChoice, type ControlStyle, type KeyBinds, type MoveScheme } from './input';
+import {
+  ARROW_LAYOUT,
+  ARROW_LAYOUT_NOTEBOOK,
+  DEFAULT_KEYS,
+  ESDF_KEYS,
+  LEGACY_ESDF,
+  LEGACY_QWER,
+  LEGACY_QWER_NOTEBOOK,
+  LEGACY_SHIFT,
+  LEGACY_SHIFT_NOTEBOOK,
+  NOTEBOOK_KEYS,
+  WASD_KEYS,
+  presetKeys,
+  type CastChoice,
+  type ControlStyle,
+  type KeyBinds,
+  type MoveScheme,
+} from './input';
 
 export interface Settings {
   master: number;
@@ -37,7 +54,7 @@ export interface Settings {
   rangeIndicator: 'aiming' | 'always';
   /** both: Esc e botão direito. esc: só Esc. */
   cancelAim: 'both' | 'esc';
-  /** arrows libera o W para o poder. wasd restaura o andar antigo. esdf anda com E S D F. */
+  /** wasd é o padrão. arrows libera o W para um poder. esdf anda com E S D F. */
   moveScheme: MoveScheme;
   /** equipamento escolhido */
   loadout: Loadout;
@@ -77,7 +94,7 @@ export const DEFAULTS: Settings = {
   manualAim: [],
   rangeIndicator: 'aiming',
   cancelAim: 'both',
-  moveScheme: 'arrows',
+  moveScheme: 'wasd',
   loadout: { ...DEFAULT_LOADOUT },
   chefeRole: 'sorteio',
   bossTurns: 0,
@@ -85,21 +102,32 @@ export const DEFAULTS: Settings = {
   quality: typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4 ? 'media' : 'alta',
 };
 
+const STOCK: KeyBinds[] = [WASD_KEYS, NOTEBOOK_KEYS, ARROW_LAYOUT, ARROW_LAYOUT_NOTEBOOK, ESDF_KEYS, LEGACY_QWER, LEGACY_QWER_NOTEBOOK, LEGACY_SHIFT, LEGACY_SHIFT_NOTEBOOK, LEGACY_ESDF];
+
+/** Cada tecla gravada bate com o mesmo campo do preset. Uma tecla fora de todo preset é remap manual. */
+function definedMatch(keys: Partial<KeyBinds> | null | undefined, preset: KeyBinds) {
+  if (!keys) return false;
+  const defined = (Object.keys(keys) as (keyof KeyBinds)[]).filter((k) => keys[k] != null);
+  return defined.length > 0 && defined.every((k) => keys[k] === preset[k]);
+}
+
 /**
- * Saves from before QWER stored Q/E/R/F and Shift, often without the newer
- * plasma/fire binds, so an exact key match never fired. Arrows (the default
- * when the field is missing) must take Q/W/E/R and Space once. An explicit
- * wasd or esdf scheme, or a skill key that already left E, stays as saved.
+ * O padrão voltou a ser WASD, com Q E F, R e Z.
+ * Um save que ainda é um preset (QWER das setas, Shift antigo, ESDF de fábrica)
+ * entra nesse padrão. Tecla trocada na mão fica como o jogador deixou.
+ * Setas e ESDF escolhidos de propósito, já no preset novo, continuam.
  */
-export function migrateMoveKeys(raw: { moveScheme?: unknown; control?: unknown; keys?: Partial<KeyBinds> | null }): KeyBinds | null {
-  const scheme: MoveScheme = raw.moveScheme === 'wasd' || raw.moveScheme === 'esdf' ? raw.moveScheme : 'arrows';
-  if (scheme !== 'arrows') return null;
-  const k = raw.keys;
-  if (!k || k.skill !== 'KeyE') return null;
-  if (k.dash !== 'ShiftLeft' && k.dash !== 'ShiftRight') return null;
-  if (k.bonus != null && k.bonus !== 'KeyF' && k.bonus !== 'Space') return null;
-  const notebook = raw.control === 'notebook' || k.item === 'KeyF' || k.bonus === 'Space';
-  return presetKeys(notebook ? 'notebook' : 'classic', 'arrows');
+export function migrateMoveKeys(raw: { moveScheme?: unknown; control?: unknown; keys?: Partial<KeyBinds> | null }): { moveScheme: MoveScheme; keys: KeyBinds } | null {
+  const scheme: MoveScheme = raw.moveScheme === 'arrows' || raw.moveScheme === 'esdf' || raw.moveScheme === 'wasd' ? raw.moveScheme : 'wasd';
+  const keys = raw.keys ?? null;
+  const notebook = raw.control === 'notebook';
+  const next = { moveScheme: 'wasd' as const, keys: presetKeys(notebook ? 'notebook' : 'classic', 'wasd') };
+  if (!keys) return scheme === 'wasd' ? null : next;
+  if (scheme === 'wasd' && (definedMatch(keys, WASD_KEYS) || definedMatch(keys, NOTEBOOK_KEYS))) return null;
+  if (scheme === 'arrows' && (definedMatch(keys, ARROW_LAYOUT) || definedMatch(keys, ARROW_LAYOUT_NOTEBOOK))) return null;
+  if (scheme === 'esdf' && (definedMatch(keys, ESDF_KEYS) || definedMatch(keys, LEGACY_ESDF))) return null;
+  if (!STOCK.some((p) => definedMatch(keys, p))) return null;
+  return next;
 }
 
 export function loadSettings(): Settings {
@@ -108,9 +136,13 @@ export function loadSettings(): Settings {
     if (raw) {
       const v = JSON.parse(raw);
       const mode = v.castMode === 'instant' || v.castMode === 'manual' || v.castMode === 'release' || v.castMode === 'auto' ? v.castMode : DEFAULTS.castMode;
-      const scheme: MoveScheme = v.moveScheme === 'wasd' || v.moveScheme === 'esdf' ? v.moveScheme : 'arrows';
       const migrated = migrateMoveKeys(v);
-      const keys: KeyBinds = migrated ?? { ...DEFAULT_KEYS, ...(v.keys ?? {}) };
+      const scheme: MoveScheme = migrated
+        ? migrated.moveScheme
+        : v.moveScheme === 'arrows' || v.moveScheme === 'esdf' || v.moveScheme === 'wasd'
+          ? v.moveScheme
+          : 'wasd';
+      const keys: KeyBinds = migrated ? migrated.keys : { ...DEFAULT_KEYS, ...(v.keys ?? {}) };
       const next: Settings = {
         ...DEFAULTS,
         ...v,

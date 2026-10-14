@@ -6,8 +6,65 @@ export type Slot = 'ability' | 'skill' | 'ult' | 'dash' | 'item' | 'bonus' | 'pl
 export type Action = Slot | 'fire';
 export type KeyBinds = Record<Action, string>;
 
-/** Q W E R com o R na ultimate, Espaço esquiva. As setas andam. */
-export const MOBA_KEYS: KeyBinds = {
+/**
+ * Padrão: WASD anda. Q, E e F são os três poderes, R é a ultimate, Z é o extra.
+ * Espaço esquiva. O clique esquerdo ataca e o direito cancela.
+ */
+export const WASD_KEYS: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyE',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'Digit1',
+  bonus: 'KeyF',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+/** Notebook: as mesmas teclas. O item vai para o X, porque o F é um poder. */
+export const WASD_NOTEBOOK: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyE',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'KeyX',
+  bonus: 'KeyF',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+/** Setas andam, então o W vira o segundo poder. Z continua o extra. */
+export const ARROW_LAYOUT: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'Digit1',
+  bonus: 'KeyE',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+export const ARROW_LAYOUT_NOTEBOOK: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'KeyF',
+  bonus: 'KeyE',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+/** ESDF anda. E e F não podem ser poderes: o segundo fica no W, o quarto no A, o extra no Z. */
+export const ESDF_KEYS: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'Digit1',
+  bonus: 'KeyA',
+  plasma: 'KeyZ',
+  fire: 'KeyJ',
+};
+/** Layout da rodada anterior: setas e Q W E R, com a Rajada no X. */
+export const LEGACY_QWER: KeyBinds = {
   ability: 'KeyQ',
   skill: 'KeyW',
   ult: 'KeyR',
@@ -17,8 +74,9 @@ export const MOBA_KEYS: KeyBinds = {
   plasma: 'KeyX',
   fire: 'KeyJ',
 };
-/** Restaura o movimento antigo: WASD anda, Q E R F são os poderes, Shift esquiva. */
-export const WASD_KEYS: KeyBinds = {
+export const LEGACY_QWER_NOTEBOOK: KeyBinds = { ...LEGACY_QWER, item: 'KeyF' };
+/** WASD antigo, com Shift na esquiva e a Rajada no X. */
+export const LEGACY_SHIFT: KeyBinds = {
   ability: 'KeyQ',
   skill: 'KeyE',
   ult: 'KeyR',
@@ -28,7 +86,7 @@ export const WASD_KEYS: KeyBinds = {
   plasma: 'KeyX',
   fire: 'KeyJ',
 };
-export const WASD_NOTEBOOK: KeyBinds = {
+export const LEGACY_SHIFT_NOTEBOOK: KeyBinds = {
   ability: 'KeyQ',
   skill: 'KeyE',
   ult: 'KeyR',
@@ -38,35 +96,15 @@ export const WASD_NOTEBOOK: KeyBinds = {
   plasma: 'KeyX',
   fire: 'KeyJ',
 };
-/** ESDF anda. O quarto poder sai do E e vai para o A. */
-export const ESDF_KEYS: KeyBinds = {
-  ability: 'KeyQ',
-  skill: 'KeyW',
-  ult: 'KeyR',
-  dash: 'Space',
-  item: 'Digit1',
-  bonus: 'KeyA',
-  plasma: 'KeyX',
-  fire: 'KeyJ',
-};
-export const DEFAULT_KEYS: KeyBinds = { ...MOBA_KEYS };
-/** Notebook: o mouse mira. Q W E R e Espaço, como no padrão. */
-export const NOTEBOOK_KEYS: KeyBinds = {
-  ability: 'KeyQ',
-  skill: 'KeyW',
-  ult: 'KeyR',
-  dash: 'Space',
-  item: 'KeyF',
-  bonus: 'KeyE',
-  plasma: 'KeyX',
-  fire: 'KeyJ',
-};
+export const LEGACY_ESDF: KeyBinds = { ...ESDF_KEYS, plasma: 'KeyX' };
+export const DEFAULT_KEYS: KeyBinds = { ...WASD_KEYS };
+export const NOTEBOOK_KEYS: KeyBinds = { ...WASD_NOTEBOOK };
 export type ControlStyle = 'classic' | 'notebook';
 export type MoveScheme = 'arrows' | 'wasd' | 'esdf';
-export function presetKeys(style: ControlStyle, scheme: MoveScheme = 'arrows'): KeyBinds {
-  if (scheme === 'wasd') return { ...(style === 'notebook' ? WASD_NOTEBOOK : WASD_KEYS) };
+export function presetKeys(style: ControlStyle, scheme: MoveScheme = 'wasd'): KeyBinds {
+  if (scheme === 'arrows') return { ...(style === 'notebook' ? ARROW_LAYOUT_NOTEBOOK : ARROW_LAYOUT) };
   if (scheme === 'esdf') return { ...ESDF_KEYS };
-  return { ...(style === 'notebook' ? NOTEBOOK_KEYS : DEFAULT_KEYS) };
+  return { ...(style === 'notebook' ? WASD_NOTEBOOK : WASD_KEYS) };
 }
 
 /** A mira acompanha o cursor sem pular: cada quadro anda no máximo um pedaço. */
@@ -121,13 +159,13 @@ export function clickFireLatch(latch: boolean, heldMs: number, toggle: boolean):
   return !latch;
 }
 export const ACTION_LABEL: Record<Action, string> = {
-  ability: 'Habilidade do personagem',
-  skill: 'Habilidade do equipamento',
-  ult: 'Ultimate',
+  ability: 'Poder 1 (Q no padrão)',
+  skill: 'Poder 2 (E no padrão)',
+  ult: 'Ultimate (R no padrão)',
   dash: 'Impulso / esquiva',
   item: 'Item (granada, mina…)',
-  bonus: 'Poder do cristal / utilidade',
-  plasma: 'Rajada de Plasma',
+  bonus: 'Poder 3 (F no padrão)',
+  plasma: 'Poder extra (Z no padrão)',
   fire: 'Atirar (além do clique)',
 };
 const PAUSE_KEYS = ['Escape', 'KeyP'];
@@ -163,7 +201,7 @@ export function keyLabel(code: string): string {
   };
   return map[code] ?? code.replace(/(Left|Right)$/, '');
 }
-export function isReservedKey(code: string, scheme: MoveScheme = 'arrows') {
+export function isReservedKey(code: string, scheme: MoveScheme = 'wasd') {
   return moveKeysFor(scheme).includes(code);
 }
 
@@ -221,8 +259,8 @@ export class InputManager {
   lastAim: number | null = null;
   binds: KeyBinds = { ...DEFAULT_KEYS };
   control: ControlStyle = 'classic';
-  /** arrows: setas andam e W fica livre para o poder. wasd restaura o antigo. esdf usa E S D F. */
-  moveScheme: MoveScheme = 'arrows';
+  /** wasd é o padrão. arrows libera o W para um poder. esdf anda com E S D F. */
+  moveScheme: MoveScheme = 'wasd';
   /** 1 = padrão; só o modo notebook suaviza a mira */
   aimSens = 1;
   /** tiro contínuo sem segurar o botão (não usado no notebook) */

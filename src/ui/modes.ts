@@ -19,7 +19,7 @@ export const PLAY_MODES: ModeCard[] = [
     id: 'x1-online',
     name: 'X1 Online',
     category: 'Duelo',
-    desc: 'Sala ou busca. Só poderes, no Q, W, E e R. Os combos valem.',
+    desc: 'Sala ou busca. Só poderes: Q, E e F, R na ultimate e Z no extra. Os combos valem.',
     players: '2',
     where: 'Online',
     available: true,

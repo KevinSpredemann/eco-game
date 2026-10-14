@@ -4,8 +4,8 @@ import { getArena } from '../src/game/arenas';
 import { DUEL, duelTiebreak, roundBanner } from '../src/game/duel';
 import { REWIND_TIME } from '../src/game/constants';
 import { CHAR_PRICES, grantStarters, newProfile, owns, STARTER_CHARS } from '../src/game/economy';
-import { NOTEBOOK_KEYS, WASD_KEYS, WASD_NOTEBOOK, assistAim, clickFireLatch, nearestAim, presetKeys, stepAim } from '../src/ui/input';
-import { migrateMoveKeys } from '../src/ui/settings';
+import { ARROW_LAYOUT, ESDF_KEYS, LEGACY_ESDF, LEGACY_QWER, LEGACY_SHIFT, LEGACY_SHIFT_NOTEBOOK, NOTEBOOK_KEYS, WASD_KEYS, assistAim, clickFireLatch, nearestAim, presetKeys, stepAim } from '../src/ui/input';
+import { loadSettings, migrateMoveKeys } from '../src/ui/settings';
 import { ClientGame } from '../src/net/clientGame';
 import { encodeSnapshot } from '../src/net/protocol';
 
@@ -304,28 +304,76 @@ describe('controles de notebook e elenco inicial', () => {
     expect(clickFireLatch(false, 40, false)).toBe(false);
     const keys = presetKeys('notebook');
     expect(keys).toEqual(NOTEBOOK_KEYS);
-    expect(keys.item).toBe('KeyF');
-    expect(keys.bonus).toBe('KeyE');
-    expect(keys.skill).toBe('KeyW');
+    expect(keys.item).toBe('KeyX');
+    expect(keys.bonus).toBe('KeyF');
+    expect(keys.skill).toBe('KeyE');
     expect(keys.dash).toBe('Space');
     expect(keys.ability).toBe('KeyQ');
     expect(keys.ult).toBe('KeyR');
+    expect(keys.plasma).toBe('KeyZ');
+    expect(presetKeys('classic')).toEqual(WASD_KEYS);
     expect(presetKeys('classic').dash).toBe('Space');
-    expect(presetKeys('classic').skill).toBe('KeyW');
-    expect(presetKeys('classic', 'wasd').item).toBe('Space');
-    expect(presetKeys('classic', 'wasd').skill).toBe('KeyE');
+    expect(presetKeys('classic').skill).toBe('KeyE');
+    expect(presetKeys('classic').bonus).toBe('KeyF');
+    expect(presetKeys('classic').plasma).toBe('KeyZ');
+    expect(presetKeys('classic', 'arrows').skill).toBe('KeyW');
+    expect(presetKeys('classic', 'arrows').bonus).toBe('KeyE');
+    expect(presetKeys('classic', 'arrows').plasma).toBe('KeyZ');
     expect(presetKeys('classic', 'esdf').bonus).toBe('KeyA');
+    expect(presetKeys('classic', 'esdf').plasma).toBe('KeyZ');
     const partial = { ability: 'KeyQ', skill: 'KeyE', ult: 'KeyR', dash: 'ShiftLeft', item: 'Space', bonus: 'KeyF' };
-    expect(migrateMoveKeys({ keys: partial })?.skill).toBe('KeyW');
-    expect(migrateMoveKeys({ keys: partial })?.dash).toBe('Space');
-    expect(migrateMoveKeys({ keys: partial })?.bonus).toBe('KeyE');
-    expect(migrateMoveKeys({ moveScheme: 'arrows', keys: { ...WASD_KEYS } })?.item).toBe('Digit1');
-    expect(migrateMoveKeys({ control: 'notebook', keys: { skill: 'KeyE', dash: 'ShiftRight', bonus: 'Space', item: 'KeyF' } })).toEqual(NOTEBOOK_KEYS);
-    expect(migrateMoveKeys({ keys: WASD_NOTEBOOK })?.bonus).toBe('KeyE');
+    const shifted = migrateMoveKeys({ keys: partial });
+    expect(shifted?.moveScheme).toBe('wasd');
+    expect(shifted?.keys.skill).toBe('KeyE');
+    expect(shifted?.keys.dash).toBe('Space');
+    expect(shifted?.keys.bonus).toBe('KeyF');
+    expect(shifted?.keys.plasma).toBe('KeyZ');
+    const qwer = migrateMoveKeys({ moveScheme: 'arrows', keys: { ...LEGACY_QWER } });
+    expect(qwer?.moveScheme).toBe('wasd');
+    expect(qwer?.keys.ability).toBe('KeyQ');
+    expect(qwer?.keys.skill).toBe('KeyE');
+    expect(qwer?.keys.ult).toBe('KeyR');
+    expect(qwer?.keys.bonus).toBe('KeyF');
+    expect(qwer?.keys.plasma).toBe('KeyZ');
+    expect(qwer?.keys.dash).toBe('Space');
+    expect(migrateMoveKeys({ moveScheme: 'wasd', keys: { ...LEGACY_SHIFT } })?.keys.dash).toBe('Space');
+    expect(migrateMoveKeys({ moveScheme: 'wasd', keys: { ...LEGACY_SHIFT } })?.keys.plasma).toBe('KeyZ');
     expect(migrateMoveKeys({ moveScheme: 'wasd', keys: WASD_KEYS })).toBeNull();
-    expect(migrateMoveKeys({ moveScheme: 'esdf', keys: { skill: 'KeyE', dash: 'ShiftLeft', bonus: 'KeyF' } })).toBeNull();
-    expect(migrateMoveKeys({ keys: { skill: 'KeyW', dash: 'Space', bonus: 'KeyE' } })).toBeNull();
+    expect(migrateMoveKeys({ moveScheme: 'arrows', keys: ARROW_LAYOUT })).toBeNull();
+    expect(migrateMoveKeys({ moveScheme: 'esdf', keys: ESDF_KEYS })).toBeNull();
+    expect(migrateMoveKeys({ moveScheme: 'esdf', keys: LEGACY_ESDF })).toBeNull();
+    expect(migrateMoveKeys({ moveScheme: 'wasd', keys: { ...WASD_KEYS, ult: 'KeyT' } })).toBeNull();
+    expect(migrateMoveKeys({ moveScheme: 'arrows', keys: { ...LEGACY_QWER, plasma: 'KeyC' } })).toBeNull();
+    expect(migrateMoveKeys({ control: 'notebook', keys: { ...LEGACY_SHIFT_NOTEBOOK } })).toEqual({ moveScheme: 'wasd', keys: NOTEBOOK_KEYS });
     expect(migrateMoveKeys({ keys: { skill: 'KeyE', dash: 'Space', bonus: 'KeyF' } })).toBeNull();
+    const mem = new Map<string, string>();
+    mem.set('eco.settings.v1', JSON.stringify({ moveScheme: 'arrows', control: 'classic', keys: LEGACY_QWER }));
+    const prev = (globalThis as { localStorage?: Storage }).localStorage;
+    (globalThis as { localStorage?: Storage }).localStorage = {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        mem.set(k, v);
+      },
+      removeItem: (k: string) => {
+        mem.delete(k);
+      },
+      clear: () => mem.clear(),
+      key: () => null,
+      length: 0,
+    } as Storage;
+    try {
+      const loaded = loadSettings();
+      expect(loaded.moveScheme).toBe('wasd');
+      expect(loaded.keys.skill).toBe('KeyE');
+      expect(loaded.keys.bonus).toBe('KeyF');
+      expect(loaded.keys.plasma).toBe('KeyZ');
+      expect(loaded.keys.dash).toBe('Space');
+      const saved = JSON.parse(mem.get('eco.settings.v1') ?? '{}');
+      expect(saved.moveScheme).toBe('wasd');
+      expect(saved.keys.skill).toBe('KeyE');
+    } finally {
+      (globalThis as { localStorage?: Storage }).localStorage = prev;
+    }
     expect(assistAim(0, 0, 0, [{ x: 100, y: 8 }])).toBeGreaterThan(0);
     expect(assistAim(0, 0, 0, [{ x: -200, y: 0 }])).toBe(0);
     expect(nearestAim(0, 0, [{ id: 'far', x: 300, y: 0 }, { id: 'near', x: 40, y: 0 }])?.id).toBe('near');

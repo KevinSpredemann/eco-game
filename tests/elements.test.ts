@@ -89,7 +89,7 @@ describe('poderes elementais', () => {
     expect(denyPowerCast('ability', [0, 1.2, 0, 0])).toBeNull();
     expect(denyPowerCast('fire', [9, 9, 9, 9])).toBeNull();
     const frozen = { ...clear, frozen: 2 };
-    expect(comboReady('kai', [0, 0, 0, 0], [frozen])).toMatchObject({ slot: 1, key: 'W', name: 'Estilhaçar' });
+    expect(comboReady('kai', [0, 0, 0, 0], [frozen])).toMatchObject({ slot: 1, key: 'E', name: 'Estilhaçar' });
     expect(comboReady('kai', [0, 2, 0, 0], [frozen])).toMatchObject({ slot: 2, key: 'R', name: 'Vapor' });
     expect(comboReady('kai', [0, 2, 2, 0], [frozen])).toBeNull();
     expect(comboReady('kai', [0, 0, 0, 0], [clear])).toBeNull();

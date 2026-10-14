@@ -423,8 +423,8 @@ export function botPower(kitDef: Kit, cds: number[], mark: Aura, dist: number, n
   return best;
 }
 
-/** Q W R E: o R é a ultimate (espaço 3 da lista é o E). */
-export const SLOT_LABEL = ['Q', 'W', 'R', 'E'] as const;
+/** Q E R F: Q, E e F são os poderes, R é a ultimate. Z fica fora desta lista (é o extra). */
+export const SLOT_LABEL = ['Q', 'E', 'R', 'F'] as const;
 
 /** Q E R F, e o F do notebook (item) cai no mesmo poder. */
 export function powerSlotIndex(slot: string): number | null {
@@ -448,7 +448,7 @@ export function denyPowerCast(slot: string, cd: readonly number[], energy: numbe
   return null;
 }
 
-/** X ainda não entrou nesta partida (bloqueada ou o servidor tirou do equipamento). */
+/** Z ainda não entrou nesta partida (bloqueada ou o servidor tirou do equipamento). */
 export function denyPlasma(on: boolean, cd: number, energy: number): string | null {
   if (!on) return 'Habilidade ainda não desbloqueada';
   if (cd > 0) return 'Habilidade em recarga';

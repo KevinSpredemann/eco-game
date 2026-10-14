@@ -109,10 +109,10 @@ function applySettings() {
   if (note) {
     const move =
       settings.moveScheme === 'wasd'
-        ? 'WASD e as setas andam. Q, E, R e F são os poderes. Shift esquiva.'
+        ? 'WASD e as setas andam. Q, E e F são os poderes. R é a ultimate. Z é o extra. Espaço esquiva. O clique esquerdo ataca. O direito cancela.'
         : settings.moveScheme === 'esdf'
-          ? 'ESDF anda (E frente, S esquerda, D trás, F direita). Q, W e R são poderes. A é o quarto. Espaço esquiva.'
-          : 'As setas andam. Q, W, E e R são os poderes (R é a ultimate). Espaço esquiva. O clique esquerdo é o ataque básico. O direito cancela a mira.';
+          ? 'ESDF anda (E frente, S esquerda, D trás, F direita). Q, W e R são poderes. A é o quarto. Z é o extra. Espaço esquiva. O clique esquerdo ataca. O direito cancela.'
+          : 'As setas andam. Q, W, E e R são os poderes (R é a ultimate). Z é o extra. Espaço esquiva. O clique esquerdo é o ataque básico. O direito cancela a mira.';
     note.textContent =
       settings.control === 'notebook'
         ? `${move} O mouse mira com ajuda. C trava no inimigo mais perto. No automático os poderes saem na hora. Esc cancela a mira e não gasta.`
@@ -1505,7 +1505,13 @@ const loadoutScreen = new LoadoutScreen($('#screen-loadout'), {
   buy: (k) => account.buy(k),
   toast: (m) => toast(m),
   click: () => audio.click(),
-  keyOf: (slot) => (input.touchMode ? { skill: 'HAB 2', ult: 'ULT', item: 'ITEM' }[slot] : keyLabel(settings.keys[slot])),
+  keyOf: (slot) => {
+    if (input.touchMode) {
+      const touch: Partial<Record<typeof slot, string>> = { skill: 'HAB 2', ult: 'ULT', item: 'ITEM' };
+      if (touch[slot]) return touch[slot];
+    }
+    return keyLabel(settings.keys[slot]);
+  },
 });
 function openLoadout(ctx: 'pre' | 'pause' | 'lobby') {
   loadoutCtx = ctx;
@@ -1769,12 +1775,13 @@ function beginMatchView(g: AnyGame) {
   const me = g.human;
   const powers = powersMatch(g);
   const kit = powers ? kitOf(me.char.id) : null;
-  $('#btn-ability .tlabel').textContent = me.boss ? 'IMPACTO' : powers ? 'Q' : me.char.ability.label.toUpperCase();
+  $('#btn-ability .tlabel').textContent = me.boss ? 'IMPACTO' : powers ? keyLabel(settings.keys.ability) : me.char.ability.label.toUpperCase();
   $('#touch').classList.toggle('combat', g.combat);
   $('#touch').classList.toggle('boss', me.boss);
   $('#btn-fire').hidden = !g.combat || powers;
   $('#btn-item').hidden = !g.combat || me.boss || powers;
   $('#btn-plasma').hidden = !powers;
+  if (powers) $('#btn-plasma .tlabel').textContent = keyLabel(settings.keys.plasma);
   $('#btn-bonus').hidden = powers ? false : training() && !isOnline();
   $('#btn-skill').hidden = !g.combat;
   $('#btn-ult').hidden = !g.combat;
@@ -1912,7 +1919,7 @@ function duelScore(g: AnyGame) {
 
 function objectiveText(g: AnyGame) {
   if (g.mode === 'dupla') return '2x2. O time que sobrar vence a rodada. Melhor de 5. Depois o ECO rebobina.';
-  return 'X1 só com poderes. Q, W, E e R. Os elementos combinam. Quem zera a vida vence a rodada.';
+  return 'X1 só com poderes. Q, E e F, R na ultimate e Z no extra. Os elementos combinam. Quem zera a vida vence a rodada.';
 }
 
 const OBJ_SHORT: Record<string, string> = { dourado: '★ Fragmento dourado', tripla: '★ Entrega tripla', intocavel: '★ Sem levar dano' };
@@ -1992,7 +1999,9 @@ function buildSlots(g: AnyGame): SlotView[] {
       .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT }));
     const ready = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
     const plasmaUp = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
-    kit.powers.forEach((pw, i) => {
+    // Barra: Q, E, F, R e depois o Z. O índice do kit não muda (R continua no espaço 2).
+    for (const i of [0, 1, 3, 2]) {
+      const pw = kit.powers[i];
       const left = me.powerCd[i] ?? 0;
       const cd = cooldownOf(me.char.id, pw.cd);
       const low = left <= 0 && (me.energy ?? ENERGY_MAX) < SLOT_COST[i];
@@ -2009,7 +2018,7 @@ function buildSlots(g: AnyGame): SlotView[] {
         desc: `${describePower({ ...pw, cd }, labels[i], SLOT_COST[i])} ${ELEMENT_FX[pw.element]}.`,
         hot: ready?.slot === i || (!ready && plasmaUp && left <= 0),
       });
-    });
+    }
     const plasmaLeft = me.plasmaCd ?? 0;
     const plasmaOn = !!me.plasmaOn;
     const plasmaLow = plasmaOn && plasmaLeft <= 0 && (me.energy ?? ENERGY_MAX) < PLASMA.cost;
@@ -2024,7 +2033,7 @@ function buildSlots(g: AnyGame): SlotView[] {
       off: !plasmaOn || plasmaLow,
       note: !plasmaOn ? 'BLOQUEADA' : plasmaLow ? 'SEM ENERGIA' : undefined,
       desc: plasmaOn
-        ? `X — ${PLASMA.name}: projétil médio, marca de ${PLASMA.mark}s. O próximo poder no alvo marcado explode (teto ${PLASMA.cap}). Recarga ${PLASMA.cd}s. Custa ${PLASMA.cost} de energia.`
+        ? `${K('plasma')} — ${PLASMA.name}: projétil médio, marca de ${PLASMA.mark}s. O próximo poder no alvo marcado explode (teto ${PLASMA.cap}). Recarga ${PLASMA.cd}s. Custa ${PLASMA.cost} de energia.`
         : 'Rajada de Plasma libera depois da primeira partida. Não se compra com moedas.',
     });
     const basicLeft = me.basicCd ?? 0;
@@ -2292,7 +2301,8 @@ function updateHud() {
     bb.classList.remove('empty');
     bb.style.setProperty('--bc', ELEMENT_COLOR[kit.powers[3].element]);
     setText('#btn-bonus .tlabel', kit.powers[3].name.toUpperCase());
-    setText('#btn-ability .tlabel', 'Q');
+    setText('#btn-ability .tlabel', keyLabel(settings.keys.ability));
+    setText('#btn-plasma .tlabel', keyLabel(settings.keys.plasma));
     setText('#btn-skill .tlabel', kit.powers[1].name.toUpperCase());
     setText('#btn-ult .tlabel', kit.powers[2].name.toUpperCase());
   } else {
@@ -2675,7 +2685,7 @@ function tutorial(dt: number) {
   const g = game;
   const me = g.human;
   hintT += dt;
-  const move = input.touchMode ? 'Arraste o polegar na metade esquerda da tela para andar.' : settings.moveScheme === 'wasd' ? 'Ande com WASD ou as setas.' : settings.moveScheme === 'esdf' ? 'Ande com ESDF ou as setas.' : 'Ande com as setas. Q, W, E e R são os poderes.';
+  const move = input.touchMode ? 'Arraste o polegar na metade esquerda da tela para andar.' : settings.moveScheme === 'wasd' ? 'Ande com WASD ou as setas. Q, E e F são poderes, R é a ultimate, Z é o extra.' : settings.moveScheme === 'esdf' ? 'Ande com ESDF ou as setas. Q, W e R são poderes, A é o quarto, Z é o extra.' : 'Ande com as setas. Q, W, E e R são os poderes. Z é o extra.';
   if (g.round === 1) {
     if (g.phase === 'prep') return hint('Treino: aprenda energia, núcleo e Ecos. ' + move);
     if (hintStage === 1) {
@@ -2692,7 +2702,7 @@ function tutorial(dt: number) {
         hintStage = 5;
         hintT = 0;
       }
-      return hint(input.touchMode ? 'Toque em IMPULSO para uma arrancada rápida. HAB usa a habilidade do personagem.' : settings.moveScheme === 'wasd' ? 'Shift = impulso. Q = habilidade do personagem.' : 'Espaço = impulso. Q = habilidade do personagem.');
+      return hint(input.touchMode ? 'Toque em IMPULSO para uma arrancada rápida. HAB usa a habilidade do personagem.' : `Espaço = impulso. ${keyLabel(settings.keys.ability)} = habilidade do personagem.`);
     }
     if (hintStage === 5) return hint('Tudo o que você faz está sendo gravado…');
   }
