@@ -27,7 +27,7 @@ import { Carousel, fitText } from './ui/carousel';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
-import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, comboReady, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex } from './game/elements';
+import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, comboReady, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex, studioOf } from './game/elements';
 import { setAbilityTrace } from './game/abilityTrace';
 import { sweepCircle } from './game/sweep';
 import { ACTION_LABEL, Action, MoveScheme, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
@@ -2025,20 +2025,24 @@ function buildSlots(g: AnyGame): SlotView[] {
     }
     const plasmaLeft = me.plasmaCd ?? 0;
     const plasmaOn = !!me.plasmaOn;
-    const plasmaLow = plasmaOn && plasmaLeft <= 0 && (me.energy ?? ENERGY_MAX) < PLASMA.cost;
+    const extra = studioOf(me.loadout.secondary);
+    const extraCd = extra?.cd ?? PLASMA.cd;
+    const extraCost = extra?.cost ?? PLASMA.cost;
+    const extraColor = extra ? ELEMENT_COLOR[extra.element] : PLASMA_COLOR;
+    const plasmaLow = plasmaOn && plasmaLeft <= 0 && (me.energy ?? ENERGY_MAX) < extraCost;
     slots.push({
       id: 'plasma',
       key: K('plasma'),
-      name: 'PLASMA',
-      art: { kind: 'symbol', id: me.char.id, color: PLASMA_COLOR },
-      color: PLASMA_COLOR,
-      cd: plasmaOn ? plasmaLeft / PLASMA.cd : 1,
+      name: (extra?.name ?? 'EXTRA').toUpperCase(),
+      art: { kind: 'symbol', id: me.char.id, color: extraColor },
+      color: extraColor,
+      cd: plasmaOn ? plasmaLeft / extraCd : 1,
       secs: plasmaOn ? plasmaLeft : 0,
       off: !plasmaOn || plasmaLow,
-      note: !plasmaOn ? 'BLOQUEADA' : plasmaLow ? 'SEM ENERGIA' : undefined,
-      desc: plasmaOn
-        ? `${K('plasma')} — ${PLASMA.name}: projétil médio, marca de ${PLASMA.mark}s. O próximo poder no alvo marcado explode (teto ${PLASMA.cap}). Recarga ${PLASMA.cd}s. Custa ${PLASMA.cost} de energia.`
-        : 'Rajada de Plasma libera depois da primeira partida. Não se compra com moedas.',
+      note: !plasmaOn ? 'VAZIO' : plasmaLow ? 'SEM ENERGIA' : undefined,
+      desc: extra
+        ? `${describePower(extra, K('plasma'), extra.cost)} ${ELEMENT_FX[extra.element]}.`
+        : 'Escolha um poder extra na tela de poderes. Trancado não entra.',
     });
     const basicLeft = me.basicCd ?? 0;
     const basicLow = basicLeft <= 0 && (me.energy ?? ENERGY_MAX) < BASIC.cost;
@@ -2180,7 +2184,7 @@ function deniedReason(slot: Slot): string {
     return `Recarga ${Math.ceil(me.bossCd[k])}s`;
   }
   if (game.mode === 'duelo' || game.mode === 'dupla') {
-    if (slot === 'plasma') return denyPlasma(!!me.plasmaOn, me.plasmaCd ?? 0, me.energy ?? ENERGY_MAX) ?? '';
+    if (slot === 'plasma') return denyPlasma(!!me.plasmaOn, me.plasmaCd ?? 0, me.energy ?? ENERGY_MAX, studioOf(me.loadout.secondary)?.cost) ?? '';
     const why = denyPowerCast(slot, me.powerCd ?? [0, 0, 0, 0], me.energy ?? ENERGY_MAX);
     if (why) return why;
     const i = powerSlotIndex(slot);
@@ -2915,18 +2919,23 @@ function slotInfo(slot: Slot): { kind: 'instant' | 'direction' | 'point'; range:
     return none;
   }
   if (slot === 'plasma') {
-    return { kind: 'direction', range: PLASMA.range, r: PLASMA.radius, w: 0, shape: 'arrow', name: PLASMA.name, color: PLASMA_COLOR };
+    const extra = studioOf(me.loadout.secondary);
+    if (!extra || extra.id === 'plasma') return { kind: 'direction', range: PLASMA.range, r: PLASMA.radius, w: 0, shape: 'arrow', name: PLASMA.name, color: PLASMA_COLOR };
+    const shape = extra.act === 'wall' ? 'wall' : extra.act === 'dash' || extra.act === 'blink' ? 'line' : extra.speed <= 0 ? 'circle' : 'arrow';
+    const kind = extra.speed <= 0 && extra.act !== 'dash' && extra.act !== 'blink' && extra.act !== 'wall' ? 'instant' : 'direction';
+    return { kind, range: Math.max(extra.range, extra.step ?? 0), r: extra.radius, w: extra.act === 'wall' ? 92 : 0, shape, name: extra.name, color: ELEMENT_COLOR[extra.element] };
   }
   if ((game.mode === 'duelo' || game.mode === 'dupla') && powerSlotIndex(slot) !== null) {
     const i = powerSlotIndex(slot)!;
     const pw = kitOf(me.char.id).powers[i];
-    const instant = pw.speed <= 0;
+    const instant = pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink' && pw.act !== 'wall';
+    const shape = pw.act === 'wall' ? 'wall' : pw.act === 'dash' || pw.act === 'blink' ? 'line' : instant ? 'circle' : 'arrow';
     return {
       kind: instant ? 'instant' : 'direction',
-      range: pw.range,
+      range: Math.max(pw.range, pw.step ?? 0),
       r: pw.radius,
-      w: 0,
-      shape: instant ? 'circle' : 'arrow',
+      w: pw.act === 'wall' ? 92 : 0,
+      shape,
       name: pw.name,
       color: ELEMENT_COLOR[pw.element],
     };

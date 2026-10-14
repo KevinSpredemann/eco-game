@@ -54,9 +54,36 @@ export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { loc
   g.translate(w / 2, floorY);
   g.scale(s, s);
   if (acc && accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
-  drawCharacter(g, c, 'down', opts.time ?? 0, false);
+  const posed = paintStudio(g, c.art);
+  if (!posed) {
+    drawCharacter(g, c, 'down', opts.time ?? 0, false);
+    const pending = studioSprite(c.art);
+    if (pending && !pending.complete) pending.addEventListener('load', () => drawPortrait(cv, c, opts), { once: true });
+  }
   if (acc && !accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
   g.restore();
+}
+
+const spriteCache = new Map<string, HTMLImageElement>();
+/** Sprite do estúdio, se a arte existir. Enquanto carrega, devolve a imagem incompleta. */
+export function studioSprite(art: string): HTMLImageElement | null {
+  if (!art.includes('studio/') || typeof Image === 'undefined') return null;
+  let img = spriteCache.get(art);
+  if (!img) {
+    img = new Image();
+    img.decoding = 'async';
+    img.src = '/' + art.replace(/^\//, '');
+    spriteCache.set(art, img);
+  }
+  return img;
+}
+
+export function paintStudio(g: CanvasRenderingContext2D, art: string, w = 34): boolean {
+  const img = studioSprite(art);
+  if (!img || !img.complete || img.naturalWidth <= 0) return false;
+  const dh = w * (img.naturalHeight / img.naturalWidth);
+  g.drawImage(img, -w / 2, -dh, w, dh);
+  return true;
 }
 
 const urlCache = new Map<string, string>();

@@ -16,6 +16,9 @@ export type AbilityId =
   | 'fumaca';
 export type Headwear = 'mask' | 'ponytail' | 'cap' | 'goggles' | 'capgoggles' | 'hood';
 
+/** Personagens do estúdio. No X1 e no 2x2 vale o kit, não a habilidade antiga. */
+export const STUDIO_CHARS = ['clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2'] as const;
+
 export interface CharacterDef {
   id: string;
   name: string;
@@ -426,8 +429,50 @@ export const CHARACTERS: CharacterDef[] = [
     },
     art: '',
   },
+  studio('clave', 'Clave', 'A Clave', 'Protege o time antes de atacar.', '#c45a78', '#6a2840', '#ffd27a', '#3a2030', '#f0c4b0', 'hood', 'escudo', 'Escudo', 'Escudo', 'Fora do X1 e do 2x2, um escudo curto. Na luta ranqueada a muralha é que segura o tiro.'),
+  studio('fuga', 'Fuga', 'A Fuga', 'Entra no tempo certo e passa à frente.', '#1a4a8a', '#0c2448', '#7ec8ff', '#102030', '#f2d0b4', 'goggles', 'teleporte', 'Teleporte', 'Teleporte', 'Fora do X1 e do 2x2, um salto curto. Na luta ranqueada o piscar é que vale.'),
+  studio('lyra', 'Lyra', 'A Harmônica', 'Espera o timing e estica a corda.', '#14685c', '#0a302c', '#2ec8b0', '#1a3030', '#f0c8a8', 'ponytail', 'muralha', 'Muralha', 'Muralha', 'Fora do X1 e do 2x2, uma muralha curta. Na luta ranqueada a corda de gelo é que deixa lento.'),
+  studio('metra', 'Metra', 'O Compasso', 'Conta o tempo e solta o pulso.', '#123a55', '#0a2030', '#3ee8ff', '#1a2430', '#e8c0a0', 'cap', 'raio', 'Raio', 'Raio', 'Fora do X1 e do 2x2, um raio curto. Na luta ranqueada o pulso do kit é que vale.'),
+  studio('resona', 'Resona', 'A Ressonante', 'Brinca com o anel e empurra o rival.', '#6a2060', '#301028', '#ff4fc3', '#2a1828', '#f0c8b0', 'mask', 'explosao', 'Explosão', 'Explosão', 'Fora do X1 e do 2x2, uma explosão curta. Na luta ranqueada o anel de vento é que empurra.'),
+  studio('rufo', 'Rufo', 'O Tambor', 'Conta até quatro e entra na briga.', '#8a3018', '#3a1408', '#ff7a3a', '#2a1810', '#e0b090', 'capgoggles', 'investida', 'Investida', 'Investida', 'Fora do X1 e do 2x2, uma investida. Na luta ranqueada a arrancada do kit é que acerta.'),
+  studio('solfa', 'Solfa', 'A Escala', 'Conta os degraus em voz alta.', '#8a5a10', '#3a2808', '#ffb020', '#3a2818', '#f2d0b0', 'ponytail', 'turbo', 'Turbo', 'Turbo', 'Fora do X1 e do 2x2, corre mais rápido por um instante. Na luta ranqueada o gelo no chão é que segura.'),
+  studio('vibra', 'Vibra', 'A Vibração', 'Fala em tremolo e empurra o círculo.', '#4a2880', '#201040', '#c084fc', '#201830', '#f0c8b4', 'hood', 'gravidade', 'Gravidade', 'Gravidade', 'Fora do X1 e do 2x2, um puxão curto. Na luta ranqueada o vento do kit é que empurra.'),
+  studio('sibilo', 'Sibilo', 'O Sussurro', 'Fala baixo e deixa um duplo no chão.', '#17602a', '#0c3016', '#5dff8a', '#102818', '#e8c8a8', 'hood', 'clone', 'Clone', 'Clone', 'Fora do X1 e do 2x2, um clone curto. Na luta ranqueada a ilusão é que segura o tiro.'),
+  studio('sibilo2', 'Sibilo △', 'O Triângulo', 'Some e reaparece atrás do rival.', '#145028', '#0a2814', '#9dff5c', '#0e2414', '#d8c0a0', 'mask', 'sombra', 'Sombra', 'Sombra', 'Fora do X1 e do 2x2, some por um instante. Na luta ranqueada o piscar é que vale.'),
 
 ];
+
+function studio(
+  id: string,
+  name: string,
+  title: string,
+  tagline: string,
+  suit: string,
+  suitDark: string,
+  color: string,
+  hair: string,
+  skin: string,
+  headwear: Headwear,
+  ability: AbilityId,
+  abilityName: string,
+  abilityLabel: string,
+  abilityDesc: string,
+): CharacterDef {
+  return {
+    id,
+    name,
+    title,
+    tagline,
+    suit,
+    suitDark,
+    color,
+    hair,
+    skin,
+    headwear,
+    ability: { id: ability, name: abilityName, label: abilityLabel, desc: abilityDesc, cooldown: 8, duration: 0 },
+    art: `art/studio/chars/${id}-frente.webp`,
+  };
+}
 
 import { SKINS } from './economy';
 import { ABILITY_BAL, levelMult } from './balance';

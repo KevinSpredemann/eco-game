@@ -381,7 +381,7 @@ describe('controles de notebook e elenco inicial', () => {
 
   it('os iniciais entram sem apagar moedas nem personagens comprados', () => {
     const fresh = newProfile();
-    expect(STARTER_CHARS).toEqual(['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris', 'vortex', 'nara', 'vexa']);
+    expect(STARTER_CHARS).toEqual(['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris', 'vortex', 'nara', 'vexa', 'clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2']);
     for (const id of STARTER_CHARS) {
       expect(CHAR_PRICES[id]).toBe(0);
       expect(owns(fresh, 'char:' + id)).toBe(true);

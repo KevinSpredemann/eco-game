@@ -1,10 +1,11 @@
 import { STANDARD_PRIMARIES, gearPrice, sanitizeLoadout, type Loadout } from './balance';
+import { STUDIO } from './elements';
 // Moedas, preços e itens de personalização. Usado pelo jogo e pelo servidor.
 
 export const START_COINS = 150;
 
 /** Personagens livres desde a primeira partida. O resto continua na progressão. */
-export const STARTER_CHARS = ['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris', 'vortex', 'nara', 'vexa'];
+export const STARTER_CHARS = ['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris', 'vortex', 'nara', 'vexa', 'clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2'];
 
 export const CHAR_PRICES: Record<string, number> = {
   kael: 0,
@@ -25,6 +26,16 @@ export const CHAR_PRICES: Record<string, number> = {
   vortex: 0,
   nara: 0,
   vexa: 0,
+  clave: 0,
+  fuga: 0,
+  lyra: 0,
+  metra: 0,
+  resona: 0,
+  rufo: 0,
+  solfa: 0,
+  vibra: 0,
+  sibilo: 0,
+  sibilo2: 0,
 };
 
 /** Soma os iniciais que faltam. Não mexe em moedas, xp nem no que já foi comprado. */
@@ -141,7 +152,7 @@ export function upgradePrice(p: Profile, charId: string): number | null {
 }
 
 export function newProfile(username = 'Convidado'): Profile {
-  return {
+  const p: Profile = {
     username,
     coins: START_COINS,
     xp: 0,
@@ -157,6 +168,8 @@ export function newProfile(username = 'Convidado'): Profile {
     abilityLv: {},
     powerUnlocks: [],
   };
+  syncPowerUnlocks(p);
+  return p;
 }
 
 /** Grava no perfil o poder extra que a partida já liberou. Tira o que foi colocado na mão, sem compra. */
@@ -166,20 +179,27 @@ export function syncPowerUnlocks(p: Profile): boolean {
     p.powerUnlocks = [];
     changed = true;
   }
-  const key = 'power:plasma';
-  const earned = (p.matches ?? 0) >= PLASMA_UNLOCK_MATCHES;
-  if (earned && !p.powerUnlocks.includes('plasma')) {
-    p.powerUnlocks.push('plasma');
-    changed = true;
-  }
-  const has = p.powerUnlocks.includes('plasma');
-  if (has && !p.owned.includes(key)) {
-    p.owned.push(key);
-    changed = true;
-  }
-  if (!has && p.owned.includes(key)) {
-    p.owned = p.owned.filter((id) => id !== key);
-    changed = true;
+  const matches = p.matches ?? 0;
+  for (const s of STUDIO) {
+    const key = 'power:' + s.id;
+    const earned = matches >= s.unlockMatches;
+    if (earned && !p.powerUnlocks.includes(s.id)) {
+      p.powerUnlocks.push(s.id);
+      changed = true;
+    }
+    if (!earned && p.powerUnlocks.includes(s.id)) {
+      p.powerUnlocks = p.powerUnlocks.filter((id) => id !== s.id);
+      changed = true;
+    }
+    const has = p.powerUnlocks.includes(s.id);
+    if (has && !p.owned.includes(key)) {
+      p.owned.push(key);
+      changed = true;
+    }
+    if (!has && p.owned.includes(key)) {
+      p.owned = p.owned.filter((id) => id !== key);
+      changed = true;
+    }
   }
   return changed;
 }

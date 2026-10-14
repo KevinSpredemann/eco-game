@@ -32,14 +32,18 @@ export interface PowerDef {
   los?: boolean;
   /** o projétil vira na direção do inimigo. Some se ele cair. */
   home?: boolean;
-  /** dash, blink, decoy e zone saem no lugar do projétil ou da área. */
-  act?: 'dash' | 'blink' | 'decoy' | 'zone';
+  /** dash, blink, decoy, zone e wall saem no lugar do projétil ou da área. */
+  act?: 'dash' | 'blink' | 'decoy' | 'zone' | 'wall';
   /** zone de cura. O campo dmg é o quanto cura por pulso. */
   zone?: 'heal';
   /** distância do piscar, em unidades do mapa. */
   step?: number;
   /** depois do acerto, abre um bosque que cura quem não é inimigo. */
   grove?: 'heal';
+  /** o piscar deixa uma ilusão no ponto de saída. */
+  ghost?: boolean;
+  /** área puxa o alvo esses pixels na direção de quem usou. */
+  yank?: number;
 }
 
 export const CATEGORY_PT: Record<PowerCategory, string> = {
@@ -61,8 +65,10 @@ export function describePower(pw: PowerDef, key: string, cost: number): string {
     act === 'dash'
       ? `arrancada de até ${pw.range}, para na parede, até ${pw.dmg} se encostar`
       : act === 'blink'
-        ? `pisca até ${pw.step ?? pw.range} e para na parede, até ${pw.dmg} se cair em cima`
-        : act === 'decoy'
+        ? `pisca até ${pw.step ?? pw.range} e para na parede${pw.ghost ? ', deixa uma ilusão no ponto de saída' : ''}, até ${pw.dmg} se cair em cima`
+        : act === 'wall'
+          ? `muralha de 3,2 s que bloqueia tiro e movimento, e deixa lento no raio ${pw.radius}`
+          : act === 'decoy'
           ? `ilusão que segura um tiro e estoura ${pw.dmg}`
           : act === 'zone' && pw.zone === 'heal'
             ? `bosque, raio ${pw.radius}, cura ${pw.dmg} por pulso`
@@ -72,7 +78,8 @@ export function describePower(pw: PowerDef, key: string, cost: number): string {
   const wall = pw.pass ? 'atravessa paredes' : 'para na parede';
   const prep = pw.windup ? `, preparo ${pw.windup}s` : '';
   const hit = act === 'zone' && pw.zone === 'heal' ? `cura ${pw.dmg}` : `dano ${pw.dmg}`;
-  return `${key} ${pw.name}: ${hit}, alcance ${pw.range}, recarga ${pw.cd}s, energia ${cost}, ${CATEGORY_PT[powerCategory(pw)]}, ${kind}, ${wall}${prep}.`;
+  const yank = pw.yank ? `, puxa ${pw.yank}` : '';
+  return `${key} ${pw.name}: ${hit}, alcance ${pw.range}, recarga ${pw.cd}s, energia ${cost}, ${CATEGORY_PT[powerCategory(pw)]}, ${kind}, ${wall}${prep}${yank}.`;
 }
 
 export type PassiveId =
@@ -144,6 +151,32 @@ export const PLASMA = {
   cap: 22,
 } as const;
 export const PLASMA_COLOR = '#c86bff';
+
+/** Poder extra do espaço Z. O texto da ficha manda; o efeito usa o que o combate já sabe fazer. */
+export interface StudioDef extends PowerDef {
+  id: string;
+  cost: number;
+  /** partidas jogadas para liberar. 0 entra na conta nova. */
+  unlockMatches: number;
+  art: string;
+}
+
+export const STUDIO: StudioDef[] = [
+  { id: 'plasma', name: PLASMA.name, element: 'plasma', cd: PLASMA.cd, dmg: PLASMA.dmg, range: PLASMA.range, speed: PLASMA.speed, radius: PLASMA.radius, cost: PLASMA.cost, unlockMatches: 1, art: '', category: 'attack' },
+  { id: 'arpejo', name: 'Arpejo', element: 'wind', cd: 4.2, dmg: 8, range: 150, speed: 0, radius: 24, cost: 18, unlockMatches: 0, art: 'art/studio/powers/arpejo.webp', category: 'mobility', act: 'blink', step: 150 },
+  { id: 'glissando', name: 'Glissando', element: 'wind', cd: 4, dmg: 6, range: 120, speed: 0, radius: 22, cost: 16, unlockMatches: 0, art: 'art/studio/powers/glissando.webp', category: 'mobility', act: 'blink', step: 120 },
+  { id: 'fermata', name: 'Fermata', element: 'ice', cd: 5.5, dmg: 8, range: 140, speed: 0, radius: 70, cost: 22, unlockMatches: 0, art: 'art/studio/powers/fermata.webp', category: 'control' },
+  { id: 'staccato', name: 'Staccato', element: 'lightning', cd: 3.2, dmg: 6, range: 220, speed: 900, radius: 12, cost: 16, unlockMatches: 1, art: 'art/studio/powers/staccato.webp', category: 'attack' },
+  { id: 'crescendo', name: 'Crescendo', element: 'fire', cd: 4.8, dmg: 10, range: 150, speed: 0, radius: 22, cost: 20, unlockMatches: 2, art: 'art/studio/powers/crescendo.webp', category: 'attack', act: 'dash' },
+  { id: 'ostinato', name: 'Ostinato', element: 'wind', cd: 5, dmg: 8, range: 150, speed: 0, radius: 88, cost: 20, unlockMatches: 3, art: 'art/studio/powers/ostinato.webp', category: 'control' },
+  { id: 'prisma', name: 'Prisma', element: 'wind', cd: 6, dmg: 6, range: 70, speed: 0, radius: 18, cost: 18, unlockMatches: 4, art: 'art/studio/powers/prisma.webp', category: 'defense', act: 'decoy' },
+  { id: 'reverso', name: 'Reverso', element: 'ice', cd: 5.2, dmg: 8, range: 150, speed: 0, radius: 78, cost: 22, unlockMatches: 5, art: 'art/studio/powers/reverso.webp', category: 'control', yank: 70 },
+];
+
+export function studioOf(id: string | null | undefined): StudioDef | null {
+  if (!id) return null;
+  return STUDIO.find((s) => s.id === id) ?? null;
+}
 
 /**
  * Ataque básico do X1 e do 2x2. Não é arma, não marca elemento e não gasta a marca de plasma.
@@ -236,6 +269,116 @@ export const KITS: Record<string, Kit> = {
     passive: 'shadow',
     passiveName: 'Tocaia',
     passiveDesc: 'O piscar prepara a emboscada. A ilusão segura um tiro.',
+  },
+  clave: {
+    powers: [
+      { name: 'Assinatura da Clave', element: 'ice', cd: 5.2, dmg: 6, range: 78, speed: 0, radius: 64, category: 'defense', act: 'wall' },
+      { name: 'Brisa', element: 'wind', cd: 4.4, dmg: 8, range: 150, speed: 0, radius: 82, category: 'control' },
+      { name: 'Estalo', element: 'lightning', cd: 6.4, dmg: 14, range: 300, speed: 620, radius: 16, category: 'attack' },
+      { name: 'Brasa', element: 'fire', cd: 3.3, dmg: 8, range: 230, speed: 700, radius: 14, category: 'attack' },
+    ],
+    passive: 'wall',
+    passiveName: 'Compasso firme',
+    passiveDesc: 'A muralha segura tiro e movimento e deixa lento quem está perto.',
+  },
+  fuga: {
+    powers: [
+      { name: 'Entrada da Fuga', element: 'wind', cd: 4.6, dmg: 8, range: 140, speed: 0, radius: 28, category: 'mobility', act: 'blink', step: 140, ghost: true },
+      { name: 'Centelha', element: 'fire', cd: 3.5, dmg: 9, range: 250, speed: 720, radius: 14, category: 'attack' },
+      { name: 'Corte', element: 'lightning', cd: 6.6, dmg: 15, range: 300, speed: 640, radius: 16, category: 'attack' },
+      { name: 'Orvalho', element: 'ice', cd: 4.8, dmg: 8, range: 150, speed: 0, radius: 80, category: 'control' },
+    ],
+    passive: 'speed',
+    passiveName: 'Entrada',
+    passiveDesc: 'O piscar para na parede e deixa uma ilusão no ponto de saída.',
+  },
+  lyra: {
+    powers: [
+      { name: 'Corda da Lyra', element: 'ice', cd: 3.4, dmg: 8, range: 270, speed: 680, radius: 14, category: 'control' },
+      { name: 'Sopro', element: 'wind', cd: 4.7, dmg: 8, range: 150, speed: 0, radius: 84, category: 'control' },
+      { name: 'Labareda', element: 'fire', cd: 6.2, dmg: 14, range: 290, speed: 640, radius: 16, category: 'attack' },
+      { name: 'Faísca', element: 'lightning', cd: 3.6, dmg: 9, range: 240, speed: 760, radius: 14, category: 'attack' },
+    ],
+    passive: 'hunter',
+    passiveName: 'Cordas',
+    passiveDesc: 'O gelo da corda deixa lento. O tiro para na parede.',
+  },
+  metra: {
+    powers: [
+      { name: 'Pulso da Metra', element: 'lightning', cd: 4.5, dmg: 10, range: 150, speed: 0, radius: 82, category: 'attack' },
+      { name: 'Brasa', element: 'fire', cd: 3.4, dmg: 8, range: 240, speed: 700, radius: 14, category: 'attack' },
+      { name: 'Geada', element: 'ice', cd: 6.5, dmg: 13, range: 280, speed: 620, radius: 16, category: 'attack' },
+      { name: 'Rajada', element: 'wind', cd: 4.2, dmg: 8, range: 140, speed: 0, radius: 78, category: 'control' },
+    ],
+    passive: 'stun',
+    passiveName: 'Batida',
+    passiveDesc: 'O pulso de raio deixa tonto quem está no círculo.',
+  },
+  resona: {
+    powers: [
+      { name: 'Pulso da Resona', element: 'wind', cd: 4.6, dmg: 9, range: 160, speed: 0, radius: 90, category: 'control' },
+      { name: 'Geada', element: 'ice', cd: 3.5, dmg: 8, range: 250, speed: 700, radius: 14, category: 'attack' },
+      { name: 'Descarga', element: 'lightning', cd: 6.8, dmg: 15, range: 310, speed: 600, radius: 18, category: 'attack' },
+      { name: 'Brasa', element: 'fire', cd: 3.2, dmg: 8, range: 220, speed: 740, radius: 14, category: 'attack' },
+    ],
+    passive: 'knock',
+    passiveName: 'Anel',
+    passiveDesc: 'O vento empurra quem está no anel.',
+  },
+  rufo: {
+    powers: [
+      { name: 'Rufar', element: 'fire', cd: 4.2, dmg: 12, range: 160, speed: 0, radius: 22, category: 'attack', act: 'dash' },
+      { name: 'Geada', element: 'ice', cd: 3.6, dmg: 8, range: 240, speed: 680, radius: 14, category: 'attack' },
+      { name: 'Estalo', element: 'lightning', cd: 6.4, dmg: 14, range: 280, speed: 640, radius: 16, category: 'attack' },
+      { name: 'Rajada', element: 'wind', cd: 4.5, dmg: 8, range: 140, speed: 0, radius: 80, category: 'control' },
+    ],
+    passive: 'pyro',
+    passiveName: 'Batida',
+    passiveDesc: 'A arrancada acerta quem encosta e para na parede.',
+  },
+  solfa: {
+    powers: [
+      { name: 'Escada da Solfa', element: 'ice', cd: 5, dmg: 8, range: 150, speed: 0, radius: 76, category: 'control' },
+      { name: 'Nota', element: 'wind', cd: 3.4, dmg: 8, range: 250, speed: 720, radius: 14, category: 'attack' },
+      { name: 'Labareda', element: 'fire', cd: 6.3, dmg: 14, range: 290, speed: 640, radius: 16, category: 'attack' },
+      { name: 'Faísca', element: 'lightning', cd: 4.4, dmg: 9, range: 140, speed: 0, radius: 78, category: 'attack' },
+    ],
+    passive: 'heal',
+    passiveName: 'Escala',
+    passiveDesc: 'O gelo no chão deixa lento quem está no círculo.',
+  },
+  vibra: {
+    powers: [
+      { name: 'Vibrato', element: 'wind', cd: 4.4, dmg: 9, range: 150, speed: 0, radius: 86, category: 'control' },
+      { name: 'Geada', element: 'ice', cd: 3.5, dmg: 7, range: 240, speed: 700, radius: 14, category: 'attack' },
+      { name: 'Estalo', element: 'lightning', cd: 6.6, dmg: 14, range: 300, speed: 620, radius: 16, category: 'attack' },
+      { name: 'Brasa', element: 'fire', cd: 3.3, dmg: 8, range: 220, speed: 740, radius: 14, category: 'attack' },
+    ],
+    passive: 'knock',
+    passiveName: 'Oscilação',
+    passiveDesc: 'O vento empurra quem está no círculo.',
+  },
+  sibilo: {
+    powers: [
+      { name: 'Sussurro', element: 'wind', cd: 6, dmg: 6, range: 70, speed: 0, radius: 18, category: 'defense', act: 'decoy' },
+      { name: 'Brasa', element: 'fire', cd: 3.4, dmg: 9, range: 240, speed: 720, radius: 14, category: 'attack' },
+      { name: 'Estalo', element: 'lightning', cd: 6.5, dmg: 13, range: 280, speed: 640, radius: 16, category: 'attack' },
+      { name: 'Orvalho', element: 'ice', cd: 4.8, dmg: 8, range: 140, speed: 0, radius: 76, category: 'control' },
+    ],
+    passive: 'refund',
+    passiveName: 'Falso',
+    passiveDesc: 'A ilusão segura um tiro e estoura.',
+  },
+  sibilo2: {
+    powers: [
+      { name: 'Sussurro Triplo', element: 'lightning', cd: 5.2, dmg: 8, range: 110, speed: 0, radius: 26, category: 'mobility', act: 'blink', step: 110 },
+      { name: 'Nota', element: 'wind', cd: 3.6, dmg: 8, range: 230, speed: 700, radius: 14, category: 'attack' },
+      { name: 'Labareda', element: 'fire', cd: 6.4, dmg: 14, range: 280, speed: 640, radius: 16, category: 'attack' },
+      { name: 'Geada', element: 'ice', cd: 4.6, dmg: 7, range: 140, speed: 0, radius: 74, category: 'control' },
+    ],
+    passive: 'shatter',
+    passiveName: 'Sumiço',
+    passiveDesc: 'O piscar para na parede. Quem está no ponto leva o golpe.',
   },
 };
 
@@ -449,10 +592,10 @@ export function denyPowerCast(slot: string, cd: readonly number[], energy: numbe
 }
 
 /** Z ainda não entrou nesta partida (bloqueada ou o servidor tirou do equipamento). */
-export function denyPlasma(on: boolean, cd: number, energy: number): string | null {
+export function denyPlasma(on: boolean, cd: number, energy: number, cost: number = PLASMA.cost): string | null {
   if (!on) return 'Habilidade ainda não desbloqueada';
   if (cd > 0) return 'Habilidade em recarga';
-  if (energy < PLASMA.cost) return 'Energia insuficiente';
+  if (energy < cost) return 'Energia insuficiente';
   return null;
 }
 

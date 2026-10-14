@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/game/sim';
 import { ARENAS } from '../src/game/arenas';
-import { CHARACTERS } from '../src/game/characters';
+import { CHARACTERS, STUDIO_CHARS } from '../src/game/characters';
 import { PRIMARY, WEAPONS } from '../src/game/weapons';
 
 const idle = { mx: 0, my: 0, dash: false, ability: false };
 
 describe('cristais de habilidade e armas próprias', () => {
   it('cada personagem tem uma arma principal diferente', () => {
-    const ids = CHARACTERS.map((c) => PRIMARY[c.id]);
-    expect(new Set(ids).size).toBe(CHARACTERS.length);
-    for (const w of ids) expect(WEAPONS[w]).toBeTruthy();
+    const classic = CHARACTERS.filter((c) => !(STUDIO_CHARS as readonly string[]).includes(c.id));
+    const ids = classic.map((c) => PRIMARY[c.id]);
+    expect(new Set(ids).size).toBe(classic.length);
+    for (const c of CHARACTERS) expect(WEAPONS[PRIMARY[c.id]]).toBeTruthy();
   });
 
   it('bots fecham a partida com poderes e sem cristal', () => {

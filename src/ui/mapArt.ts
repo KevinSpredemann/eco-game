@@ -345,4 +345,23 @@ export class MapScene {
 }
 
 /** dificuldade de cada mapa (1 a 5) */
-export const MAP_DIFFICULTY: Record<string, number> = { lab: 1, floresta: 2, cidade: 3, templo: 3, fabrica: 3, gelo: 3, deserto: 3, espaco: 4, vulcao: 4, metro: 4 };
+export const MAP_DIFFICULTY: Record<string, number> = {
+  lab: 1,
+  floresta: 2,
+  cidade: 3,
+  templo: 3,
+  fabrica: 3,
+  gelo: 3,
+  deserto: 3,
+  espaco: 4,
+  vulcao: 4,
+  metro: 4,
+  anfiteatro: 2,
+  biblioteca: 3,
+  camara: 2,
+  caverna: 3,
+  jardim: 2,
+  vinil: 3,
+  recife: 4,
+  metronomo: 3,
+};

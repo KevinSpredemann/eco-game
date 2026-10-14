@@ -490,7 +490,7 @@ function blankPlayer(id: string, name: string, char: ReturnType<typeof getCharac
     energy: 100,
     plasmaCd: 0,
     plasmaT: 0,
-    plasmaOn: loadout.secondary === 'plasma',
+    plasmaOn: !!loadout.secondary,
     comboStacks: 0,
     hidden: false,
     tookDamage: false,

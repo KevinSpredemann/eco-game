@@ -52,6 +52,7 @@ import {
   ROOT_TIME,
   SLOT_COST,
   VISUAL_WEAPON,
+  type PowerDef,
   WALL_BONUS,
   WALL_REACH,
   bonusDamage,
@@ -62,6 +63,7 @@ import {
   healOnCombo,
   kitOf,
   knockMul,
+  studioOf,
   refundOnCombo,
   speedMul,
   stunTime,
@@ -831,7 +833,7 @@ export class Game {
       energy: ENERGY_MAX,
       plasmaCd: 0,
       plasmaT: 0,
-      plasmaOn: lo.secondary === 'plasma',
+      plasmaOn: !!lo.secondary,
       comboStacks: 0,
       hidden: false,
       tookDamage: false,
@@ -1046,7 +1048,7 @@ export class Game {
         p.loadout = p.pendingLoadout;
         p.pendingLoadout = null;
       }
-      p.plasmaOn = p.loadout.secondary === 'plasma';
+      p.plasmaOn = !!p.loadout.secondary;
       this.equip(p);
       if (this.mode === 'dupla') {
         const sp = this.teamSpawn(p.team, i % 2);
@@ -1527,7 +1529,7 @@ export class Game {
         if (inp.skill) this.beginPower(p, 1, castAng, inp);
         if (inp.ult) this.beginPower(p, 2, castAng, inp);
         if (inp.bonus || inp.item) this.beginPower(p, 3, castAng, inp);
-        if (inp.plasma) this.castPlasma(p, castAng);
+        if (inp.plasma) this.castPlasma(p, castAng, inp);
         if ((this.mode === 'duelo' || this.mode === 'dupla') && inp.fire) this.castBasic(p, castAng);
       }
 
@@ -3011,7 +3013,7 @@ export class Game {
       return;
     }
     const knock = KNOCK[def.element];
-    if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone') {
+    if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone' || def.act === 'wall') {
       if ((def.act === 'dash' || def.act === 'blink') && p.rootT > 0) {
         this.events.push({ type: 'deny', pid: p.id, msg: 'Preso pelas raízes' });
         return;
@@ -3019,30 +3021,7 @@ export class Game {
       p.energy -= cost;
       p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
       abilityTrace(p.id, 'launch', def.name);
-      this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: def.radius });
-      if (def.act === 'dash') {
-        p.dir = ang;
-        p.dashT = C.DASH_TIME;
-        p.dashDmg = def.dmg;
-        p.dashEl = def.element;
-        p.dashHit = [];
-        p.flowT = Math.max(p.flowT, FLOW_TIME);
-        this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
-      } else if (def.act === 'blink') {
-        const moved = this.blinkTo(p, ang, def.step ?? BLINK_STEP);
-        if (moved > 12) p.ambushT = AMBUSH_TIME;
-        const foe = this.nearestHostile(p, 36);
-        if (foe) this.deliverPower(p, foe, def.element, def.dmg, 0);
-      } else if (def.act === 'decoy') {
-        const ox = p.x + Math.cos(ang) * 48;
-        const oy = p.y + Math.sin(ang) * 48;
-        const spot = this.isFree(ox, oy, 12) ? { x: ox, y: oy } : { x: p.x, y: p.y };
-        this.clones.push({ owner: p.id, x: spot.x, y: spot.y, dir: ang, t: 3.2, decoy: true, absorb: 1, pop: def.dmg });
-      } else {
-        const pt = this.castPoint(p, inp, ang, def.range);
-        this.placeGrove(p, pt.x, pt.y, def.radius, def.dmg);
-        this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
-      }
+      this.playAct(p, def, ang, inp);
       return;
     }
     if (def.speed <= 0) {
@@ -3091,39 +3070,151 @@ export class Game {
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
   }
 
-  /** Rajada de Plasma. Projétil: gasta ao sair, mesmo se não acertar. */
-  private castPlasma(p: Player, ang: number) {
-    if (!p.plasmaOn) {
+  /** Efeito já pago: arrancada, piscar, ilusão, bosque ou muralha. */
+  private playAct(p: Player, def: PowerDef, ang: number, inp?: Input) {
+    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: def.radius });
+    if (def.act === 'dash') {
+      p.dir = ang;
+      p.dashT = C.DASH_TIME;
+      p.dashDmg = def.dmg;
+      p.dashEl = def.element;
+      p.dashHit = [];
+      p.flowT = Math.max(p.flowT, FLOW_TIME);
+      this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
+    } else if (def.act === 'blink') {
+      const ox = p.x;
+      const oy = p.y;
+      const moved = this.blinkTo(p, ang, def.step ?? BLINK_STEP);
+      if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, def.dmg) });
+      if (moved > 12) p.ambushT = AMBUSH_TIME;
+      const foe = this.nearestHostile(p, 36);
+      if (foe) this.deliverPower(p, foe, def.element, def.dmg, 0);
+    } else if (def.act === 'decoy') {
+      const ox = p.x + Math.cos(ang) * 48;
+      const oy = p.y + Math.sin(ang) * 48;
+      const spot = this.isFree(ox, oy, 12) ? { x: ox, y: oy } : { x: p.x, y: p.y };
+      this.clones.push({ owner: p.id, x: spot.x, y: spot.y, dir: ang, t: 3.2, decoy: true, absorb: 1, pop: def.dmg });
+    } else if (def.act === 'wall') {
+      const reach = Math.min(78, Math.max(48, def.range));
+      const cx = p.x + Math.cos(ang) * reach;
+      const cy = p.y + Math.sin(ang) * reach;
+      this.raiseWall(p.id, cx, cy, ang, 92, 16, 3.2, 'barreira');
+      for (const o of this.players) {
+        if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
+        if (dist(o.x, o.y, cx, cy) > def.radius + 8) continue;
+        this.slow(o, 1.1);
+        this.deliverPower(p, o, def.element, def.dmg, 0, true);
+      }
+    } else {
+      const pt = this.castPoint(p, inp, ang, def.range);
+      this.placeGrove(p, pt.x, pt.y, def.radius, def.dmg);
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
+    }
+  }
+
+  /** Poder extra do Z. Plasma mantém a marca. Os outros usam o mesmo combate do kit. */
+  private castPlasma(p: Player, ang: number, inp?: Input) {
+    const def = studioOf(p.loadout.secondary);
+    if (!p.plasmaOn || !def) {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Habilidade ainda não desbloqueada' });
       abilityTrace(p.id, 'deny', 'locked');
       return;
     }
     if (p.plasmaCd > 0) return;
-    if (p.energy < PLASMA.cost) {
+    if (def.id === 'plasma') {
+      if (p.energy < PLASMA.cost) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+        abilityTrace(p.id, 'deny', 'energy');
+        return;
+      }
+      p.energy -= PLASMA.cost;
+      p.plasmaCd = PLASMA.cd;
+      const muzzle = 18;
+      this.bullets.push({
+        id: this.fragId++,
+        x: p.x + Math.cos(ang) * muzzle,
+        y: p.y - GUN_Y + Math.sin(ang) * muzzle,
+        vx: Math.cos(ang) * PLASMA.speed,
+        vy: Math.sin(ang) * PLASMA.speed,
+        owner: p.id,
+        dmg: PLASMA.dmg,
+        life: PLASMA.range / PLASMA.speed,
+        weapon: 'pulsador',
+        pierce: false,
+        fromEcho: false,
+        hit: [],
+        plasma: true,
+      });
+      abilityTrace(p.id, 'launch', PLASMA.name);
+      this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: 'plasma' });
+      return;
+    }
+    if ((def.act === 'dash' || def.act === 'blink') && p.rootT > 0) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Preso pelas raízes' });
+      return;
+    }
+    if (p.energy < def.cost) {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
       abilityTrace(p.id, 'deny', 'energy');
       return;
     }
-    p.energy -= PLASMA.cost;
-    p.plasmaCd = PLASMA.cd;
+    if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone' || def.act === 'wall') {
+      p.energy -= def.cost;
+      p.plasmaCd = def.cd;
+      abilityTrace(p.id, 'launch', def.name);
+      this.playAct(p, def, ang, inp);
+      return;
+    }
+    if (def.speed <= 0) {
+      const pt = this.castPoint(p, inp, ang, def.range);
+      const los = def.los !== false;
+      if (!this.foeInRadius(p, pt.x, pt.y, def.radius, los)) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido' });
+        abilityTrace(p.id, 'deny', 'target');
+        return;
+      }
+      p.energy -= def.cost;
+      p.plasmaCd = def.cd;
+      abilityTrace(p.id, 'impact', def.name);
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
+      for (const o of this.players) {
+        if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
+        if (dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
+        if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
+        this.deliverPower(p, o, def.element, def.dmg, KNOCK[def.element], true);
+        if (def.yank && def.yank > 0) {
+          const dx = p.x - o.x;
+          const dy = p.y - o.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const step = Math.min(def.yank, d);
+          o.pullX = o.x + (dx / d) * step;
+          o.pullY = o.y + (dy / d) * step;
+          o.pullT = 0.45;
+        }
+      }
+      return;
+    }
+    p.energy -= def.cost;
+    p.plasmaCd = def.cd;
     const muzzle = 18;
     this.bullets.push({
       id: this.fragId++,
       x: p.x + Math.cos(ang) * muzzle,
       y: p.y - GUN_Y + Math.sin(ang) * muzzle,
-      vx: Math.cos(ang) * PLASMA.speed,
-      vy: Math.sin(ang) * PLASMA.speed,
+      vx: Math.cos(ang) * def.speed,
+      vy: Math.sin(ang) * def.speed,
       owner: p.id,
-      dmg: PLASMA.dmg,
-      life: PLASMA.range / PLASMA.speed,
-      weapon: 'pulsador',
+      dmg: def.dmg,
+      life: def.range / def.speed,
+      weapon: VISUAL_WEAPON[def.element],
       pierce: false,
       fromEcho: false,
       hit: [],
-      plasma: true,
+      el: def.element,
+      knock: KNOCK[def.element],
     });
-    abilityTrace(p.id, 'launch', PLASMA.name);
-    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: 'plasma' });
+    abilityTrace(p.id, 'launch', def.name);
+    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
   }
 
   /** Marca de 4 s. O dano do projétil não passa do valor da habilidade. */

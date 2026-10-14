@@ -5,7 +5,7 @@ import { WEAPONS, loadoutPrimary } from '../game/weapons';
 import { ELEMENT_COLOR, ELEMENT_NAME, kitOf } from '../game/elements';
 import { drawCharacter } from '../render/chars';
 import { accessoryBehind, drawAccessory } from '../render/accessories';
-import { hexA } from './portraits';
+import { hexA, paintStudio } from './portraits';
 
 export class HomeHero {
   running = false;
@@ -148,9 +148,12 @@ export class HomeHero {
     g.save();
     g.translate(this.w / 2 + drift, floor);
     g.scale(s * breath, s * breath);
-    if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
-    drawCharacter(g, c, 'down', this.phase, false);
-    if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+    const posed = paintStudio(g, c.art, 36);
+    if (!posed) {
+      if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+      drawCharacter(g, c, 'down', this.phase, false);
+      if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+    }
     if (this.weapon && this.weapon !== 'assinatura') paintWeapon(g, c.id, this.weapon);
     else {
       g.fillStyle = ELEMENT_COLOR[kitOf(c.id).powers[0].element];
@@ -198,10 +201,13 @@ export function drawEquippedPreview(cv: HTMLCanvasElement, c: CharacterDef, accI
   g.save();
   g.translate(w / 2 + Math.sin(phase * 0.5) * 6, floor);
   g.scale(s, s);
-  if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
-  drawCharacter(g, c, facing, phase, false);
-  if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
-  paintWeapon(g, c.id, weapon);
+  const posed = paintStudio(g, c.art, 36);
+  if (!posed) {
+    if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+    drawCharacter(g, c, facing, phase, false);
+    if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+    paintWeapon(g, c.id, weapon);
+  }
   g.restore();
 }
 

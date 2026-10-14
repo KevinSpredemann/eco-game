@@ -2,7 +2,7 @@ import { ArenaDef, BORDER, WORLD_H, WORLD_W, bridgeState, inRect } from './arena
 import { GUN_Y, isPrimary } from './weapons';
 import { BOSS } from './balance';
 import type { Difficulty, Game, Input, Player } from './sim';
-import { BASIC, PLASMA, SLOT_COST, WALL_REACH, botPower, kitOf, wallSlam } from './elements';
+import { BASIC, SLOT_COST, WALL_REACH, botPower, kitOf, studioOf, wallSlam } from './elements';
 import * as C from './constants';
 
 const CELL = 20;
@@ -652,11 +652,14 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
             out.item = true;
           }
           b.restT = Math.max(0.28, b.react * 0.55);
-        } else if (p.plasmaOn && p.plasmaCd <= 0 && p.energy >= PLASMA.cost && d < PLASMA.range && b.seenT >= b.react && b.restT <= 0) {
-          out.plasma = true;
-          out.aim = ang;
-          out.ca = ang;
-          b.restT = Math.max(0.28, b.react * 0.55);
+        } else if (p.plasmaOn && p.plasmaCd <= 0 && b.seenT >= b.react && b.restT <= 0) {
+          const extra = studioOf(p.loadout.secondary);
+          if (extra && p.energy >= extra.cost && d < Math.max(extra.range, extra.step ?? 0)) {
+            out.plasma = true;
+            out.aim = ang;
+            out.ca = ang;
+            b.restT = Math.max(0.28, b.react * 0.55);
+          }
         } else if (clear && d < BASIC.range - 8 && p.basicCd <= 0 && p.energy >= BASIC.cost && b.seenT >= b.react && b.restT <= 0) {
           out.fire = true;
           out.aim = ang;
