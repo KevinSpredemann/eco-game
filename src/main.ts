@@ -3,7 +3,7 @@ import { audio } from './audio/audio';
 import { ARENAS, WORLD_W, getArena } from './game/arenas';
 import { CHARACTERS, getCharacter, withLevel, withSkin } from './game/characters';
 import * as C from './game/constants';
-import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, canEquipWeapon, owns, upgradePrice } from './game/economy';
+import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, canEquipWeapon, coinText, itemView, owns, upgradePrice } from './game/economy';
 import { roundBanner, type DuelReason } from './game/duel';
 import type { RoundEchoLine } from './systems/echo/digest';
 import { Game, GameEvent, GameMode, Input, MIN_PLAYERS, MINION_INFO, MinionKind, MODE_RULES, OBJECTIVES, RosterEntry, TEAM_COLORS } from './game/sim';
@@ -18,7 +18,8 @@ import { drawMonster } from './render/monster';
 import { account, serverUrl } from './ui/account';
 import { InputManager, assistAim, nearestAim } from './ui/input';
 import { Settings, loadSettings, saveSettings } from './ui/settings';
-import { HomeHero } from './ui/homeHero';
+import { HomeHero, drawEquippedPreview } from './ui/homeHero';
+import { LATER_MODES, PLAY_MODES, type ModeCard } from './ui/modes';
 import { drawGear } from './ui/gearArt';
 import { Scoreboard } from './ui/scoreboard';
 import { avatarURL, drawMapPreview, drawPortrait } from './ui/portraits';
@@ -213,18 +214,19 @@ const SCREENS = [
   'screen-pause',
   'screen-results',
 ];
-const CHIP_ON = new Set(['screen-title']);
+const CHIP_ON = new Set(['screen-title', 'screen-modes', 'screen-cosmetics', 'screen-shop']);
 const homeHero = new HomeHero($<HTMLCanvasElement>('#title-canvas'));
 // herói em destaque na tela inicial: começa pelo seu personagem e vai trocando
 function show(id: string | null) {
   for (const s of SCREENS) $('#' + s).hidden = s !== id;
   if (id === 'screen-title') {
-    fillHomeModes();
     refreshHomeLook();
     homeHero.start();
   } else {
     homeHero.stop();
   }
+  if (id === 'screen-cosmetics') startCosPreview();
+  else stopCosPreview();
   if (id !== 'screen-select') heroScene.stop();
   if (id !== 'screen-map') mapScene.stop();
   const inGame = !!game && (id === null || id === 'screen-pause' || id === 'screen-results' || id === 'screen-options');
@@ -433,13 +435,14 @@ function renderChip() {
   // convidado: o cartão já diz o que fazer; com conta: o nível
   chip.querySelector('.lv')!.textContent = account.logged ? `Nível ${account.level}` : 'Entrar ou criar conta ›';
   chip.classList.toggle('guest', !account.logged);
-  chip.querySelector('.cv')!.textContent = String(p.coins);
-  $('#shop-coins').textContent = `${p.coins} moedas`;
+  chip.querySelector('.cv')!.textContent = coinText(p.coins);
+  $('#shop-coins').textContent = coinText(p.coins);
   const cosCoins = document.getElementById('cos-coins');
-  if (cosCoins) cosCoins.textContent = `${p.coins} moedas`;
+  if (cosCoins) cosCoins.textContent = `Saldo disponível: ${p.coins} moedas`;
   settings.char = p.equipped.char;
   refreshHomeLook();
   if (currentScreen() === 'screen-cosmetics') paintCosmetics();
+  else if (currentScreen() === 'screen-shop' && shopCar) openShop(shopTab, shopCar.index);
 }
 account.onChange(renderChip);
 
@@ -528,46 +531,103 @@ $('#acc-form').addEventListener('submit', async (e) => {
 });
 
 // ------------------------------------------------------------------ modos
-const MODE_INFO: { id: MatchMode; name: string; desc: string; tag: string; color: string; icon: string }[] = [
-  {
-    id: 'duelo',
-    name: 'X1 Online',
-    desc: 'Um contra um, só com poderes. Q, E, R e F. Combine os elementos. Melhor de 5.',
-    tag: 'Online',
-    color: '#ff5a3c',
-    icon: '<svg viewBox="0 0 48 48"><path d="M8 40 30 18M18 40 40 18" stroke="#ff5a3c" stroke-width="4" stroke-linecap="round"/><circle cx="34" cy="12" r="5" fill="#ffd08a"/><circle cx="14" cy="12" r="5" fill="#ffd08a"/></svg>',
-  },
-  {
-    id: 'dupla',
-    name: '2x2',
-    desc: 'Seu time contra o outro. Com bots ou online. Melhor de 5.',
-    tag: 'Online e offline',
-    color: '#3ea8ff',
-    icon: '<svg viewBox="0 0 48 48"><circle cx="16" cy="18" r="6" fill="#3ea8ff"/><circle cx="32" cy="18" r="6" fill="#ff4a5a"/><path d="M8 36c1-7 6-10 8-10s7 3 8 10M24 36c1-7 6-10 8-10s7 3 8 10" stroke="#dfe6ff" stroke-width="3" fill="none" stroke-linecap="round"/></svg>',
-  },
-];
+const MODE_COLOR: Record<string, string> = {
+  'x1-online': '#ff5a3c',
+  'x1-offline': '#c084fc',
+  dupla: '#3ea8ff',
+  mundo: '#5dff8a',
+};
 
-function pickMode(id: MatchMode) {
-  audio.click();
-  if (id === 'duelo') {
-    onlineMode = 'duelo';
-    openOnline();
-    return;
+function modeIcon(id: string): string {
+  if (id === 'x1-online' || id === 'x1-offline') {
+    return '<svg viewBox="0 0 48 48"><path d="M8 40 30 18M18 40 40 18" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="34" cy="12" r="5" fill="#ffd08a"/><circle cx="14" cy="12" r="5" fill="#ffd08a"/></svg>';
   }
-  matchMode = id;
+  if (id === 'dupla') {
+    return '<svg viewBox="0 0 48 48"><circle cx="16" cy="18" r="6" fill="#3ea8ff"/><circle cx="32" cy="18" r="6" fill="#ff4a5a"/><path d="M8 36c1-7 6-10 8-10s7 3 8 10M24 36c1-7 6-10 8-10s7 3 8 10" stroke="#dfe6ff" stroke-width="3" fill="none" stroke-linecap="round"/></svg>';
+  }
+  if (id === 'mundo') {
+    return '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="14" fill="rgba(93,255,138,.2)" stroke="#5dff8a" stroke-width="3"/><path d="M24 10v28M12 20c6 3 18 3 24 0M12 28c6-3 18-3 24 0" stroke="#c8ffd8" stroke-width="2" fill="none"/></svg>';
+  }
+  return '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="10" fill="none" stroke="#9aa3c7" stroke-width="3"/><path d="M24 8v6M24 34v6M8 24h6M34 24h6" stroke="#9aa3c7" stroke-width="3" stroke-linecap="round"/></svg>';
+}
+
+/** offline = partida local, sem WebSocket */
+let playWhere: 'online' | 'offline' = 'offline';
+
+function modeTitle(mode: string, where?: 'online' | 'offline'): string {
+  const w = where ?? (selectCtx === 'lobby' ? 'online' : playWhere);
+  if (mode === 'duelo') return w === 'offline' ? 'X1 Offline' : 'X1 Online';
+  if (mode === 'dupla') return w === 'offline' ? '2x2 Offline' : '2x2';
+  return mode;
+}
+
+function playLocal(mode: 'duelo' | 'dupla') {
+  audio.click();
+  playWhere = 'offline';
+  matchMode = mode;
+  settings.bots = mode === 'duelo' ? 1 : 3;
+  saveSettings(settings);
   selectCtx = 'local';
   openSelect();
 }
 
-function modePickButton(id: MatchMode | 'mundo', name: string, line: string, tag: string, color: string, icon: string, disabled = false, onClick?: () => void): HTMLButtonElement {
+function playOnline(mode: 'duelo' | 'dupla') {
+  audio.click();
+  playWhere = 'online';
+  onlineMode = mode;
+  openOnline();
+}
+
+function runMode(m: ModeCard) {
+  if (!m.available) return;
+  if (m.id === 'x1-offline') playLocal('duelo');
+  else if (m.id === 'x1-online') playOnline('duelo');
+  else if (m.id === 'mundo') openMundo();
+}
+
+function modeAct(label: string, go: () => void, disabled = false): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'mode-pick';
-  b.style.setProperty('--c', color);
+  b.className = 'btn small' + (disabled ? '' : ' primary');
   b.disabled = disabled;
-  b.innerHTML = `<span class="mode-ico">${icon}</span><span class="mbody"><span class="mtag">${tag}</span><span class="mt">${name}</span><span class="md">${line}</span></span>`;
-  if (!disabled) b.addEventListener('click', () => (onClick ? onClick() : pickMode(id as MatchMode)));
+  b.textContent = label;
+  if (!disabled) b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    go();
+  });
   return b;
+}
+
+function modeCard(m: ModeCard): HTMLElement {
+  const el = document.createElement('article');
+  el.className = 'mode-pick' + (m.available ? '' : ' soon');
+  el.dataset.modeId = m.id;
+  el.style.setProperty('--c', MODE_COLOR[m.id] ?? '#8a84a8');
+  const avail = m.available ? 'Disponível' : m.reason ?? 'Indisponível';
+  const teams = m.teams ? ` · ${m.teams}` : '';
+  const who = m.players === '1' ? '1 jogador' : /^\d+$/.test(m.players) ? `${m.players} jogadores` : m.players;
+  el.innerHTML = `<span class="mode-ico">${modeIcon(m.id)}</span><span class="mbody"><span class="mtag">${m.category} · ${m.where}</span><span class="mt">${m.name}</span><span class="md">${m.desc}</span><span class="mmeta">${who}${teams} · ${avail}</span></span>`;
+  const acts = document.createElement('div');
+  acts.className = 'mode-acts';
+  if (!m.available) {
+    el.setAttribute('aria-disabled', 'true');
+    acts.appendChild(modeAct(m.reason ?? 'Indisponível', () => {}, true));
+  } else if (m.id === 'dupla') {
+    acts.append(modeAct('Offline', () => playLocal('dupla')), modeAct('Online', () => playOnline('dupla')));
+  } else {
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.addEventListener('click', () => runMode(m));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        runMode(m);
+      }
+    });
+    acts.appendChild(modeAct('Selecionar', () => runMode(m)));
+  }
+  el.appendChild(acts);
+  return el;
 }
 
 function openMundo() {
@@ -587,17 +647,11 @@ function closeMundo() {
 }
 
 function fillModeLists(grid: HTMLElement, more: HTMLElement) {
-  grid.innerHTML = '';
-  for (const m of MODE_INFO) grid.appendChild(modePickButton(m.id, m.name, m.desc, m.tag, m.color, m.icon));
-  grid.appendChild(modePickButton('mundo', 'ECO Mundo', 'Vila segura, floresta e um chefe. Solo.', 'Solo', '#5dff8a', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="14" fill="rgba(93,255,138,.2)" stroke="#5dff8a" stroke-width="3"/><path d="M24 10v28M12 20c6 3 18 3 24 0M12 28c6-3 18-3 24 0" stroke="#c8ffd8" stroke-width="2" fill="none"/></svg>', false, openMundo));
-  more.innerHTML = '';
-  more.hidden = true;
-}
-
-function fillHomeModes() {
-  const grid = document.getElementById('home-mode-grid');
-  const more = document.getElementById('home-more-modes');
-  if (grid && more) fillModeLists(grid, more);
+  grid.replaceChildren(...PLAY_MODES.map(modeCard));
+  more.replaceChildren(...LATER_MODES.map(modeCard));
+  more.hidden = LATER_MODES.length === 0;
+  const wrap = more.closest<HTMLElement>('.more-modes');
+  if (wrap) wrap.hidden = LATER_MODES.length === 0;
 }
 
 function openModes() {
@@ -618,6 +672,36 @@ function openCosmetics(tab: CosTab = cosTab) {
   document.querySelectorAll<HTMLButtonElement>('#cos-tabs .tab').forEach((b) => b.classList.toggle('on', b.dataset.cosTab === tab));
   paintCosmetics();
   show('screen-cosmetics');
+}
+
+let cosLook: { skin?: string; acc?: string; weapon?: string } | null = null;
+let cosRaf = 0;
+let cosPhase = 0;
+
+function stopCosPreview() {
+  cancelAnimationFrame(cosRaf);
+  cosRaf = 0;
+}
+
+function tickCosPreview() {
+  const cv = document.getElementById('cos-preview') as HTMLCanvasElement | null;
+  if (!cv || currentScreen() !== 'screen-cosmetics') {
+    stopCosPreview();
+    return;
+  }
+  cosPhase += 0.045;
+  const p = account.profile;
+  const skin = cosLook?.skin ?? p.equipped.skin;
+  const acc = cosLook?.acc ?? (p.equipped.acc || 'nenhum');
+  const weapon = cosLook?.weapon ?? (p.equipped.weapon || 'assinatura');
+  drawEquippedPreview(cv, withSkin(getCharacter(p.equipped.char), skin), acc, weapon, cosPhase);
+  cosRaf = requestAnimationFrame(tickCosPreview);
+}
+
+function startCosPreview() {
+  if (cosRaf) return;
+  cosPhase = 0;
+  cosRaf = requestAnimationFrame(tickCosPreview);
 }
 
 function paintCosmetics() {
@@ -641,28 +725,44 @@ function paintCosmetics() {
   }
   grid.replaceChildren();
   for (const it of cards) {
+    const st = itemView({ owned: it.owned, equipped: it.on, price: it.price, coins: p.coins });
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'cos-card' + (it.on ? ' on' : '') + (it.owned ? '' : ' locked');
-    const need = it.owned ? (it.on ? 'Equipado' : 'Toque para usar') : `Libera com ${it.price} moedas`;
-    b.innerHTML = `<canvas class="pv"></canvas><span class="car-label"><b style="color:${it.color}">${it.name}</b><span>${need}</span></span>`;
-    b.addEventListener('click', () => void chooseCosmetic(it.kind, it.id));
+    b.className = 'cos-card ' + st.view + (it.on ? ' on' : '');
+    b.innerHTML = `<canvas class="pv"></canvas><span class="car-label"><b style="color:${it.color}">${it.name}</b><span>${st.label}</span></span>`;
+    const preview = () => {
+      cosLook = it.kind === 'skin' ? { skin: it.id } : it.kind === 'acc' ? { acc: it.id } : { weapon: it.id };
+    };
+    b.addEventListener('pointerenter', preview);
+    b.addEventListener('focus', preview);
+    b.addEventListener('pointerleave', () => {
+      cosLook = null;
+    });
+    b.addEventListener('blur', () => {
+      cosLook = null;
+    });
+    b.addEventListener('click', () => void chooseCosmetic(it.kind, it.id, it.price));
     grid.appendChild(b);
   }
   requestAnimationFrame(() => {
     grid.querySelectorAll<HTMLCanvasElement>('canvas.pv').forEach((cv, i) => {
       const it = cards[i];
-      if (it.kind === 'weapon') drawGear(cv, 'primary', it.id === 'assinatura' ? primaryOf(p.equipped.char) : it.id, it.color, { locked: !it.owned });
-      else drawPortrait(cv, it.kind === 'skin' ? withSkin(getCharacter(p.equipped.char), it.id) : char, { acc: it.kind === 'acc' ? it.id : p.equipped.acc, locked: !it.owned });
+      if (it.kind === 'weapon') drawGear(cv, 'primary', it.id === 'assinatura' ? primaryOf(p.equipped.char) : it.id, it.color, { locked: !it.owned && it.price > 0 });
+      else drawPortrait(cv, it.kind === 'skin' ? withSkin(getCharacter(p.equipped.char), it.id) : char, { acc: it.kind === 'acc' ? it.id : p.equipped.acc, locked: !it.owned && it.price > 0 });
     });
   });
 }
 
-async function chooseCosmetic(kind: CosTab, id: string) {
+async function chooseCosmetic(kind: CosTab, id: string, price: number) {
   audio.click();
   const p = account.profile;
   const owned = kind === 'weapon' ? canEquipWeapon(p, id) : owns(p, `${kind}:${id}`);
-  if (!owned) {
+  const equipped = kind === 'skin' ? p.equipped.skin === id : kind === 'acc' ? (p.equipped.acc || 'nenhum') === id : (p.equipped.weapon || 'assinatura') === id;
+  const st = itemView({ owned, equipped, price, coins: p.coins });
+  if (st.view === 'equipped') return;
+  if (st.view === 'short') return toast(st.label);
+  if (st.view === 'soon' || st.view === 'locked') return toast(st.label);
+  if (st.view === 'buy') {
     const err = await account.buy(`${kind === 'weapon' ? 'gear' : kind}:${id}`);
     if (err) return toast(err);
     toast('Liberado!');
@@ -673,6 +773,7 @@ async function chooseCosmetic(kind: CosTab, id: string) {
     settings.loadout = sanitizeLoadout({ ...settings.loadout, primary: id }, (k) => owns(account.profile, k));
     saveSettings(settings);
   }
+  cosLook = null;
   paintCosmetics();
   refreshHomeLook();
 }
@@ -703,10 +804,6 @@ $('#cos-tabs')?.addEventListener('click', (e) => {
   openCosmetics(t.dataset.cosTab as CosTab);
 });
 
-const MODE_LABEL: Record<string, string> = {
-  duelo: 'X1 Online',
-  dupla: '2x2',
-};
 /** os dois modos usam a tela de equipamento */
 const usesLoadout = () => true;
 
@@ -983,7 +1080,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 function openSelect() {
-  const label = selectCtx === 'lobby' ? 'Sala online' : MODE_LABEL[matchMode];
+  const label = selectCtx === 'lobby' ? 'Sala online' : modeTitle(matchMode);
   $('#select-mode').textContent = selectCtx === 'lobby' ? label : `${label} · passo 1 de ${usesLoadout() ? 3 : 2}`;
   if (!charCar) buildCharCarousel();
   const idx = Math.max(0, CHARACTERS.findIndex((c) => c.id === settings.char));
@@ -1002,7 +1099,8 @@ function mapInfo(at?: number) {
   const dl = ['', 'Fácil', 'Fácil', 'Média', 'Difícil', 'Insana'][d];
   const dc = ['', '#5dff8a', '#5dff8a', '#ffd23e', '#ff8a3c', '#ff3b5c'][d];
   const bars = Array.from({ length: 5 }, (_, i) => `<i style="${i < d ? `background:${dc}` : ''}"></i>`).join('');
-  $('#map-info').innerHTML = `<b class="hp-name nm" style="--c:${a.palette.accent}">${a.name.toUpperCase()}</b><span class="hp-tag">${a.desc} ${a.gimmick}</span><span class="diff">Dificuldade: <b style="color:${dc}">${dl}</b> <span class="dbars">${bars}</span></span>`;
+  const teams = matchMode === 'dupla' ? '<span class="hp-tag">Times: azul (você e um aliado) contra vermelho.</span>' : '';
+  $('#map-info').innerHTML = `<b class="hp-name nm" style="--c:${a.palette.accent}">${a.name.toUpperCase()}</b><span class="hp-tag">${a.desc} ${a.gimmick}</span>${teams}<span class="diff">Dificuldade: <b style="color:${dc}">${dl}</b> <span class="dbars">${bars}</span></span>`;
 }
 
 function placeMapStage() {
@@ -1033,7 +1131,7 @@ function buildMapCarousel() {
 }
 
 function openMap() {
-  $('#map-mode').textContent = `${MODE_LABEL[matchMode]} · ${getCharacter(settings.char).name} · passo 2 de ${usesLoadout() ? 3 : 2}`;
+  $('#map-mode').textContent = `${modeTitle(matchMode)} · ${getCharacter(settings.char).name} · passo 2 de ${usesLoadout() ? 3 : 2}`;
   $('#match-opts').hidden = training();
   const goTxt = usesLoadout() ? 'Equipamento ›' : 'Começar partida ›';
   $('#map-go').textContent = goTxt;
@@ -1111,11 +1209,12 @@ function openShop(tab: 'char' | 'skin' | 'trail', keep?: number) {
   const car = new Carousel(box, items.length, (i) => {
     const it = items[i];
     const owned = owns(p, `${tab}:${it.id}`);
+    const equipped = p.equipped[tab] === it.id;
+    const st = itemView({ owned, equipped, price: it.price, coins: p.coins });
     const b = document.createElement('button');
-    b.className = 'shop-card' + (p.equipped[tab] === it.id ? ' equipped' : '') + (owned ? '' : ' locked');
+    b.className = 'shop-card ' + st.view + (equipped ? ' equipped' : '') + (owned || it.price <= 0 ? '' : ' locked');
     b.style.setProperty('--c', it.color);
-    const need = owned ? '' : `<span>Libera com ${it.price} moedas</span>`;
-    b.innerHTML = `<canvas class="pv"></canvas>${p.equipped[tab] === it.id ? '<span class="lo-badge">✓</span>' : !owned ? '<span class="lo-badge lock">🔒</span>' : ''}<span class="car-label"><b style="color:${it.color}">${it.name}</b>${need}</span>`;
+    b.innerHTML = `<canvas class="pv"></canvas>${equipped ? '<span class="lo-badge">✓</span>' : st.view === 'short' || st.view === 'buy' ? '<span class="lo-badge lock">🔒</span>' : ''}<span class="car-label"><b style="color:${it.color}">${it.name}</b><span>${st.label}</span></span>`;
     return b;
   });
   shopCar = car;
@@ -1127,15 +1226,20 @@ function openShop(tab: 'char' | 'skin' | 'trail', keep?: number) {
     const key = `${tab}:${it.id}`;
     const owned = owns(p, key);
     const equipped = p.equipped[tab] === it.id;
-    const btn = equipped
-      ? '<span class="lo-state on">✓ Equipado</span>'
-      : owned
-        ? '<button class="btn primary shop-go">Usar</button>'
-        : `<button class="btn primary shop-go"><span class="coin"></span>Libera com ${it.price} moedas</button>`;
-    $('#shop-act').innerHTML = `<div class="shop-act-info"><b>${it.name}</b><span>${car.index + 1} de ${items.length} · deslize para o lado</span></div>${btn}`;
+    const st = itemView({ owned, equipped, price: it.price, coins: p.coins });
+    const btn =
+      st.view === 'equipped'
+        ? `<span class="lo-state on">${st.label}</span>`
+        : st.view === 'owned'
+          ? '<button class="btn primary shop-go">Equipar</button>'
+          : st.view === 'buy'
+            ? `<button class="btn primary shop-go">COMPRAR · ${it.price}</button>`
+            : `<button class="btn" type="button" disabled>${st.label}</button>`;
+    $('#shop-act').innerHTML = `<div class="shop-act-info"><b>${it.name}</b><span>${car.index + 1} de ${items.length} · ${st.label}</span></div>${btn}`;
     $('#shop-act').querySelector('.shop-go')?.addEventListener('click', async () => {
+      if (st.view === 'short' || st.view === 'locked' || st.view === 'soon' || st.view === 'equipped') return;
       if (!owned) {
-        if (p.coins < it.price) return toast(`Faltam ${it.price - p.coins} moedas para ${it.name}.`);
+        if (p.coins < it.price) return toast(`MOEDAS INSUFICIENTES · faltam ${it.price - p.coins}`);
         const err = await account.buy(key);
         if (err) return toast(err);
         audio.objective();
@@ -1335,7 +1439,7 @@ function openLoadout(ctx: 'pre' | 'pause' | 'lobby') {
   loadoutCtx = ctx;
   const sub =
     ctx === 'pre'
-      ? `${MODE_LABEL[matchMode]} · ${getCharacter(settings.char).name} · passo 3 de 3`
+      ? `${modeTitle(matchMode)} · ${getCharacter(settings.char).name} · passo 3 de 3`
       : ctx === 'pause'
         ? 'Vale a partir da próxima rodada (recargas não zeram)'
         : 'Sala online · vale na próxima partida ou rodada';
@@ -1464,7 +1568,7 @@ function renderLobby(r: RoomInfo, me: string) {
   }
   $('#room-code').textContent = r.code;
   const max = r.max ?? MODE_RULES[r.mode].maxPlayers;
-  $('#lobby-count').textContent = `${r.players.length} de ${max} pessoas na sala · ${MODE_LABEL[r.mode]}`;
+  $('#lobby-count').textContent = `${r.players.length} de ${max} pessoas na sala · ${modeTitle(r.mode, 'online')}`;
   const list = $('#lobby-list');
   list.innerHTML = '';
   for (const p of r.players) {
@@ -1501,7 +1605,7 @@ function renderLobby(r: RoomInfo, me: string) {
   const others = r.players.filter((p) => p.id !== me && !p.host);
   const readyN = others.filter((p) => p.ready).length;
   $('#lobby-note').textContent = r.public
-    ? `Busca automática · ${MODE_LABEL[r.mode]}: começa quando lotar, quando todos estiverem prontos ou em ${r.autoIn ?? 0}s (bots completam as vagas).`
+    ? `Busca automática · ${modeTitle(r.mode, 'online')}: começa quando lotar, quando todos estiverem prontos ou em ${r.autoIn ?? 0}s (bots completam as vagas).`
     : host
         ? r.players.length < 2 && r.mode === 'duelo'
           ? 'Sozinho? Pode começar: um bot entra no lugar do amigo.'
@@ -2457,7 +2561,7 @@ async function showResults() {
   const me = g.human;
   const meWon = g.winners.includes(me.id);
   const shared = g.winners.length > 1;
-  $('#res-eyebrow').textContent = training() ? 'Treino concluído' : g.tiebreak ? 'Fim do desempate' : `${MODE_LABEL[matchMode]} · fim da partida`;
+  $('#res-eyebrow').textContent = training() ? 'Treino concluído' : g.tiebreak ? 'Fim do desempate' : `${modeTitle(matchMode)} · fim da partida`;
   $('#res-rematch').hidden = true;
   $('#screen-results .btn[data-action=restart]').textContent = 'Revanche';
   delete ($('#screen-results .btn[data-action=restart]') as HTMLButtonElement).dataset.rematch;
@@ -2513,7 +2617,7 @@ function showOnlineResults(info: EndInfo) {
   const g = game;
   const myId = g.human.id;
   const meWon = info.winners.includes(myId);
-  $('#res-eyebrow').textContent = `Online · ${MODE_LABEL[g.mode]}`;
+  $('#res-eyebrow').textContent = `Online · ${modeTitle(g.mode, 'online')}`;
   $('#res-title').textContent =
     g.mode === 'dupla'
       ? info.winners.some((id) => id === myId)

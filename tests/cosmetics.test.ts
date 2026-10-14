@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACCESSORIES, SKINS, buy, canEquipWeapon, equip, grantStarters, itemPrice, newProfile, normalizeProfile, owns, type Profile } from '../src/game/economy';
+import { ACCESSORIES, SKINS, buy, canEquipWeapon, coinText, equip, grantStarters, itemPrice, itemView, newProfile, normalizeProfile, owns, type Profile } from '../src/game/economy';
 
 describe('cosméticos', () => {
   it('libera de graça o padrão e tranca o resto com preço', () => {
@@ -58,5 +58,21 @@ describe('cosméticos', () => {
     expect(owns(old, 'skin:noturno')).toBe(true);
     expect(owns(old, 'acc:asas')).toBe(false);
     expect(grantStarters(old)).toBe(false);
+  });
+
+  it('mostra o mesmo estado do item e o saldo em todo lugar', () => {
+    expect(coinText(176.9)).toBe('🪙 176');
+    expect(coinText(-4)).toBe('🪙 0');
+    expect(itemView({ owned: true, equipped: true, price: 200, coins: 10 })).toEqual({ view: 'equipped', label: 'EQUIPADO', missing: 0 });
+    expect(itemView({ owned: true, equipped: false, price: 200, coins: 10 })).toEqual({ view: 'owned', label: 'ADQUIRIDO', missing: 0 });
+    expect(itemView({ owned: false, equipped: false, price: 0, coins: 0 })).toEqual({ view: 'owned', label: 'ADQUIRIDO', missing: 0 });
+    expect(itemView({ owned: false, equipped: false, price: 200, coins: 200 })).toEqual({ view: 'buy', label: 'COMPRAR', missing: 0 });
+    expect(itemView({ owned: false, equipped: false, price: 900, coins: 176 })).toEqual({ view: 'short', label: 'MOEDAS INSUFICIENTES · faltam 724', missing: 724 });
+    expect(itemView({ owned: false, equipped: false, price: 100, coins: 100, locked: true, lockReason: 'nível 4' }).label).toBe('BLOQUEADO · nível 4');
+    expect(itemView({ owned: false, equipped: false, price: 100, coins: 100, soon: true }).label).toBe('EM BREVE');
+    const p = newProfile();
+    const before = p.coins;
+    expect(itemView({ owned: false, equipped: false, price: 900, coins: p.coins }).view).toBe('short');
+    expect(p.coins).toBe(before);
   });
 });

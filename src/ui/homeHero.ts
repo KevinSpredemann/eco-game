@@ -119,22 +119,81 @@ export class HomeHero {
     g.fillStyle = glow;
     g.fillRect(0, 0, this.w, this.h);
 
+    const drift = this.reduce ? 0 : Math.sin(this.phase * 0.35) * 6;
+    if (!this.reduce) {
+      for (let i = 0; i < 16; i++) {
+        const t = this.phase * 0.45 + i * 1.7;
+        const x = ((i * 0.17) % 1) * this.w + Math.sin(t) * 10;
+        const y = ((i * 0.13 + this.phase * 0.015) % 1) * this.h;
+        g.globalAlpha = 0.18 + 0.22 * (0.5 + 0.5 * Math.sin(t));
+        g.fillStyle = i % 2 ? col : '#3ee8ff';
+        g.beginPath();
+        g.arc(x, y, 1.1 + (i % 3) * 0.45, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+    }
+
     const { floor, s } = this.stage();
+    const breath = this.reduce ? 1 : 1 + Math.sin(this.phase) * 0.012;
     g.fillStyle = hexA(col, 0.2);
     g.beginPath();
-    g.ellipse(this.w / 2, floor, Math.max(70, s * 16), Math.max(10, s * 3.2), 0, 0, Math.PI * 2);
+    g.ellipse(this.w / 2 + drift, floor, Math.max(70, s * 16), Math.max(10, s * 3.2), 0, 0, Math.PI * 2);
     g.fill();
 
     const acc = accessoryById(this.acc);
     g.save();
-    g.translate(this.w / 2, floor);
-    g.scale(s, s);
+    g.translate(this.w / 2 + drift, floor);
+    g.scale(s * breath, s * breath);
     if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
     drawCharacter(g, c, 'down', this.phase, false);
     if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
     paintWeapon(g, c.id, this.weapon);
     g.restore();
   }
+}
+
+/** Prévia grande da personalização: roupa, acessório e arma no mesmo desenho da tela inicial. */
+export function drawEquippedPreview(cv: HTMLCanvasElement, c: CharacterDef, accId: string, weapon: string, phase: number) {
+  const w = cv.clientWidth || cv.width;
+  const h = cv.clientHeight || cv.height;
+  if (!w || !h) return;
+  const k = Math.min(window.devicePixelRatio || 1, 2);
+  const pw = Math.round(w * k);
+  const ph = Math.round(h * k);
+  if (cv.width !== pw || cv.height !== ph) {
+    cv.width = pw;
+    cv.height = ph;
+  }
+  const g = cv.getContext('2d');
+  if (!g) return;
+  g.setTransform(k, 0, 0, k, 0, 0);
+  g.fillStyle = '#07041a';
+  g.fillRect(0, 0, w, h);
+  const col = c.glow ?? c.color;
+  const glow = g.createRadialGradient(w * 0.5, h * 0.42, 8, w * 0.5, h * 0.48, Math.max(w, h) * 0.62);
+  glow.addColorStop(0, hexA(col, 0.38));
+  glow.addColorStop(0.6, hexA(col, 0.08));
+  glow.addColorStop(1, hexA(col, 0));
+  g.fillStyle = glow;
+  g.fillRect(0, 0, w, h);
+  const floor = h * 0.84;
+  g.fillStyle = hexA(col, 0.22);
+  g.beginPath();
+  g.ellipse(w / 2, floor, Math.max(48, w * 0.18), 12, 0, 0, Math.PI * 2);
+  g.fill();
+  const acc = accessoryById(accId);
+  const s = Math.min((h * 0.62) / 70, (w * 0.42) / 36);
+  const turn = Math.sin(phase * 0.35);
+  const facing = turn > 0.72 ? 'side' : turn < -0.72 ? 'up' : 'down';
+  g.save();
+  g.translate(w / 2 + Math.sin(phase * 0.5) * 6, floor);
+  g.scale(s, s);
+  if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+  drawCharacter(g, c, facing, phase, false);
+  if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+  paintWeapon(g, c.id, weapon);
+  g.restore();
 }
 
 function paintWeapon(g: CanvasRenderingContext2D, charId: string, choice: string) {

@@ -190,6 +190,23 @@ export function buy(p: Profile, item: string): string | null {
 
 export type EquipSlot = 'char' | 'skin' | 'trail' | 'acc' | 'weapon';
 
+export type ItemView = 'equipped' | 'owned' | 'buy' | 'short' | 'locked' | 'soon';
+
+/** O mesmo estado em todo lugar: início, loja, personalizar e bolsa. */
+export function itemView(opts: { owned: boolean; equipped: boolean; price: number; coins: number; soon?: boolean; locked?: boolean; lockReason?: string }): { view: ItemView; label: string; missing: number } {
+  if (opts.soon) return { view: 'soon', label: 'EM BREVE', missing: 0 };
+  if (opts.locked) return { view: 'locked', label: opts.lockReason ? `BLOQUEADO · ${opts.lockReason}` : 'BLOQUEADO', missing: 0 };
+  if (opts.equipped) return { view: 'equipped', label: 'EQUIPADO', missing: 0 };
+  if (opts.owned || opts.price <= 0) return { view: 'owned', label: 'ADQUIRIDO', missing: 0 };
+  const missing = Math.max(0, opts.price - opts.coins);
+  if (missing > 0) return { view: 'short', label: `MOEDAS INSUFICIENTES · faltam ${missing}`, missing };
+  return { view: 'buy', label: 'COMPRAR', missing: 0 };
+}
+
+export function coinText(n: number): string {
+  return `🪙 ${Math.max(0, Math.floor(n))}`;
+}
+
 /** Arma favorita: a do personagem, ou uma arma padrão que você já pode usar. */
 export function canEquipWeapon(p: Profile, id: string | undefined): boolean {
   if (!id) return false;

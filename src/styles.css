@@ -5396,3 +5396,167 @@ body.rewinding #hud-status {
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* início centrado: logo, herói, JOGAR. Modos ficam na tela seguinte. */
+#screen-title .home-col {
+  align-items: center;
+  justify-content: flex-start;
+  text-align: center;
+  gap: 6px;
+}
+#screen-title .home-brand {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  padding: 4px 0 0;
+  min-height: 0;
+}
+#screen-title .home-brand .logo {
+  margin: 0;
+  padding-left: 0;
+  flex: none;
+}
+#screen-title .home-brand .tagline {
+  display: block;
+  margin: 0;
+  font-size: clamp(0.68rem, 1.6vw, 0.86rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #d7c6ff;
+}
+.home-actions {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(520px, 100%);
+  margin-top: auto;
+  padding-bottom: 6px;
+}
+#screen-title .home-actions .play-btn {
+  min-width: min(420px, 86vw);
+  min-height: 64px;
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: 0.14em;
+}
+.home-subactions {
+  display: flex;
+  gap: 10px;
+  width: min(420px, 86vw);
+}
+.home-subactions .btn {
+  flex: 1;
+  min-height: 46px;
+}
+.home-quiet {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+#screen-title .home-actions .title-foot {
+  margin: 0;
+}
+.account-chip .coin {
+  display: none;
+}
+#screen-modes .sheet.fit {
+  overflow: auto;
+  max-height: none;
+}
+#screen-modes .mode-grid {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  grid-template-columns: none;
+  grid-template-rows: none;
+  max-width: 720px;
+  width: 100%;
+  margin-inline: auto;
+  min-height: 0;
+  overflow: visible;
+  gap: 10px;
+}
+#screen-title .home-brand .logo {
+  align-self: center;
+}
+#screen-modes .mode-pick {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 0;
+  height: auto;
+  text-align: left;
+}
+#screen-modes .mode-pick .mmeta {
+  font-size: 0.74rem;
+  color: #c5cbe6;
+}
+#screen-modes .mode-acts {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  margin-top: 8px;
+}
+#screen-modes .mode-acts .btn {
+  flex: 1;
+}
+#screen-modes .mode-pick.soon {
+  opacity: 0.72;
+}
+#screen-modes .mode-pick[role='button'] {
+  cursor: pointer;
+}
+#screen-modes .more-modes {
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 980px;
+  width: 100%;
+  margin-inline: auto;
+}
+#screen-modes .mm-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+}
+#cos-preview {
+  width: min(440px, 100%);
+  height: 220px;
+  display: block;
+  margin: 0 auto 8px;
+  border-radius: 16px;
+  background: #07041a;
+  border: 1px solid rgba(140, 120, 255, 0.28);
+}
+.cos-card.short .car-label span,
+.cos-card.locked .car-label span,
+.cos-card.soon .car-label span {
+  color: #ffb4a8;
+}
+.cos-card.buy .car-label span {
+  color: #ffe08a;
+}
+.cos-card.equipped .car-label span,
+.cos-card.on .car-label span {
+  color: #9af0ff;
+}
+@media (max-width: 800px) and (orientation: portrait) {
+  #screen-title .home-brand .tagline {
+    display: block;
+  }
+  #screen-title .home-brand .logo {
+    margin-right: 0;
+    align-self: center;
+  }
+  #screen-modes .mm-row {
+    grid-template-columns: 1fr;
+  }
+  #screen-modes .mode-pick {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
