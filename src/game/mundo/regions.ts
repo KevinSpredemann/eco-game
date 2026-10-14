@@ -10,8 +10,8 @@ export interface Gate {
   to: MundoRegionId;
   label: string;
   arrive?: { x: number; y: number };
-  /** tranca até a missão chegar no passo 4 */
-  need?: 'ruidos';
+  /** ruidos: missão no passo 4. boss: Guardião já derrotado uma vez. */
+  need?: 'ruidos' | 'boss';
 }
 
 export interface RegionDef {
@@ -25,6 +25,7 @@ export interface RegionDef {
   arrival: { x: number; y: number };
   portal: Gate;
   gates?: Gate[];
+  chest?: { x: number; y: number };
   shop?: { x: number; y: number };
   bank?: { x: number; y: number };
   blocks: { x: number; y: number; w: number; h: number }[];
@@ -85,9 +86,13 @@ export const REGIONS: Record<MundoRegionId, RegionDef> = {
       { kind: 'ranged', x: 1680, y: 900 },
       { kind: 'caller', x: 860, y: 1560 },
       { kind: 'caller', x: 1880, y: 1460 },
+      { kind: 'wolf', x: 2000, y: 800 },
       { kind: 'boss', x: 2300, y: 1100 },
     ],
-    gates: [{ x: 2480, y: 640, to: 'clareira', label: 'Clareira', arrive: { x: 280, y: 480 }, need: 'ruidos' }],
+    gates: [
+      { x: 2480, y: 640, to: 'clareira', label: 'Clareira', arrive: { x: 280, y: 480 }, need: 'ruidos' },
+      { x: 2700, y: 1500, to: 'ruinas', label: 'Ruínas ECO', arrive: { x: 280, y: 520 }, need: 'boss' },
+    ],
   },
   clareira: {
     id: 'clareira',
@@ -102,7 +107,50 @@ export const REGIONS: Record<MundoRegionId, RegionDef> = {
     trees: [{ x: 700, y: 280, r: 28 }],
     spawns: [],
   },
+  ruinas: {
+    id: 'ruinas',
+    name: 'Ruínas ECO',
+    w: 1500,
+    h: 1000,
+    safe: true,
+    spawn: { x: 280, y: 520 },
+    arrival: { x: 280, y: 520 },
+    portal: { x: 160, y: 520, to: 'floresta', label: 'Floresta', arrive: { x: 2580, y: 1500 } },
+    chest: { x: 1080, y: 480 },
+    blocks: [{ x: 640, y: 180, w: 200, h: 70 }],
+    trees: [],
+    spawns: [],
+  },
 };
+
+export interface PortalCard {
+  name: string;
+  level: number;
+  enemies: string[];
+  resources: string;
+  boss: string;
+  lock: string;
+}
+
+/** Dados visíveis do destino. Não inventa região que não existe. */
+export function portalCard(to: MundoRegionId, questStep: number, bossDown: boolean, need?: Gate['need']): PortalCard {
+  const table: Record<MundoRegionId, Omit<PortalCard, 'lock'>> = {
+    vila: { name: 'Vila', level: 1, enemies: [], resources: 'loja e banco', boss: 'nenhum' },
+    floresta: {
+      name: 'Floresta',
+      level: 1,
+      enemies: ['Slime de Sucata', 'Aranha de Cristal', 'Sentinela da Floresta', 'Lobo de Plasma'],
+      resources: 'moedas, materiais, equipamento',
+      boss: 'Guardião do Portal',
+    },
+    clareira: { name: 'Clareira', level: 2, enemies: [], resources: 'área segura', boss: 'nenhum' },
+    ruinas: { name: 'Ruínas ECO', level: 4, enemies: [], resources: 'baú único de 40 moedas', boss: 'nenhum' },
+  };
+  let lock = '';
+  if (need === 'ruidos' && questStep < 4) lock = 'Bloqueado · termine Os Ruídos da Floresta';
+  if (need === 'boss' && !bossDown) lock = 'Bloqueado · derrote o Guardião do Portal';
+  return { ...table[to], lock };
+}
 
 export function blocked(region: RegionDef, x: number, y: number, rad = 16): boolean {
   if (x < rad || y < rad || x > region.w - rad || y > region.h - rad) return true;

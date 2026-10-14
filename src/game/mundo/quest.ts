@@ -7,6 +7,14 @@ export const ANOMALY = { x: 1400, y: 1100 };
 export const REWARD_COINS = 25;
 export const REWARD_XP = 40;
 
+export function questBlurb(step: number): string {
+  if (step <= 0) return 'Fale com Lina, a pesquisadora.';
+  if (step === 1) return 'Entre na floresta pelo portal.';
+  if (step === 2) return 'Ache o fragmento de energia na mata.';
+  if (step === 3) return 'Entregue o fragmento para Lina.';
+  return 'Clareira aberta. O Guardião guarda o portão das ruínas.';
+}
+
 export function linaLines(step: number): string[] {
   if (step <= 0) return ['O ruído na mata não é vento. Entra pelo portal e procura o brilho azul.', 'Pode desviar da sentinela. Eu quero o fragmento, não a briga.'];
   if (step === 1) return ['O portal no fim da rua abre a floresta. O fragmento fica mais para dentro.'];

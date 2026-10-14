@@ -50,6 +50,11 @@ export const PATHS: Record<MundoRegionId, PathRect[]> = {
     { x: 900, y: 520, w: 70, h: 460, kind: 'dirt' },
     { x: 900, y: 480, w: 700, h: 60, kind: 'dirt' },
     { x: 1680, y: 860, w: 80, h: 280, kind: 'dirt' },
+    { x: 2200, y: 1470, w: 620, h: 70, kind: 'dirt' },
+  ],
+  ruinas: [
+    { x: 140, y: 490, w: 980, h: 64, kind: 'stone' },
+    { x: 980, y: 420, w: 180, h: 140, kind: 'stone' },
   ],
 };
 
@@ -60,6 +65,13 @@ export const PROPS: Record<MundoRegionId, Prop[]> = {
     { kind: 'flower', x: 460, y: 560, variant: 0 },
     { kind: 'bench', x: 640, y: 560 },
     { kind: 'rock', x: 1100, y: 700, r: 18, solid: true },
+  ],
+  ruinas: [
+    { kind: 'ruin', x: 740, y: 250, w: 200, h: 70 },
+    { kind: 'ruin', x: 1180, y: 760, w: 160, h: 80 },
+    { kind: 'rock', x: 480, y: 300, r: 16, solid: true },
+    { kind: 'crate', x: 1080, y: 520 },
+    { kind: 'mushroom', x: 640, y: 640, variant: 1 },
   ],
   vila: [
     house('shop', 560, 760, 150, 78),
@@ -164,6 +176,16 @@ export const NPCS: NpcDef[] = [
     lines: ['Eu fico na trilha. As criaturas só me ignoram. Você, elas enxergam de perto.', 'O guardião grande fica no fundo da mata. Não chegue sem vida sobrando.'],
   },
   {
+    id: 'atendente',
+    name: 'Nilo',
+    role: 'Atendente do banco',
+    region: 'vila',
+    x: 900,
+    y: 820,
+    color: '#9ecbff',
+    lines: ['O que entra no banco fica. A bolsa é que perde um pedaço quando você cai.', 'Depósito e saque ficam no extrato. O mesmo pedido não cobra duas vezes.'],
+  },
+  {
     id: 'explorador',
     name: 'Ivo',
     role: 'Explorador',
@@ -171,7 +193,7 @@ export const NPCS: NpcDef[] = [
     x: 2000,
     y: 1760,
     color: '#c8b6ff',
-    lines: ['As ruínas atrás de mim ainda não abrem caminho. Eu parei aqui de propósito.', 'Não existe portal escondido. Quando a área existir, a entrada vai dizer o que falta.'],
+    lines: ['O portão das Ruínas ECO fica a leste. Ele só abre depois que o Guardião do Portal cair.', 'O baú lá dentro paga uma vez. Não há outro caminho.'],
   },
 ];
 

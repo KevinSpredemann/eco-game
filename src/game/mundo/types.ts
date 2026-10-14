@@ -2,10 +2,13 @@
 // O formato já cabe num futuro co-op de 2 (party) e num mundo compartilhado
 // em que PvP só existe nas regiões listadas em session.pvpZones.
 
-export type MundoRegionId = 'vila' | 'floresta' | 'clareira';
+import type { PowerId } from './powers';
+
+export type MundoRegionId = 'vila' | 'floresta' | 'clareira' | 'ruinas';
 export type MundoSlot = 'weapon' | 'armor' | 'relic';
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
-export type MonsterKind = 'chaser' | 'ranged' | 'caller' | 'boss';
+export type MonsterKind = 'chaser' | 'ranged' | 'caller' | 'boss' | 'wolf';
+export type TxKind = 'dep' | 'wd' | 'buy' | 'sell';
 export type SessionMode = 'solo' | 'coop' | 'shared';
 export type StatId = 'hp' | 'dmg' | 'speed' | 'cd';
 
@@ -45,6 +48,19 @@ export interface MundoQuest {
   step: number;
 }
 
+/** O chefe e o baú das ruínas só pagam uma vez. */
+export interface MundoMarks {
+  boss: boolean;
+  ruinChest: boolean;
+}
+
+export interface LedgerRow {
+  id: string;
+  kind: TxKind;
+  n: number;
+  note: string;
+}
+
 export interface MundoSave {
   v: 1;
   charId: string;
@@ -66,6 +82,10 @@ export interface MundoSave {
   party: string[];
   session: MundoSession;
   quest: MundoQuest;
+  marks: MundoMarks;
+  ledger: LedgerRow[];
+  /** ids já aplicados. Repetir o mesmo id não muda saldo. */
+  tx: string[];
 }
 
 export interface MundoInput {
@@ -74,4 +94,6 @@ export interface MundoInput {
   aim: number;
   fire: boolean;
   ability: boolean;
+  power?: PowerId | null;
+  dodge?: boolean;
 }

@@ -2,7 +2,8 @@
 // é o que um futuro co-op ou mundo compartilhado precisaria replicar.
 import { getCharacter } from '../characters';
 import { primaryOf, WEAPONS } from '../weapons';
-import { blocked, INTERACT_R, PORTAL_R, REGIONS, type RegionDef } from './regions';
+import { blocked, INTERACT_R, PORTAL_R, portalCard, REGIONS, type RegionDef } from './regions';
+import { canCast, DODGE_CD, DODGE_COST, ENERGY_MAX, ENERGY_REGEN, powerById, type PowerId } from './powers';
 import {
   abilityEffect,
   addXp,
@@ -64,6 +65,29 @@ export interface Shot {
   life: number;
   team: number;
   r: number;
+  color?: string;
+}
+
+export interface FloatText {
+  x: number;
+  y: number;
+  text: string;
+  life: number;
+  color: string;
+}
+
+export interface Trap {
+  x: number;
+  y: number;
+  r: number;
+  life: number;
+}
+
+export interface Windup {
+  id: PowerId;
+  t: number;
+  max: number;
+  aim: number;
 }
 
 export interface Drop {
@@ -87,6 +111,7 @@ const MONSTER_NAME: Record<MonsterKind, string> = {
   chaser: 'Slime de Sucata',
   ranged: 'Aranha de Cristal',
   caller: 'Sentinela da Floresta',
+  wolf: 'Lobo de Plasma',
   boss: 'Guardião do Portal',
 };
 
@@ -99,11 +124,23 @@ export class MundoWorld {
   drops: Drop[] = [];
   portalCd = 0;
   weaponCd = 0;
+  weaponCdMax = 0;
   abilityCd = 0;
+  abilityCdMax = 0;
+  energy = ENERGY_MAX;
+  readonly energyMax = ENERGY_MAX;
+  powerCd: Record<PowerId, number> = { shot: 0, dash: 0, shield: 0, blast: 0, trap: 0 };
+  powerMax: Record<PowerId, number> = { shot: 0, dash: 0, shield: 0, blast: 0, trap: 0 };
+  dodgeCd = 0;
   shield = 0;
   invuln = 0;
   clock: number;
   note = '';
+  floats: FloatText[] = [];
+  traps: Trap[] = [];
+  windup: Windup | null = null;
+  /** o minimapa só marca o chefe depois que o jogador chega perto */
+  seenBoss = false;
   private epoch = 0;
   private seq = 1;
   private rand: () => number;
@@ -160,7 +197,7 @@ export class MundoWorld {
 
   spawn(kind: MonsterKind, x: number, y: number): Actor {
     const boss = kind === 'boss';
-    const hp = boss ? 420 : kind === 'chaser' ? 48 : kind === 'ranged' ? 34 : 30;
+    const hp = boss ? 420 : kind === 'wolf' ? 56 : kind === 'chaser' ? 48 : kind === 'ranged' ? 34 : 30;
     const a: Actor = {
       id: 'm' + ++this.seq,
       kind,
@@ -179,8 +216,8 @@ export class MundoWorld {
       atk: 0,
       dead: -1,
       phase: 0,
-      speed: boss ? 70 : kind === 'chaser' ? 150 : kind === 'ranged' ? 110 : 170,
-      r: boss ? 34 : 18,
+      speed: boss ? 70 : kind === 'wolf' ? 130 : kind === 'chaser' ? 150 : kind === 'ranged' ? 110 : 170,
+      r: boss ? 34 : kind === 'wolf' ? 20 : 18,
       homeX: x,
       homeY: y,
     };
@@ -198,29 +235,43 @@ export class MundoWorld {
     this.shots = [];
     this.drops = [];
     this.monsters = [];
+    this.traps = [];
+    this.floats = [];
+    this.windup = null;
+    this.seenBoss = false;
     if (!reg.safe) for (const s of reg.spawns) this.spawn(s.kind, s.x, s.y);
     this.portalCd = 0.8;
   }
 
   step(dt: number, input: MundoInput) {
     let left = Math.max(0, Math.min(dt, 1.2));
+    let power = input.power ?? null;
+    let dodge = !!input.dodge;
     while (left > 0) {
       const h = Math.min(1 / 30, left);
-      this.tick(h, input);
+      this.tick(h, input, power, dodge);
+      power = null;
+      dodge = false;
       left -= h;
     }
   }
 
-  private tick(dt: number, input: MundoInput) {
+  private tick(dt: number, input: MundoInput, power: PowerId | null, dodge: boolean) {
     this.clock += dt * 1000;
     this.save = expireTomb(this.save, this.clock);
     this.advanceQuest();
     this.sync();
     if (this.weaponCd > 0) this.weaponCd -= dt;
     if (this.abilityCd > 0) this.abilityCd -= dt;
+    for (const id of Object.keys(this.powerCd) as PowerId[]) if (this.powerCd[id] > 0) this.powerCd[id] -= dt;
+    if (this.dodgeCd > 0) this.dodgeCd -= dt;
+    this.energy = Math.min(this.energyMax, this.energy + ENERGY_REGEN * dt);
     if (this.shield > 0) this.shield -= dt;
     if (this.invuln > 0) this.invuln -= dt;
     if (this.portalCd > 0) this.portalCd -= dt;
+    this.stepWindup(dt);
+    this.stepTraps(dt);
+    this.floats = this.floats.filter((f) => (f.life -= dt) > 0);
     if (this.player.hit > 0) this.player.hit -= dt;
     if (this.player.atk > 0) this.player.atk -= dt;
 
@@ -233,6 +284,8 @@ export class MundoWorld {
 
     if (input.fire) this.firePlayer();
     if (input.ability) this.cast();
+    if (power) this.castPower(power);
+    if (dodge) this.dodge(input);
     this.tryPortal();
     this.stepMonsters(dt);
     this.stepShots(dt);
@@ -285,7 +338,105 @@ export class MundoWorld {
       });
     }
     this.weaponCd = spec.cooldown * d.cdMul;
+    this.weaponCdMax = this.weaponCd;
     this.player.atk = 0.12;
+  }
+
+  private castPower(id: PowerId) {
+    if (this.player.dead >= 0 || this.windup) return;
+    const def = powerById(id);
+    const gate = canCast(this.energy, this.powerCd[id], def.cost);
+    if (gate === 'energy') {
+      this.note = 'Energia insuficiente.';
+      return;
+    }
+    if (gate !== 'ok') return;
+    const d = derived(this.save);
+    this.energy -= def.cost;
+    this.powerCd[id] = def.cd * d.cdMul;
+    this.powerMax[id] = this.powerCd[id];
+    if (def.windup > 0) {
+      this.windup = { id, t: def.windup, max: def.windup, aim: this.player.aim };
+      return;
+    }
+    this.release(id);
+  }
+
+  private stepWindup(dt: number) {
+    if (!this.windup) return;
+    this.windup.t -= dt;
+    if (this.windup.t > 0) return;
+    const w = this.windup;
+    this.windup = null;
+    this.release(w.id, w.aim);
+  }
+
+  private release(id: PowerId, aim = this.player.aim) {
+    const d = derived(this.save);
+    const ang = aim;
+    if (id === 'shot') {
+      this.bolt(this.player, ang, 460, 11 * d.dmgMul, 0.55, '#3ee8ff');
+      this.player.atk = 0.12;
+      return;
+    }
+    if (id === 'dash') {
+      const x0 = this.player.x;
+      const y0 = this.player.y;
+      let left = 150;
+      while (left > 0) {
+        const h = Math.min(24, left);
+        this.move(this.player, Math.cos(ang) * h, Math.sin(ang) * h);
+        left -= h;
+      }
+      this.damageNearSegment(x0, y0, this.player.x, this.player.y, 46, 18 * d.dmgMul);
+      this.player.atk = 0.16;
+      return;
+    }
+    if (id === 'shield') {
+      this.shield = Math.max(this.shield, 2.4);
+      this.player.atk = 0.12;
+      return;
+    }
+    if (id === 'blast') {
+      this.damageNearSegment(this.player.x, this.player.y, this.player.x, this.player.y, 100, 22 * d.dmgMul);
+      this.player.atk = 0.22;
+      return;
+    }
+    this.traps.push({ x: this.player.x + Math.cos(ang) * 36, y: this.player.y + Math.sin(ang) * 36, r: 28, life: 6 });
+  }
+
+  private stepTraps(dt: number) {
+    const keep: Trap[] = [];
+    for (const t of this.traps) {
+      t.life -= dt;
+      if (t.life <= 0) continue;
+      const hit: Actor[] = [];
+      for (const m of this.monsters) {
+        if (m.dead >= 0) continue;
+        if (Math.hypot(m.x - t.x, m.y - t.y) < t.r + m.r) hit.push(m);
+      }
+      if (!hit.length) {
+        keep.push(t);
+        continue;
+      }
+      const dmg = 10 * derived(this.save).dmgMul;
+      for (const m of hit) this.hurt(m, dmg);
+    }
+    this.traps = keep;
+  }
+
+  private dodge(input: MundoInput) {
+    if (this.dodgeCd > 0 || this.player.dead >= 0) return;
+    if (this.energy < DODGE_COST) {
+      this.note = 'Energia insuficiente.';
+      return;
+    }
+    this.energy -= DODGE_COST;
+    this.dodgeCd = DODGE_CD;
+    this.invuln = Math.max(this.invuln, 0.32);
+    const moving = Math.hypot(input.mx, input.my) > 0.1;
+    const ang = moving ? Math.atan2(input.my, input.mx) : this.player.aim + Math.PI;
+    this.move(this.player, Math.cos(ang) * 70, Math.sin(ang) * 70);
   }
 
   private cast() {
@@ -313,6 +464,7 @@ export class MundoWorld {
       this.damageNearSegment(this.player.x, this.player.y, this.player.x, this.player.y, 92, 16 * d.dmgMul);
     }
     this.abilityCd = c.ability.cooldown * d.cdMul;
+    this.abilityCdMax = this.abilityCd;
     this.player.atk = 0.2;
   }
 
@@ -328,8 +480,9 @@ export class MundoWorld {
     const spots = [this.region.portal, ...(this.region.gates ?? [])];
     for (const p of spots) {
       if (Math.hypot(this.player.x - p.x, this.player.y - p.y) > PORTAL_R) continue;
-      if (p.need === 'ruidos' && this.save.quest.step < 4) {
-        this.note = 'Bloqueado · termine Os Ruídos da Floresta';
+      const card = portalCard(p.to, this.save.quest.step, this.save.marks.boss, p.need);
+      if (card.lock) {
+        this.note = card.lock;
         return;
       }
       this.load(p.to, 'arrival', p.arrive);
@@ -375,12 +528,26 @@ export class MundoWorld {
       const ahead = meleeSlots;
       if (m.kind === 'chaser' && dist < 46) meleeSlots++;
       const intent = think(
-        { kind: m.kind, x: m.x, y: m.y, homeX: m.homeX, homeY: m.homeY, speed: m.speed, alert: m.alert, cd: m.cd },
+        { kind: m.kind, x: m.x, y: m.y, homeX: m.homeX, homeY: m.homeY, speed: m.speed, alert: m.alert, cd: m.cd, hp: m.hp, maxHp: m.maxHp },
         { x: p.x, y: p.y, dead: p.dead >= 0 },
         { blocked: (x, y) => blocked(this.region, x, y, 2), attackers: ahead },
       );
       if (intent.state === 'idle') continue;
       m.aim = intent.aim;
+      if (intent.dash && m.cd <= 0) {
+        const x0 = m.x;
+        const y0 = m.y;
+        let left = 90;
+        while (left > 0) {
+          const h = Math.min(18, left);
+          this.move(m, Math.cos(intent.aim) * h, Math.sin(intent.aim) * h);
+          left -= h;
+        }
+        if (distToSeg(p.x, p.y, x0, y0, m.x, m.y) < 40) this.hurt(p, 14, m);
+        m.cd = 1.3;
+        m.atk = 0.2;
+        continue;
+      }
       this.move(m, intent.vx * dt, intent.vy * dt);
       if (intent.melee && m.cd <= 0) {
         this.hurt(p, 12, m);
@@ -400,14 +567,16 @@ export class MundoWorld {
 
   private bossAct(m: Actor, dt: number, dist: number) {
     const p = this.player;
+    if (dist < 420) this.seenBoss = true;
     if (dist > 740 && m.patternT === 0) return;
     const prevT = m.patternT;
     m.patternT += dt;
     const phase = bossPhase(m.patternT);
     const prev = bossPhase(prevT);
     m.aim = Math.atan2(p.y - m.y, p.x - m.x);
+    const enraged = m.hp < m.maxHp * 0.5;
     if (prev === 'slam' && phase !== 'slam') {
-      if (dist < 110) this.hurt(p, 28, m);
+      if (dist < 110) this.hurt(p, enraged ? 36 : 28, m);
       m.atk = 0.28;
     }
     if (phase === 'fan' && prev !== 'fan') {
@@ -416,7 +585,8 @@ export class MundoWorld {
     }
     if (phase === 'charge') {
       if (prev !== 'charge') m.aimLock = m.aim;
-      this.move(m, Math.cos(m.aimLock) * 340 * dt, Math.sin(m.aimLock) * 340 * dt);
+      const rush = enraged ? 460 : 340;
+      this.move(m, Math.cos(m.aimLock) * rush * dt, Math.sin(m.aimLock) * rush * dt);
       if (Math.hypot(p.x - m.x, p.y - m.y) < 56 && m.cd <= 0) {
         this.hurt(p, 16, m);
         m.cd = 0.45;
@@ -434,7 +604,7 @@ export class MundoWorld {
     }
   }
 
-  private bolt(from: Actor, ang: number, speed: number, dmg: number, life: number) {
+  private bolt(from: Actor, ang: number, speed: number, dmg: number, life: number, color?: string) {
     const b = bodyOf(from);
     this.shots.push({
       x: b.x + Math.cos(ang) * (from.r + 4),
@@ -444,7 +614,8 @@ export class MundoWorld {
       dmg,
       life,
       team: from.team,
-      r: from.kind === 'boss' ? 6 : 4,
+      r: color ? 6 : from.kind === 'boss' ? 6 : 4,
+      color,
     });
   }
 
@@ -507,6 +678,8 @@ export class MundoWorld {
     dmg = Math.max(1, Math.round(dmg));
     target.hp -= dmg;
     target.hit = 0.16;
+    this.floats.push({ x: target.x, y: target.y - 40, text: String(dmg), life: 0.75, color: target.kind === 'player' ? '#ff8a8a' : '#fff4c2' });
+    if (this.floats.length > 24) this.floats.shift();
     if (target.hp <= 0) this.kill(target);
     return dmg;
   }
@@ -526,6 +699,10 @@ export class MundoWorld {
       return;
     }
     target.dead = 0;
+    if (target.kind === 'boss' && !this.save.marks.boss) {
+      this.save = { ...this.save, marks: { ...this.save.marks, boss: true } };
+      this.note = 'O Guardião caiu. O portão das Ruínas ECO abriu.';
+    }
     const loot = rollLoot(this.rand, target.kind as MonsterKind);
     this.drops.push({ x: target.x, y: target.y, ...loot });
   }
@@ -554,12 +731,14 @@ export class MundoWorld {
     this.drops = keep;
   }
 
-  near(): 'shop' | 'bank' | 'tomb' | null {
+  near(): 'shop' | 'bank' | 'tomb' | 'chest' | null {
     const r = this.region;
     if (r.shop && Math.hypot(this.player.x - r.shop.x, this.player.y - r.shop.y) < INTERACT_R) return 'shop';
     if (r.bank && Math.hypot(this.player.x - r.bank.x, this.player.y - r.bank.y) < INTERACT_R) return 'bank';
     const t = this.save.tomb;
     if (t && t.region === this.regionId && this.clock < t.until && Math.hypot(this.player.x - t.x, this.player.y - t.y) < 90) return 'tomb';
+    const chest = this.region.chest;
+    if (chest && Math.hypot(this.player.x - chest.x, this.player.y - chest.y) < INTERACT_R) return 'chest';
     return null;
   }
 
@@ -571,48 +750,58 @@ export class MundoWorld {
     return '';
   }
 
-  buyPotion(): string {
+  buyPotion(id?: string): string {
     if (this.player.hp >= this.player.maxHp) return 'Sua vida já está cheia.';
-    const r = buyPotion(this.save);
+    const r = buyPotion(this.save, id);
     if ('error' in r) return r.error;
     this.save = r.save;
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + POTION_HEAL);
     return 'Poção usada.';
   }
 
-  buyGear(slot: MundoSlot): string {
-    const r = buyCommonGear(this.save, slot, ++this.gearN);
+  buyGear(slot: MundoSlot, id?: string): string {
+    const r = buyCommonGear(this.save, slot, ++this.gearN, id);
     if ('error' in r) return r.error;
     this.save = r.save;
     return `Comprou ${r.gear.name}.`;
   }
 
-  sellAt(index: number): string {
-    const r = sellGearAt(this.save, index);
+  sellAt(index: number, id?: string): string {
+    const r = sellGearAt(this.save, index, id);
     if ('error' in r) return r.error;
     this.save = r.save;
     return `Vendeu por ${r.coins} moedas.`;
   }
 
-  sellMats(n: number): string {
-    const r = sellMaterials(this.save, n);
+  sellMats(n: number, id?: string): string {
+    const r = sellMaterials(this.save, n, id);
     if ('error' in r) return r.error;
     this.save = r.save;
     return `Vendeu por ${r.coins} moedas.`;
   }
 
-  deposit(n: number): string {
-    const r = deposit(this.save, n);
+  deposit(n: number, id?: string): string {
+    const r = deposit(this.save, n, id);
     if ('error' in r) return r.error;
     this.save = r.save;
     return 'Guardado no banco.';
   }
 
-  withdraw(n: number): string {
-    const r = withdraw(this.save, n);
+  withdraw(n: number, id?: string): string {
+    const r = withdraw(this.save, n, id);
     if ('error' in r) return r.error;
     this.save = r.save;
     return 'Sacado.';
+  }
+
+  claimChest(): string {
+    const chest = this.region.chest;
+    if (!chest || Math.hypot(this.player.x - chest.x, this.player.y - chest.y) > INTERACT_R) return 'Chegue perto do baú.';
+    if (this.save.marks.ruinChest || this.save.tx.includes('ruin-chest')) return 'O baú já foi aberto.';
+    const paid = addXp({ ...this.save, coins: this.save.coins + 40, marks: { ...this.save.marks, ruinChest: true } }, 30);
+    this.save = { ...paid, tx: this.save.tx.concat('ruin-chest').slice(-40) };
+    this.note = 'Baú das Ruínas: 40 moedas.';
+    return this.note;
   }
 
   equip(index: number): string {

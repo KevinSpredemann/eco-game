@@ -1,5 +1,5 @@
 import type { AbilityId } from '../characters';
-import type { MonsterKind, MundoGear, MundoRegionId, MundoSave, MundoSlot, MundoTomb, Rarity, StatId } from './types';
+import type { LedgerRow, MonsterKind, MundoGear, MundoRegionId, MundoSave, MundoSlot, MundoTomb, Rarity, StatId, TxKind } from './types';
 
 export const MAX_LEVEL = 30;
 export const BAG_MAX = 16;
@@ -41,6 +41,7 @@ const LOOT: Record<MonsterKind, { coins: [number, number]; mats: number; gear: n
   chaser: { coins: [8, 14], mats: 1, gear: 0.18, xp: 12 },
   ranged: { coins: [10, 16], mats: 1, gear: 0.22, xp: 14 },
   caller: { coins: [12, 18], mats: 2, gear: 0.28, xp: 16 },
+  wolf: { coins: [11, 17], mats: 1, gear: 0.24, xp: 15 },
   boss: { coins: [40, 70], mats: 6, gear: 1, xp: 80 },
 };
 
@@ -67,6 +68,35 @@ export function freshSave(charId: string): MundoSave {
     party: [],
     session: { mode: 'solo', pvpZones: [] },
     quest: { step: 0 },
+    marks: { boss: false, ruinChest: false },
+    ledger: [],
+    tx: [],
+  };
+}
+
+let txSeq = 1;
+
+function nextTx(prefix: string): string {
+  txSeq += 1;
+  return `${prefix}-${txSeq}`;
+}
+
+/** Aplica uma mudança de saldo uma vez por id. O mesmo id devolve erro e não mexe nas moedas. */
+export function withTx(
+  save: MundoSave,
+  id: string,
+  apply: (s: MundoSave) => { save: MundoSave; kind: TxKind; n: number; note: string } | { error: string },
+): { save: MundoSave } | { error: string } {
+  if (save.tx.includes(id)) return { error: 'Já processado.' };
+  const got = apply(save);
+  if ('error' in got) return got;
+  const row: LedgerRow = { id, kind: got.kind, n: got.n, note: got.note };
+  return {
+    save: {
+      ...got.save,
+      tx: save.tx.concat(id).slice(-40),
+      ledger: save.ledger.concat(row).slice(-24),
+    },
   };
 }
 
@@ -172,44 +202,71 @@ export function takeTomb(save: MundoSave, now: number): { save: MundoSave; taken
   };
 }
 
-export function buyPotion(save: MundoSave): { save: MundoSave } | { error: string } {
-  if (save.coins < POTION_COST) return { error: 'Moedas insuficientes.' };
-  return { save: { ...save, coins: save.coins - POTION_COST } };
+export function buyPotion(save: MundoSave, id = nextTx('pot')): { save: MundoSave } | { error: string } {
+  return withTx(save, id, (s) => {
+    if (s.coins < POTION_COST) return { error: 'Moedas insuficientes.' };
+    return { save: { ...s, coins: s.coins - POTION_COST }, kind: 'buy', n: POTION_COST, note: 'Poção' };
+  });
 }
 
-export function buyCommonGear(save: MundoSave, slot: MundoSlot, n: number): { save: MundoSave; gear: MundoGear } | { error: string } {
+export function buyCommonGear(save: MundoSave, slot: MundoSlot, n: number, id = nextTx('gear')): { save: MundoSave; gear: MundoGear } | { error: string } {
+  if (save.tx.includes(id)) return { error: 'Já processado.' };
   if (save.coins < GEAR_COST) return { error: 'Moedas insuficientes.' };
   if (save.bag.length >= BAG_MAX) return { error: 'A bolsa está cheia.' };
   const gear = makeGear(slot, 'common', n);
-  return { save: { ...save, coins: save.coins - GEAR_COST, bag: save.bag.concat(gear) }, gear };
+  const wrapped = withTx(save, id, (s) => ({
+    save: { ...s, coins: s.coins - GEAR_COST, bag: s.bag.concat(gear) },
+    kind: 'buy' as const,
+    n: GEAR_COST,
+    note: gear.name,
+  }));
+  if ('error' in wrapped) return wrapped;
+  return { save: wrapped.save, gear };
 }
 
-export function sellGearAt(save: MundoSave, index: number): { save: MundoSave; coins: number } | { error: string } {
+export function sellGearAt(save: MundoSave, index: number, id = nextTx('sell')): { save: MundoSave; coins: number } | { error: string } {
   const g = save.bag[index];
   if (!g) return { error: 'Item inválido.' };
+  if (save.tx.includes(id)) return { error: 'Já processado.' };
   const coins = SELL[g.rarity];
-  const bag = save.bag.slice();
-  bag.splice(index, 1);
-  return { save: { ...save, bag, coins: save.coins + coins }, coins };
+  const wrapped = withTx(save, id, (s) => {
+    const bag = s.bag.slice();
+    const at = bag.findIndex((item) => item.id === g.id);
+    if (at < 0) return { error: 'Item inválido.' };
+    bag.splice(at, 1);
+    return { save: { ...s, bag, coins: s.coins + coins }, kind: 'sell' as const, n: coins, note: g.name };
+  });
+  if ('error' in wrapped) return wrapped;
+  return { save: wrapped.save, coins };
 }
 
-export function sellMaterials(save: MundoSave, n: number): { save: MundoSave; coins: number } | { error: string } {
+export function sellMaterials(save: MundoSave, n: number, id = nextTx('mat')): { save: MundoSave; coins: number } | { error: string } {
   const qty = Math.floor(n);
   if (qty <= 0 || qty > save.materials) return { error: 'Materiais insuficientes.' };
+  if (save.tx.includes(id)) return { error: 'Já processado.' };
   const coins = qty * MAT_PRICE;
-  return { save: { ...save, materials: save.materials - qty, coins: save.coins + coins }, coins };
+  const wrapped = withTx(save, id, (s) => {
+    if (qty > s.materials) return { error: 'Materiais insuficientes.' };
+    return { save: { ...s, materials: s.materials - qty, coins: s.coins + coins }, kind: 'sell' as const, n: coins, note: 'Materiais' };
+  });
+  if ('error' in wrapped) return wrapped;
+  return { save: wrapped.save, coins };
 }
 
-export function deposit(save: MundoSave, n: number): { save: MundoSave } | { error: string } {
+export function deposit(save: MundoSave, n: number, id = nextTx('dep')): { save: MundoSave } | { error: string } {
   const qty = Math.floor(n);
-  if (qty <= 0 || qty > save.coins) return { error: 'Moedas insuficientes.' };
-  return { save: { ...save, coins: save.coins - qty, bank: save.bank + qty } };
+  return withTx(save, id, (s) => {
+    if (qty <= 0 || qty > s.coins) return { error: 'Moedas insuficientes.' };
+    return { save: { ...s, coins: s.coins - qty, bank: s.bank + qty }, kind: 'dep', n: qty, note: 'Depósito' };
+  });
 }
 
-export function withdraw(save: MundoSave, n: number): { save: MundoSave } | { error: string } {
+export function withdraw(save: MundoSave, n: number, id = nextTx('wd')): { save: MundoSave } | { error: string } {
   const qty = Math.floor(n);
-  if (qty <= 0 || qty > save.bank) return { error: 'O banco não tem isso.' };
-  return { save: { ...save, coins: save.coins + qty, bank: save.bank - qty } };
+  return withTx(save, id, (s) => {
+    if (qty <= 0 || qty > s.bank) return { error: 'O banco não tem isso.' };
+    return { save: { ...s, coins: s.coins + qty, bank: s.bank - qty }, kind: 'wd', n: qty, note: 'Saque' };
+  });
 }
 
 export function equipFromBag(save: MundoSave, index: number): MundoSave | null {

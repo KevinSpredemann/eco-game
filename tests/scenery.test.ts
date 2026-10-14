@@ -24,7 +24,7 @@ describe('cenário do ECO Mundo', () => {
     const forge = PROPS.vila.find((p) => p.kind === 'forge')!;
     expect(blocked(REGIONS.vila, forge.x, forge.y - 60)).toBe(true);
     expect(propSolids('vila').length).toBeGreaterThan(4);
-    expect(REGIONS.floresta.spawns.map((s) => s.kind).sort()).toEqual(['boss', 'caller', 'caller', 'chaser', 'chaser', 'chaser', 'ranged', 'ranged']);
+    expect(REGIONS.floresta.spawns.map((s) => s.kind).sort()).toEqual(['boss', 'caller', 'caller', 'chaser', 'chaser', 'chaser', 'ranged', 'ranged', 'wolf']);
   });
 
   it('anda da praça até a loja e até o portal sem atravessar parede', () => {
@@ -46,7 +46,7 @@ describe('cenário do ECO Mundo', () => {
   });
 
   it('cada NPC tem nome, lugar e fala', () => {
-    expect(NPCS.map((n) => n.id)).toEqual(['mercador', 'mecanico', 'pesquisadora', 'guardiao', 'protetor', 'explorador']);
+    expect(NPCS.map((n) => n.id)).toEqual(['mercador', 'mecanico', 'pesquisadora', 'guardiao', 'protetor', 'atendente', 'explorador']);
     for (const n of NPCS) {
       expect(n.name.length).toBeGreaterThan(1);
       expect(n.lines.length).toBeGreaterThan(0);

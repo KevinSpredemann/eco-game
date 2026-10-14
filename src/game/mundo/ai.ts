@@ -12,6 +12,8 @@ export interface Mind {
   speed: number;
   alert: number;
   cd: number;
+  hp?: number;
+  maxHp?: number;
 }
 
 export interface Intent {
@@ -22,9 +24,11 @@ export interface Intent {
   melee: boolean;
   bolt: boolean;
   call: boolean;
+  /** investida curta do lobo; a simulação aplica o deslocamento */
+  dash?: boolean;
 }
 
-const SEE: Record<MonsterKind, number> = { chaser: 440, ranged: 440, caller: 380, boss: 740 };
+const SEE: Record<MonsterKind, number> = { chaser: 440, ranged: 440, caller: 380, boss: 740, wolf: 400 };
 export const LEASH = 560;
 export const MAX_ATTACKERS = 2;
 
@@ -68,6 +72,14 @@ export function think(m: Mind, player: { x: number; y: number; dead: boolean }, 
     if (dist > 280) return { state: 'chase', aim, vx: ux * m.speed, vy: uy * m.speed, melee: false, bolt: false, call: false };
     const bolt = m.cd <= 0;
     return { state: bolt ? 'attack' : 'defend', aim, vx: -uy * m.speed * 0.45, vy: ux * m.speed * 0.45, melee: false, bolt, call: false };
+  }
+  if (m.kind === 'wolf') {
+    const ratio = m.maxHp && m.maxHp > 0 ? (m.hp ?? m.maxHp) / m.maxHp : 1;
+    if (ratio < 0.3) return { state: 'flee', aim, vx: -ux * m.speed * 1.25, vy: -uy * m.speed * 1.25, melee: false, bolt: false, call: false };
+    if (dist > 90 && dist < 240 && m.cd <= 0) {
+      return { state: 'attack', aim, vx: ux * m.speed * 2.4, vy: uy * m.speed * 2.4, melee: false, bolt: false, call: false, dash: true };
+    }
+    return { state: 'chase', aim, vx: -uy * m.speed, vy: ux * m.speed, melee: false, bolt: false, call: false };
   }
   const call = m.cd <= 0;
   if (dist < 160) return { state: 'flee', aim, vx: -ux * m.speed, vy: -uy * m.speed, melee: false, bolt: false, call };

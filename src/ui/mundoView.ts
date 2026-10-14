@@ -512,7 +512,7 @@ export class MundoController {
     ctx.fill();
   }
 
-  private drawPortal(ctx: CanvasRenderingContext2D, p: { x: number; y: number; label: string; need?: 'ruidos' }) {
+  private drawPortal(ctx: CanvasRenderingContext2D, p: { x: number; y: number; label: string; need?: 'ruidos' | 'boss' }) {
     const pulse = 1 + Math.sin(this.world.clock / 180) * 0.08;
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -529,7 +529,7 @@ export class MundoController {
     ctx.fillStyle = '#e9fff4';
     ctx.font = '700 16px "Chakra Petch", sans-serif';
     ctx.textAlign = 'center';
-    const locked = p.need === 'ruidos' && this.world.save.quest.step < 4;
+    const locked = (p.need === 'ruidos' && this.world.save.quest.step < 4) || (p.need === 'boss' && !this.world.save.marks.boss);
     ctx.fillText(locked ? 'BLOQUEADO' : p.label, 0, -40);
     ctx.restore();
   }

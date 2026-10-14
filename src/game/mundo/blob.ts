@@ -2,13 +2,14 @@
 // O solo grava no aparelho. Co-op e PvP por zona usam o mesmo formato.
 import { CHARACTERS } from '../characters';
 import { freshSave, RARITY_POWER } from './rules';
-import type { MundoGear, MundoRegionId, MundoSave, MundoSession, MundoSlot, MundoTomb, Rarity, SessionMode, StatId } from './types';
+import type { LedgerRow, MundoGear, MundoMarks, MundoRegionId, MundoSave, MundoSession, MundoSlot, MundoTomb, Rarity, SessionMode, StatId, TxKind } from './types';
 
 export type MundoBlobResult = { ok: true; save: MundoSave } | { ok: false; error: string };
 
 const SLOTS: MundoSlot[] = ['weapon', 'armor', 'relic'];
 const RARITIES: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
-const REGIONS: MundoRegionId[] = ['vila', 'floresta', 'clareira'];
+const REGIONS: MundoRegionId[] = ['vila', 'floresta', 'clareira', 'ruinas'];
+const TX: TxKind[] = ['dep', 'wd', 'buy', 'sell'];
 const MODES: SessionMode[] = ['solo', 'coop', 'shared'];
 const STATS: StatId[] = ['hp', 'dmg', 'speed', 'cd'];
 const NAMES: Record<MundoSlot, Record<Rarity, string>> = {
@@ -56,6 +57,40 @@ function readQuest(v: unknown): { step: number } {
   if (!v || typeof v !== 'object') return { step: 0 };
   const step = num((v as Record<string, unknown>).step, 0, 4);
   return { step: step ?? 0 };
+}
+
+function readMarks(v: unknown): MundoMarks {
+  if (!v || typeof v !== 'object') return { boss: false, ruinChest: false };
+  const m = v as Record<string, unknown>;
+  return { boss: m.boss === true, ruinChest: m.ruinChest === true };
+}
+
+function readLedger(v: unknown): LedgerRow[] {
+  if (!Array.isArray(v)) return [];
+  const out: LedgerRow[] = [];
+  for (const row of v) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as Record<string, unknown>;
+    const kind = TX.find((k) => k === r.kind);
+    const n = num(r.n, -1e9, 1e9);
+    const id = typeof r.id === 'string' && r.id.length > 0 && r.id.length < 80 ? r.id : '';
+    const note = typeof r.note === 'string' ? r.note.slice(0, 80) : '';
+    if (!kind || n == null || !id) continue;
+    out.push({ id, kind, n, note });
+    if (out.length >= 24) break;
+  }
+  return out;
+}
+
+function readTx(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const out: string[] = [];
+  for (const id of v) {
+    if (typeof id !== 'string' || id.length < 1 || id.length > 80) continue;
+    out.push(id);
+    if (out.length >= 40) break;
+  }
+  return out;
 }
 
 /** Aceita o JSON do progresso. Recusa modo desconhecido, grupo grande demais e números inválidos. */
@@ -109,7 +144,10 @@ export function acceptMundoBlob(body: unknown): MundoBlobResult {
   }
   const session: MundoSession = { mode, pvpZones };
   const quest = readQuest(b.quest);
-  const save: MundoSave = { v: 1, charId: b.charId, xp, level, points, stats, coins, bank, materials, weapon, armor, relic, bag, tomb: stone, party, session, quest };
+  const marks = readMarks(b.marks);
+  const ledger = readLedger(b.ledger);
+  const tx = readTx(b.tx);
+  const save: MundoSave = { v: 1, charId: b.charId, xp, level, points, stats, coins, bank, materials, weapon, armor, relic, bag, tomb: stone, party, session, quest, marks, ledger, tx };
   return { ok: true, save };
 }
 

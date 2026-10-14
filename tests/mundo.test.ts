@@ -68,7 +68,7 @@ describe('ECO Mundo', () => {
     w.player.y = p.y;
     w.step(0.05, STILL);
     expect(w.regionId).toBe('floresta');
-    expect(w.monsters.map((m) => m.kind).sort()).toEqual(['boss', 'caller', 'caller', 'chaser', 'chaser', 'chaser', 'ranged', 'ranged']);
+    expect(w.monsters.map((m) => m.kind).sort()).toEqual(['boss', 'caller', 'caller', 'chaser', 'chaser', 'chaser', 'ranged', 'ranged', 'wolf']);
     const back = w.player.x;
     expect(Math.hypot(back - REGIONS.floresta.portal.x, w.player.y - REGIONS.floresta.portal.y)).toBeGreaterThan(52);
     w.step(0.05, STILL);
