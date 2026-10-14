@@ -19,7 +19,7 @@ import { account, serverUrl } from './ui/account';
 import { InputManager, assistAim, nearestAim } from './ui/input';
 import { Settings, loadSettings, saveSettings } from './ui/settings';
 import { HomeHero, drawEquippedPreview } from './ui/homeHero';
-import { LATER_MODES, PLAY_MODES, type ModeCard } from './ui/modes';
+import { PLAY_MODES, type ModeCard } from './ui/modes';
 import { drawGear } from './ui/gearArt';
 import { Scoreboard } from './ui/scoreboard';
 import { avatarURL, drawMapPreview, drawPortrait } from './ui/portraits';
@@ -290,7 +290,7 @@ const SCREENS = [
   'screen-pause',
   'screen-results',
 ];
-const CHIP_ON = new Set(['screen-title', 'screen-modes', 'screen-cosmetics', 'screen-shop']);
+const CHIP_ON = new Set(['screen-title', 'screen-cosmetics', 'screen-shop']);
 const homeHero = new HomeHero($<HTMLCanvasElement>('#title-canvas'));
 // herói em destaque na tela inicial: começa pelo seu personagem e vai trocando
 function show(id: string | null) {
@@ -722,16 +722,12 @@ function closeMundo() {
   show('screen-title');
 }
 
-function fillModeLists(grid: HTMLElement, more: HTMLElement) {
+function fillModeLists(grid: HTMLElement) {
   grid.replaceChildren(...PLAY_MODES.map(modeCard));
-  more.replaceChildren(...LATER_MODES.map(modeCard));
-  more.hidden = LATER_MODES.length === 0;
-  const wrap = more.closest<HTMLElement>('.more-modes');
-  if (wrap) wrap.hidden = LATER_MODES.length === 0;
 }
 
 function openModes() {
-  fillModeLists($('#mode-grid'), $('#more-modes'));
+  fillModeLists($('#mode-grid'));
   show('screen-modes');
 }
 

@@ -471,6 +471,7 @@ function studio(
     headwear,
     ability: { id: ability, name: abilityName, label: abilityLabel, desc: abilityDesc, cooldown: 8, duration: 0 },
     art: `art/studio/chars/${id}-frente.webp`,
+    ...(id === 'rufo' ? { backpack: '#d02028' } : {}),
   };
 }
 

@@ -89,7 +89,9 @@ export function paintStudio(g: CanvasRenderingContext2D, art: string, w = 34): b
 const urlCache = new Map<string, string>();
 /** Rostinho (busto) em data URL, para placar, salas e resultados. */
 export function avatarURL(c: CharacterDef, size = 64): string {
-  const key = `${c.id}:${c.skinId ?? ''}:${size}`;
+  const img = studioSprite(c.art);
+  const studio = !!(img && img.complete && img.naturalWidth > 0);
+  const key = `${c.id}:${c.skinId ?? ''}:${size}:${studio ? 'art' : 'vec'}`;
   const hit = urlCache.get(key);
   if (hit) return hit;
   const cv = document.createElement('canvas');
@@ -102,14 +104,34 @@ export function avatarURL(c: CharacterDef, size = 64): string {
   bg.addColorStop(1, '#0d0a20');
   g.fillStyle = bg;
   g.fillRect(0, 0, size, size);
-  const s = size / 34;
-  g.save();
-  g.translate(size / 2, size * 0.5 + 50 * s * 0.98);
-  g.scale(s, s);
-  drawCharacter(g, c, 'down', 0, false);
-  g.restore();
+  if (studio && img) {
+    const dh = size * 0.92;
+    const dw = dh * (img.naturalWidth / img.naturalHeight);
+    g.drawImage(img, (size - dw) / 2, size * 0.04, dw, dh);
+  } else {
+    const s = size / 34;
+    g.save();
+    g.translate(size / 2, size * 0.5 + 50 * s * 0.98);
+    g.scale(s, s);
+    drawCharacter(g, c, 'down', 0, false);
+    g.restore();
+  }
   const url = cv.toDataURL('image/png');
   urlCache.set(key, url);
+  if (img && !studio) {
+    img.addEventListener(
+      'load',
+      () => {
+        urlCache.delete(key);
+        const next = avatarURL(c, size);
+        if (typeof document === 'undefined') return;
+        document.querySelectorAll('img').forEach((el) => {
+          if (el.src === url) el.src = next;
+        });
+      },
+      { once: true },
+    );
+  }
   return url;
 }
 

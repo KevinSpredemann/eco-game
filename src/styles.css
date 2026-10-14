@@ -5725,6 +5725,12 @@ body.rewinding #hud-status {
 .account-chip .coin {
   display: inline-block;
 }
+#screen-modes,
+#screen-select,
+#screen-map,
+#screen-loadout {
+  background: var(--bg);
+}
 #screen-modes .sheet.fit {
   overflow: auto;
   max-height: none;
