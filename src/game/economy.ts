@@ -5,42 +5,16 @@ import { STUDIO } from './elements';
 export const START_COINS = 150;
 
 /**
- * Quinze livres na conta nova. Os dez do estúdio entram, e mais cinco
- * para cobrir vento, suporte, plasma, natureza e sombra.
- * O servidor usa esta mesma lista. O resto continua na loja.
+ * Os 28 personagens, de graça para conta nova, conta antiga e convidado.
+ * Cliente e servidor leem esta mesma lista. Não devolve moeda.
  */
-export const STARTER_CHARS = ['kael', 'iris', 'vortex', 'nara', 'vexa', 'clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2'];
+export const STARTER_CHARS = [
+  'kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'nyx', 'rex', 'iris', 'tara',
+  'kai', 'leo', 'mei', 'duda', 'bento', 'vortex', 'nara', 'vexa',
+  'clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2',
+];
 
-export const CHAR_PRICES: Record<string, number> = {
-  kael: 0,
-  luna: 500,
-  bruno: 500,
-  zoe: 600,
-  maya: 600,
-  zed: 700,
-  tara: 700,
-  iris: 0,
-  nyx: 600,
-  rex: 800,
-  kai: 500,
-  leo: 700,
-  mei: 900,
-  duda: 600,
-  bento: 700,
-  vortex: 0,
-  nara: 0,
-  vexa: 0,
-  clave: 0,
-  fuga: 0,
-  lyra: 0,
-  metra: 0,
-  resona: 0,
-  rufo: 0,
-  solfa: 0,
-  vibra: 0,
-  sibilo: 0,
-  sibilo2: 0,
-};
+export const CHAR_PRICES: Record<string, number> = Object.fromEntries(STARTER_CHARS.map((id) => [id, 0]));
 
 /** Soma os iniciais que faltam. Não mexe em moedas, xp nem no que já foi comprado. */
 function grantKey(p: Profile, key: string): boolean {

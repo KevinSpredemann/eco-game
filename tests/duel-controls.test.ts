@@ -382,18 +382,18 @@ describe('controles de notebook e elenco inicial', () => {
 
   it('os iniciais entram sem apagar moedas nem personagens comprados', () => {
     const fresh = newProfile();
-    expect(STARTER_CHARS).toEqual(['kael', 'iris', 'vortex', 'nara', 'vexa', 'clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2']);
-    expect(STARTER_CHARS).toHaveLength(15);
+    expect(STARTER_CHARS).toHaveLength(28);
+    expect([...STARTER_CHARS].sort()).toEqual(CHARACTERS.map((c) => c.id).sort());
     for (const id of STARTER_CHARS) {
       expect(CHAR_PRICES[id]).toBe(0);
       expect(owns(fresh, 'char:' + id)).toBe(true);
     }
-    expect(fresh.owned.filter((id) => id.startsWith('char:'))).toHaveLength(15);
-    expect(CHAR_PRICES.nyx).toBe(600);
-    expect(CHAR_PRICES.rex).toBe(800);
-    expect(CHAR_PRICES.luna).toBe(500);
-    expect(owns(fresh, 'char:nyx')).toBe(false);
-    expect(owns(fresh, 'char:luna')).toBe(false);
+    expect(fresh.owned.filter((id) => id.startsWith('char:'))).toHaveLength(28);
+    expect(CHAR_PRICES.nyx).toBe(0);
+    expect(CHAR_PRICES.rex).toBe(0);
+    expect(CHAR_PRICES.luna).toBe(0);
+    expect(owns(fresh, 'char:nyx')).toBe(true);
+    expect(owns(fresh, 'char:luna')).toBe(true);
     expect(CHARACTERS).toHaveLength(28);
     const freeIds = Object.entries(CHAR_PRICES).filter(([, price]) => price === 0).map(([id]) => id);
     expect(freeIds.sort()).toEqual([...STARTER_CHARS].sort());

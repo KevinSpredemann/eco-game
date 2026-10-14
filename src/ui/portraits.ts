@@ -73,13 +73,13 @@ export function studioSprite(art: string): HTMLImageElement | null {
   return img;
 }
 
-export function paintStudio(g: CanvasRenderingContext2D, art: string, w = 34): boolean {
+export function paintStudio(g: CanvasRenderingContext2D, art: string, w = 34, upscale = 1): boolean {
   const img = studioSprite(art);
   if (!img || !img.complete || img.naturalWidth <= 0) return false;
   const m = g.getTransform();
   const scale = Math.hypot(m.a, m.b) || 1;
-  // nunca amplia além dos pixels do arquivo
-  const destW = Math.min(w * scale, img.naturalWidth);
+  // A arte do estúdio é nítida no tamanho do arquivo. A tela inicial pode ampliar um pouco.
+  const destW = Math.min(w * scale, img.naturalWidth * Math.max(1, upscale));
   const userW = destW / scale;
   const userH = userW * (img.naturalHeight / img.naturalWidth);
   const smooth = g.imageSmoothingEnabled;
