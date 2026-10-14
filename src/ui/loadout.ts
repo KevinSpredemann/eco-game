@@ -4,7 +4,7 @@
 import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout } from '../game/balance';
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
-import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, describePower, kitOf, studioOf, type PowerDef } from '../game/elements';
+import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, describePower, kitOf, resolvedDamage, studioOf, type PowerDef } from '../game/elements';
 import { drawGear, GearKind } from './gearArt';
 import { Carousel, fitText } from './carousel';
 
@@ -113,7 +113,7 @@ export class LoadoutScreen {
     const plasmaKey = this.deps.keyOf('plasma');
     const slots = this.root.querySelector('.lo-slots')!;
     const kitHtml = order
-      .map((i) => this.powerCard(kit.powers[i], this.deps.keyOf(slotOf[i]), SLOT_COST[i], `data-kit="${i}"`, this.focusKind === 'kit' && this.focusIndex === i, i === 0 ? `art/studio/chars/${this.charId}-poder.webp` : ''))
+      .map((i) => this.powerCard(kit.powers[i], this.deps.keyOf(slotOf[i]), SLOT_COST[i], `data-kit="${i}"`, this.focusKind === 'kit' && this.focusIndex === i, i === 0 ? `art/studio/chars/${this.charId}-poder.webp` : '', i))
       .join('');
     const current = studioOf(this.l.secondary);
     const opened = studioOf(this.openedSecondary);
@@ -170,19 +170,21 @@ export class LoadoutScreen {
     det.innerHTML = this.powerDetail(kit.passiveName, kit.passiveDesc, plasmaKey, current, opened);
   }
 
-  private powerCard(pw: PowerDef, key: string, cost: number, attrs: string, focus: boolean, art: string) {
-    return `<button type="button" class="pw-card${focus ? ' focus' : ''}" ${attrs} style="--c:${ELEMENT_COLOR[pw.element]}">${this.powerFace(pw, key, cost, art)}</button>`;
+  private powerCard(pw: PowerDef, key: string, cost: number, attrs: string, focus: boolean, art: string, slot = -1) {
+    return `<button type="button" class="pw-card${focus ? ' focus' : ''}" ${attrs} style="--c:${ELEMENT_COLOR[pw.element]}">${this.powerFace(pw, key, cost, art, slot)}</button>`;
   }
 
-  private powerFace(pw: PowerDef, key: string, cost: number, art: string) {
+  private powerFace(pw: PowerDef, key: string, cost: number, art: string, slot = -1) {
     const kind = pw.act === 'wall' ? 'wall' : pw.act === 'dash' ? 'dash' : pw.act === 'blink' ? 'blink' : pw.act === 'decoy' ? 'decoy' : pw.speed <= 0 ? 'aoe' : 'shot';
     const icon = art
       ? `<img class="pw-ico" alt="" src="/${art}" />`
       : `<svg class="pw-ico" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="${ELEMENT_COLOR[pw.element]}" opacity="0.9"/><text x="32" y="38" text-anchor="middle" font-size="18" fill="#140c22" font-family="sans-serif">${key}</text></svg>`;
-    const dmg = Math.round((pw.dmg / 20) * 100);
+    const hit = resolvedDamage(pw, slot >= 0 ? slot : undefined);
+    const dmg = Math.round((hit / 45) * 100);
     const range = Math.round((Math.min(pw.range, 320) / 320) * 100);
     const cd = Math.round((1 - Math.min(pw.cd, 8) / 8) * 100);
-    return `${icon}<span class="pw-prev" data-kind="${kind}" aria-hidden="true"><i></i></span><span class="lo-slot-k">${key}</span><b>${pw.name}</b><span class="pw-bars" title="dano, alcance, recarga curta"><i style="width:${dmg}%"></i><i style="width:${range}%"></i><i style="width:${cd}%"></i></span><small>${cost} energia</small>`;
+    const price = slot === 2 ? 'carga' : `${cost} energia`;
+    return `${icon}<span class="pw-prev" data-kind="${kind}" aria-hidden="true"><i></i></span><span class="lo-slot-k">${key}</span><b>${pw.name}</b><span class="pw-bars" title="dano, alcance, recarga curta"><i style="width:${dmg}%"></i><i style="width:${range}%"></i><i style="width:${cd}%"></i></span><small>${price}</small>`;
   }
 
   private powerDetail(passiveName: string, passiveDesc: string, plasmaKey: string, current: StudioDef | null, opened: StudioDef | null) {
@@ -198,7 +200,7 @@ export class LoadoutScreen {
     const pw = kitOf(this.charId).powers[this.focusIndex];
     const key = this.deps.keyOf(slotOf[this.focusIndex] ?? 'ability');
     const cost = SLOT_COST[this.focusIndex] ?? SLOT_COST[0];
-    return `<div class="lo-dhead"><span class="lo-state on">${pw.name}</span></div><p class="lo-desc">${describePower(pw, key, cost)} ${ELEMENT_FX[pw.element]}. ${passiveDesc}</p><p class="lo-cmp">O kit do personagem não troca. Só o extra ${plasmaKey} troca, entre os que já liberaram. WASD anda. Q, E, F e R são os poderes. O direito cancela a mira.</p>`;
+    return `<div class="lo-dhead"><span class="lo-state on">${pw.name}</span></div><p class="lo-desc">${describePower(pw, key, cost, this.focusIndex)} ${ELEMENT_FX[pw.element]}. ${passiveDesc}</p><p class="lo-cmp">O kit do personagem não troca. Só o extra ${plasmaKey} troca, entre os que já liberaram. WASD anda. Q, E e F são os poderes. R é a ultimate e pede carga. Z é o extra. O direito cancela a mira.</p>`;
   }
 
   get value() {

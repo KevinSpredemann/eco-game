@@ -66,6 +66,7 @@ describe('estúdio', () => {
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     expect(g.iceWalls.length).toBeGreaterThan(0);
     const hp = b.hp;
+    a.ultCharge = 100;
     g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 90; i++) g.step(STEP, { a: idle, b: idle });
     expect(b.hp).toBe(hp);

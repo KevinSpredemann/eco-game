@@ -59,27 +59,59 @@ export function powerCategory(pw: PowerDef): PowerCategory {
 }
 
 /** Números reais do golpe: dano, alcance e recarga nas unidades do mapa. */
-export function describePower(pw: PowerDef, key: string, cost: number): string {
+/**
+ * Vida de referência do duelo. As faixas são percentuais dessa vida:
+ * golpe leve 5–12%, forte ou área 10–18%, ultimate 20–30%.
+ */
+export const REF_HP = 150;
+export type DamageBand = 'basic' | 'strong' | 'ult' | 'touch';
+
+export function damageBand(kind: Exclude<DamageBand, 'touch'>): { min: number; max: number } {
+  if (kind === 'ult') return { min: Math.round(REF_HP * 0.2), max: Math.round(REF_HP * 0.3) };
+  if (kind === 'strong') return { min: Math.round(REF_HP * 0.1), max: Math.round(REF_HP * 0.18) };
+  return { min: Math.round(REF_HP * 0.05), max: Math.round(REF_HP * 0.12) };
+}
+
+/** Papel do golpe no kit. O espaço 2 (R) é a ultimate. Mobilidade e cura ficam no valor escrito. */
+export function powerBand(pw: PowerDef, slot?: number): DamageBand {
+  if (slot === 2) return 'ult';
+  if (pw.act === 'dash' || pw.act === 'blink' || pw.act === 'decoy' || pw.act === 'wall' || pw.zone === 'heal') return 'touch';
+  if (pw.speed <= 0) return 'strong';
+  return 'basic';
+}
+
+/** Dano que o combate aplica e que o texto mostra. Fora do kit (extra) fica o valor escrito. */
+export function resolvedDamage(pw: PowerDef, slot?: number): number {
+  if (slot === undefined || slot < 0 || slot > 3) return pw.dmg;
+  const kind = powerBand(pw, slot);
+  if (kind === 'touch') return pw.dmg;
+  const band = damageBand(kind);
+  return Math.min(band.max, Math.max(band.min, pw.dmg));
+}
+
+export function describePower(pw: PowerDef, key: string, cost: number, slot?: number): string {
+  const dmg = resolvedDamage(pw, slot);
   const act = pw.act ?? (pw.speed <= 0 ? 'aoe' : 'shot');
   const kind =
     act === 'dash'
-      ? `arrancada de até ${pw.range}, para na parede, até ${pw.dmg} se encostar`
+      ? `arrancada de até ${pw.range}, para na parede, até ${dmg} se encostar`
       : act === 'blink'
-        ? `pisca até ${pw.step ?? pw.range} e para na parede${pw.ghost ? ', deixa uma ilusão no ponto de saída' : ''}, até ${pw.dmg} se cair em cima`
+        ? `pisca até ${pw.step ?? pw.range} e para na parede${pw.ghost ? ', deixa uma ilusão no ponto de saída' : ''}, até ${dmg} se cair em cima`
         : act === 'wall'
           ? `muralha de 3,2 s que bloqueia tiro e movimento, e deixa lento no raio ${pw.radius}`
           : act === 'decoy'
-          ? `ilusão que segura um tiro e estoura ${pw.dmg}`
+          ? `ilusão que segura um tiro e estoura ${dmg}`
           : act === 'zone' && pw.zone === 'heal'
-            ? `bosque, raio ${pw.radius}, cura ${pw.dmg} por pulso`
+            ? `bosque, raio ${pw.radius}, cura ${dmg} por pulso`
             : pw.speed <= 0
               ? `área, raio ${pw.radius}`
               : `projétil, velocidade ${pw.speed}, primeiro inimigo${pw.home ? ', teleguiado' : ''}`;
   const wall = pw.pass ? 'atravessa paredes' : 'para na parede';
   const prep = pw.windup ? `, preparo ${pw.windup}s` : '';
-  const hit = act === 'zone' && pw.zone === 'heal' ? `cura ${pw.dmg}` : `dano ${pw.dmg}`;
+  const hit = act === 'zone' && pw.zone === 'heal' ? `cura ${dmg}` : `dano ${dmg}`;
   const yank = pw.yank ? `, puxa ${pw.yank}` : '';
-  return `${key} ${pw.name}: ${hit}, alcance ${pw.range}, recarga ${pw.cd}s, energia ${cost}, ${CATEGORY_PT[powerCategory(pw)]}, ${kind}, ${wall}${prep}${yank}.`;
+  const price = slot === 2 ? 'carga da ultimate' : `energia ${cost}`;
+  return `${key} ${pw.name}: ${hit}, alcance ${pw.range}, recarga ${pw.cd}s, ${price}, ${CATEGORY_PT[powerCategory(pw)]}, ${kind}, ${wall}${prep}${yank}.`;
 }
 
 export type PassiveId =
@@ -184,7 +216,8 @@ export function studioOf(id: string | null | undefined): StudioDef | null {
  */
 export const BASIC = {
   name: 'Ataque básico',
-  dmg: 6,
+  /** 6% da vida (faixa leve 5–12%) */
+  dmg: 9,
   range: 200,
   speed: 840,
   radius: 12,
@@ -482,7 +515,7 @@ export function burnDpsOf(charId: string): number {
 }
 
 export function stunTime(charId: string): number {
-  return charId === 'zed' ? 0.62 : 0.42;
+  return charId === 'zed' ? 0.8 : 0.55;
 }
 
 export function knockMul(charId: string): number {
@@ -583,10 +616,11 @@ export function powerSlotIndex(slot: string): number | null {
  * Projétil (speed > 0): se o golpe sai, gasta os dois mesmo errando o alvo.
  * Área instantânea (speed === 0): sem inimigo no círculo, não gasta nada.
  */
-export function denyPowerCast(slot: string, cd: readonly number[], energy: number = ENERGY_MAX): string | null {
+export function denyPowerCast(slot: string, cd: readonly number[], energy: number = ENERGY_MAX, ultCharge = 100): string | null {
   const i = powerSlotIndex(slot);
   if (i === null) return null;
   if ((cd[i] ?? 0) > 0) return 'Habilidade em recarga';
+  if (i === 2) return ultCharge < 100 ? 'Ultimate em carga' : null;
   if (energy < SLOT_COST[i]) return 'Energia insuficiente';
   return null;
 }

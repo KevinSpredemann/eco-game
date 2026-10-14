@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { BASIC, kitOf } from '../src/game/elements';
+import { BASIC, kitOf, resolvedDamage } from '../src/game/elements';
 import { acceptedLoadout, newProfile, owns } from '../src/game/economy';
 
 const STEP = 1 / 60;
@@ -99,7 +99,7 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     const hb = b.hp;
     const hc = c.hp;
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 80 }, b: idle, c: idle });
-    expect(hb - b.hp).toBe(kitOf('vortex').powers[1].dmg);
+    expect(hb - b.hp).toBe(resolvedDamage(kitOf('vortex').powers[1], 1));
     expect(c.hp).toBe(hc);
   });
 
@@ -176,7 +176,7 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     b.rootT = 1.2;
     const before = b.hp;
     rooted.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 70 }, b: idle });
-    expect(before - b.hp).toBe(6 + 6);
+    expect(before - b.hp).toBe(15 + 6);
     expect(rooted.drainEvents().some((e) => e.type === 'combo' && e.name === 'Raiz e impacto')).toBe(true);
 
     const open = fight([
@@ -190,7 +190,7 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     t.y = 250;
     const hp = t.hp;
     open.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 70 }, b: idle });
-    expect(hp - t.hp).toBe(6);
+    expect(hp - t.hp).toBe(15);
     expect(t.rootT).toBeGreaterThan(0);
   });
 
@@ -309,6 +309,7 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     a.y = 250;
     b.x = 470;
     b.y = 250;
+    a.ultCharge = 100;
     g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0, cr: 70 }, b: idle });
     expect(a.pendingCast).not.toBeNull();
     expect(a.energy).toBe(100);
@@ -328,13 +329,14 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     s.y = 250;
     t.x = 470;
     t.y = 250;
+    s.ultCharge = 100;
     const hp = t.hp;
     go.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0, cr: 70 }, b: idle });
     expect(s.energy).toBe(100);
     for (let i = 0; i < 50; i++) go.step(STEP, { a: idle, b: idle });
     expect(s.powerCd[2]).toBeGreaterThan(0);
-    expect(s.energy).toBeLessThan(100);
-    expect(hp - t.hp).toBe(16);
+    expect(s.energy).toBe(100);
+    expect(hp - t.hp).toBe(30);
   });
 
   it('a semente persegue e a ilusão segura um tiro', () => {

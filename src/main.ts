@@ -100,6 +100,14 @@ function applySettings() {
   input.control = settings.control;
   input.aimSens = settings.aimSens / 100;
   input.castMode = settings.castMode;
+  input.keyboardAim = settings.keyboardAim;
+  input.onAimMode = (on) => {
+    settings.keyboardAim = on;
+    saveSettings(settings);
+    const box = $<HTMLInputElement>('#opt-kb-aim');
+    if (box) box.checked = on;
+    hint(on ? 'Mira pelo teclado. As setas miram e o WASD anda. Shift desliga.' : 'Mira pelo mouse. Shift liga a mira pelo teclado.');
+  };
   input.manualSlots = new Set(settings.manualAim as Slot[]);
   input.cancelAimButtons = settings.cancelAim;
   input.moveScheme = settings.moveScheme;
@@ -109,7 +117,7 @@ function applySettings() {
   if (note) {
     const move =
       settings.moveScheme === 'wasd'
-        ? 'WASD e as setas andam. Q, E e F são os poderes. R é a ultimate. Z é o extra. Espaço esquiva. O clique esquerdo ataca. O direito cancela.'
+        ? 'WASD anda. 1, 2 e 3 preparam os poderes. Q, E e F usam. R é a ultimate e pede carga. Z é o extra. Espaço esquiva. Shift troca a mira do mouse pela das setas. O clique esquerdo ataca. O direito cancela.'
         : settings.moveScheme === 'esdf'
           ? 'ESDF anda (E frente, S esquerda, D trás, F direita). Q, W e R são poderes. A é o quarto. Z é o extra. Espaço esquiva. O clique esquerdo ataca. O direito cancela.'
           : 'As setas andam. Q, W, E e R são os poderes (R é a ultimate). Z é o extra. Espaço esquiva. O clique esquerdo é o ataque básico. O direito cancela a mira.';
@@ -175,6 +183,15 @@ function bindOptions() {
     renderManualAim();
     audio.click();
   });
+  const kbAim = $<HTMLInputElement>('#opt-kb-aim');
+  if (kbAim) {
+    kbAim.checked = settings.keyboardAim;
+    kbAim.addEventListener('change', () => {
+      settings.keyboardAim = kbAim.checked;
+      applySettings();
+      audio.click();
+    });
+  }
   const cast = $<HTMLSelectElement>('#opt-cast');
   cast.value = settings.castMode;
   cast.addEventListener('change', () => {
@@ -2017,19 +2034,23 @@ function buildSlots(g: AnyGame): SlotView[] {
       const pw = kit.powers[i];
       const left = me.powerCd[i] ?? 0;
       const cd = cooldownOf(me.char.id, pw.cd);
-      const low = left <= 0 && (me.energy ?? ENERGY_MAX) < SLOT_COST[i];
+      const ult = i === 2;
+      const charge = me.ultCharge ?? 0;
+      const low = !ult && left <= 0 && (me.energy ?? ENERGY_MAX) < SLOT_COST[i];
+      const charging = ult && left <= 0 && charge < 100;
       slots.push({
         id: ids[i],
         key: labels[i],
         name: pw.name.toUpperCase(),
         art: { kind: 'symbol', id: me.char.id, color: ELEMENT_COLOR[pw.element] },
-        color: ELEMENT_COLOR[pw.element],
+        color: ult ? '#ffd23e' : ELEMENT_COLOR[pw.element],
         cd: left / cd,
         secs: left,
-        off: low,
-        note: low ? 'SEM ENERGIA' : undefined,
-        desc: `${describePower({ ...pw, cd }, labels[i], SLOT_COST[i])} ${ELEMENT_FX[pw.element]}.`,
-        hot: ready?.slot === i || (!ready && plasmaUp && left <= 0),
+        charge: ult ? charge : undefined,
+        off: left <= 0 && (low || charging),
+        note: low ? 'SEM ENERGIA' : charging ? `${Math.floor(charge)}%` : undefined,
+        desc: `${describePower({ ...pw, cd }, labels[i], SLOT_COST[i], i)} ${ELEMENT_FX[pw.element]}.`,
+        hot: ready?.slot === i || (!ready && plasmaUp && left <= 0 && !ult),
       });
     }
     const plasmaLeft = me.plasmaCd ?? 0;
@@ -2194,7 +2215,7 @@ function deniedReason(slot: Slot): string {
   }
   if (game.mode === 'duelo' || game.mode === 'dupla') {
     if (slot === 'plasma') return denyPlasma(!!me.plasmaOn, me.plasmaCd ?? 0, me.energy ?? ENERGY_MAX, studioOf(me.loadout.secondary)?.cost) ?? '';
-    const why = denyPowerCast(slot, me.powerCd ?? [0, 0, 0, 0], me.energy ?? ENERGY_MAX);
+    const why = denyPowerCast(slot, me.powerCd ?? [0, 0, 0, 0], me.energy ?? ENERGY_MAX, me.ultCharge ?? 0);
     if (why) return why;
     const i = powerSlotIndex(slot);
     if (i !== null) {
@@ -2882,6 +2903,7 @@ function readInput(): Input {
     }
     i.aim = ang;
   }
+  if (game && game.combat && input.keyboardAim) i.aim = input.kbAim;
   // celular: o analógico direito mira (independente do movimento); solto, a última direção continua
   const stickAim = input.manualAim();
   if (game && game.combat && stickAim !== null) i.aim = stickAim;
@@ -2903,6 +2925,9 @@ function readInput(): Input {
         i.ca = Math.atan2(w.y - me.y, w.x - me.x);
         i.cr = Math.hypot(w.x - me.x, w.y - me.y);
       }
+    } else if (input.keyboardAim && game.combat) {
+      i.ca = input.kbAim;
+      i.cr = slotRange(pressed) * 0.85;
     } else if (mouseOk && game.combat) {
       const w = renderer.toWorld(input.mouse.x, input.mouse.y);
       const oy = castOriginY(pressed, me.y);

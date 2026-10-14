@@ -88,13 +88,20 @@ describe('balanceamento central', () => {
     expect(pa.item).toBeNull();
   });
 
-  it('R sai mesmo sem carga de ultimate', () => {
+  it('R só sai com a carga da ultimate e não gasta energia', () => {
     const { g, pa } = duel('kael', 'luna', 'dupla', { ult: 'meteoro' });
     pa.ultCharge = 40;
+    const energy = pa.energy;
     g.step(STEP, { a: { ...idle, ult: true, ca: 0, cr: 100 }, b: idle });
     expect(g.casts).toHaveLength(0);
-    expect(pa.powerCd[2]).toBeGreaterThan(0);
+    expect(pa.powerCd[2]).toBe(0);
     expect(pa.ultCharge).toBeGreaterThan(39);
+    expect(pa.energy).toBe(energy);
+    pa.ultCharge = 100;
+    g.step(STEP, { a: { ...idle, ult: true, ca: 0, cr: 100 }, b: idle });
+    expect(pa.powerCd[2]).toBeGreaterThan(0);
+    expect(pa.ultCharge).toBeLessThan(40);
+    expect(pa.energy).toBe(energy);
   });
 
   it('equipamento inválido ou não liberado volta para o padrão', () => {

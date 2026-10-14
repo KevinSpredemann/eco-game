@@ -57,15 +57,22 @@ describe('X1 e 2x2 só com poderes', () => {
     }
   });
 
-  it('R e F saem sem carga de ultimate e sem cristal, e a recarga não reinicia', () => {
+  it('F sai sem carga e R espera a ultimate, sem cristal', () => {
     const g = fight('dupla', 'kai', 'luna');
     const [a] = g.players;
     a.ultCharge = 0;
     a.bonusAb = null;
     a.x = 640;
     a.y = 360;
+    const energy = a.energy;
+    g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0 }, b: idle });
+    expect(a.powerCd[2]).toBe(0);
+    expect(a.energy).toBe(energy);
+    a.ultCharge = 100;
     g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0 }, b: idle });
     expect(a.powerCd[2]).toBeGreaterThan(3);
+    expect(a.ultCharge).toBe(0);
+    expect(a.energy).toBe(energy);
     const left = a.powerCd[2];
     g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0 }, b: idle });
     expect(a.powerCd[2]).toBeLessThan(left);

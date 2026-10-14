@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
 import { encodeSnapshot } from '../src/net/protocol';
-import { ENERGY_MAX, PLASMA, SLOT_COST, denyPlasma, denyPowerCast } from '../src/game/elements';
+import { ENERGY_MAX, PLASMA, SLOT_COST, denyPlasma, denyPowerCast, kitOf, resolvedDamage } from '../src/game/elements';
 import { acceptedLoadout, buy, newProfile, normalizeProfile, owns } from '../src/game/economy';
 
 const STEP = 1 / 60;
@@ -97,8 +97,10 @@ describe('energia, recusa e Rajada de Plasma', () => {
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 120 }, b: idle });
     const ev = g.drainEvents();
     const burst = ev.find((e) => e.type === 'combo' && e.name === 'Explosão de Plasma');
-    expect(burst).toMatchObject({ bonus: 10 });
-    expect(marked - b.hp).toBeCloseTo(19, 5);
+    const hit = resolvedDamage(kitOf('kai').powers[1], 1);
+    const bonus = Math.min(PLASMA.burst, Math.max(0, PLASMA.cap - hit));
+    expect(burst).toMatchObject({ bonus });
+    expect(marked - b.hp).toBeCloseTo(hit + bonus, 5);
     expect(before - b.hp).toBeLessThanOrEqual(PLASMA.dmg + PLASMA.cap);
     expect(b.plasmaT).toBe(0);
     const again = b.hp;
@@ -106,7 +108,7 @@ describe('energia, recusa e Rajada de Plasma', () => {
     a.powerCd[1] = 0;
     a.energy = ENERGY_MAX;
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 120 }, b: idle });
-    expect(again - b.hp).toBeCloseTo(9, 5);
+    expect(again - b.hp).toBeCloseTo(hit, 5);
   });
 
   it('marca de plasma que acaba não explode', () => {
@@ -123,7 +125,7 @@ describe('energia, recusa e Rajada de Plasma', () => {
     g.drainEvents();
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 120 }, b: idle });
     expect(g.drainEvents().some((e) => e.type === 'combo' && e.name === 'Explosão de Plasma')).toBe(false);
-    expect(hp - b.hp).toBeCloseTo(9, 5);
+    expect(hp - b.hp).toBeCloseTo(resolvedDamage(kitOf('kai').powers[1], 1), 5);
   });
 
   it('Rajada que erra gasta recarga e não marca', () => {

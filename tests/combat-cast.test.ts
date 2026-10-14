@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { kitOf } from '../src/game/elements';
+import { kitOf, resolvedDamage } from '../src/game/elements';
 import { sweepCircle, segmentOpen } from '../src/game/sweep';
 import { abilityLog, clearAbilityLog, setAbilityTrace } from '../src/game/abilityTrace';
 import { queuesOnPress, queuesOnRelease, resolveCastStyle } from '../src/ui/input';
@@ -191,7 +191,7 @@ describe('colisão e ciclo do golpe', () => {
     const hb = b.hp;
     const hc = c.hp;
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 60 }, b: idle, c: idle });
-    expect(hb - b.hp).toBe(kitOf('kai').powers[1].dmg);
+    expect(hb - b.hp).toBe(resolvedDamage(kitOf('kai').powers[1], 1));
     expect(c.hp).toBe(hc);
     expect(a.powerCd[1]).toBeGreaterThan(0);
   });

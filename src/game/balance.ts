@@ -40,8 +40,8 @@ export const COMBAT = {
   spawnProtect: 1.2,
   /** depois de um atordoamento, o jogador fica imune a novos por este tempo (evita prender sem reação) */
   ccResist: 1.2,
-  /** atordoamento máximo de uma vez */
-  maxStun: 0.8,
+  /** atordoamento máximo de uma vez (a raiz é outro efeito e tem a própria resistência) */
+  maxStun: 1.2,
   /** escudo: só devolve tiros vindos da frente (abertura total em radianos) */
   shieldArc: 2.6,
   /** escudo: dano que passa pelos lados e pelas costas */
@@ -52,7 +52,7 @@ export const COMBAT = {
   vampFrac: 0.25,
   turret: { hp: 40, damage: 6, cooldown: 0.5, range: 420, maxPerOwner: 1 },
   /** carga da ultimate (0–100) */
-  ult: { perSecond: 1.5, perDamageDealt: 0.55, perDamageTaken: 0.3, perKill: 12 },
+  ult: { perSecond: 0.25, perDamageDealt: 0.55, perDamageTaken: 0.3, perKill: 12, perAbility: 8 },
   /** esquiva (rolamento): invulnerável só durante o movimento */
   dodgeIframes: 0.22,
   /** marcado: dano extra recebido */

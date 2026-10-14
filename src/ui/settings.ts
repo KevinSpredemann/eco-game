@@ -48,6 +48,8 @@ export interface Settings {
   aimSens: number;
   /** auto: clássico segura a tecla, notebook solta na hora. */
   castMode: CastChoice;
+  /** setas miram. WASD continua andando. */
+  keyboardAim: boolean;
   /** estes espaços sempre abrem a mira manual */
   manualAim: string[];
   /** aiming: círculo só enquanto mira. always: mostra o alcance do Q. */
@@ -91,6 +93,7 @@ export const DEFAULTS: Settings = {
   control: 'classic',
   aimSens: 100,
   castMode: 'auto',
+  keyboardAim: false,
   manualAim: [],
   rangeIndicator: 'aiming',
   cancelAim: 'both',
@@ -142,11 +145,15 @@ export function loadSettings(): Settings {
         : v.moveScheme === 'arrows' || v.moveScheme === 'esdf' || v.moveScheme === 'wasd'
           ? v.moveScheme
           : 'wasd';
-      const keys: KeyBinds = migrated ? migrated.keys : { ...DEFAULT_KEYS, ...(v.keys ?? {}) };
+      let keys: KeyBinds = migrated ? migrated.keys : { ...DEFAULT_KEYS, ...(v.keys ?? {}) };
+      const legacyWasd = { ...WASD_KEYS, item: 'Digit1' };
+      const itemMoved = definedMatch(keys, legacyWasd);
+      if (itemMoved) keys = { ...keys, item: 'KeyX' };
       const next: Settings = {
         ...DEFAULTS,
         ...v,
         castMode: mode,
+        keyboardAim: v.keyboardAim === true,
         manualAim: Array.isArray(v.manualAim) ? v.manualAim.filter((s: unknown) => typeof s === 'string') : [],
         rangeIndicator: v.rangeIndicator === 'always' ? 'always' : 'aiming',
         cancelAim: v.cancelAim === 'esc' ? 'esc' : 'both',
@@ -154,7 +161,7 @@ export function loadSettings(): Settings {
         keys,
         loadout: { ...DEFAULT_LOADOUT, ...(v.loadout ?? {}) },
       };
-      if (migrated) saveSettings(next);
+      if (migrated || itemMoved) saveSettings(next);
       return next;
     }
   } catch {

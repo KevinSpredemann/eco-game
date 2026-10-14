@@ -136,7 +136,8 @@ export class HomeHero {
 
     const acc = accessoryById(this.acc);
     g.save();
-    g.translate(x + drift, floor);
+    const bob = this.reduce ? 0 : Math.sin(this.phase * 1.6) * 3.5;
+    g.translate(x + drift, floor + bob);
     g.scale(s * breath, s * breath);
     const posed = paintStudio(g, c.art, 42);
     if (!posed) {

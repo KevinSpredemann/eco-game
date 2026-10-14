@@ -160,10 +160,16 @@ function octile(ax: number, ay: number, bx: number, by: number) {
  * Perfis de dificuldade. aim = erro de mira (rad) que muda devagar; lead = quanto antecipa o movimento;
  * react = tempo até atirar num alvo novo; burst/pause = rajadas e pausas (ninguém atira sem parar).
  */
+/**
+ * Dificuldade muda o comportamento, não a vida nem o dano.
+ * speedMul fica em 1: o bot anda na mesma velocidade do jogador.
+ * aim = erro de mira (rad). react = espera antes de agir num alvo novo.
+ * dash e ability = chance de esquivar e de usar poder. sloppy = escolhas piores.
+ */
 export const PROFILES: Record<Difficulty, { speedMul: number; avoid: number; think: number; dash: number; ability: number; sloppy: number; aim: number; lead: number; react: number; burst: number; pause: number; focus: number }> = {
-  facil: { speedMul: 0.6, avoid: 0.32, think: 0.8, dash: 0.12, ability: 0.14, sloppy: 0.55, aim: 0.62, lead: 0.05, react: 1.25, burst: 0.5, pause: 1.5, focus: 1 },
-  normal: { speedMul: 0.72, avoid: 0.62, think: 0.55, dash: 0.3, ability: 0.36, sloppy: 0.28, aim: 0.38, lead: 0.28, react: 0.85, burst: 0.7, pause: 1.05, focus: 1 },
-  dificil: { speedMul: 0.84, avoid: 0.9, think: 0.4, dash: 0.48, ability: 0.52, sloppy: 0.12, aim: 0.22, lead: 0.48, react: 0.55, burst: 0.95, pause: 0.72, focus: 1 },
+  facil: { speedMul: 1, avoid: 0.28, think: 0.9, dash: 0.1, ability: 0.12, sloppy: 0.58, aim: 0.7, lead: 0.05, react: 1.35, burst: 0.45, pause: 1.6, focus: 1 },
+  normal: { speedMul: 1, avoid: 0.55, think: 0.6, dash: 0.24, ability: 0.32, sloppy: 0.3, aim: 0.4, lead: 0.22, react: 0.9, burst: 0.65, pause: 1.1, focus: 1 },
+  dificil: { speedMul: 1, avoid: 0.78, think: 0.45, dash: 0.36, ability: 0.44, sloppy: 0.16, aim: 0.26, lead: 0.4, react: 0.62, burst: 0.85, pause: 0.8, focus: 1 },
 };
 
 /** quem pode atirar no mesmo alvo: os mais perto primeiro, empate pelo id. Os outros só se posicionam. */
@@ -642,7 +648,8 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
           d,
           wallSlam(p.x, p.y, foe.x, foe.y, WALL_REACH, (x, y) => !game.isFree(x, y, 10)),
         );
-        if (slot !== null && p.energy < SLOT_COST[slot]) slot = null;
+        if (slot === 2 && p.ultCharge < 100) slot = null;
+        if (slot !== null && slot !== 2 && p.energy < SLOT_COST[slot]) slot = null;
         if (slot !== null && b.seenT >= b.react && b.restT <= 0) {
           if (slot === 0) out.ability = true;
           else if (slot === 1) out.skill = true;

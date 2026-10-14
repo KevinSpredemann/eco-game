@@ -65,6 +65,7 @@ import {
   knockMul,
   studioOf,
   refundOnCombo,
+  resolvedDamage,
   speedMul,
   stunTime,
   tuneCombo,
@@ -2975,12 +2976,18 @@ export class Game {
     if (p.pendingCast) return;
     const def = kitOf(p.char.id).powers[slot];
     const wind = def.windup ?? 0;
+    const ult = slot === 2;
+    if (ult && p.ultCharge < 100) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Ultimate em carga' });
+      abilityTrace(p.id, 'deny', 'charge');
+      return;
+    }
     if (wind <= 0) {
       this.castPower(p, slot, ang, inp);
       return;
     }
     if (p.powerCd[slot] > 0) return;
-    if (p.energy < SLOT_COST[slot]) {
+    if (!ult && p.energy < SLOT_COST[slot]) {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
       abilityTrace(p.id, 'deny', 'energy');
       return;
@@ -3007,21 +3014,32 @@ export class Game {
     if (p.powerCd[slot] > 0) return;
     const def = kitOf(p.char.id).powers[slot];
     const cost = SLOT_COST[slot];
-    if (p.energy < cost) {
+    const ult = slot === 2;
+    if (ult && p.ultCharge < 100) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Ultimate em carga' });
+      abilityTrace(p.id, 'deny', 'charge');
+      return;
+    }
+    if (!ult && p.energy < cost) {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
       abilityTrace(p.id, 'deny', 'energy');
       return;
     }
+    const dmg = resolvedDamage(def, slot);
     const knock = KNOCK[def.element];
+    const pay = () => {
+      if (ult) p.ultCharge = 0;
+      else p.energy -= cost;
+      p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+    };
     if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone' || def.act === 'wall') {
       if ((def.act === 'dash' || def.act === 'blink') && p.rootT > 0) {
         this.events.push({ type: 'deny', pid: p.id, msg: 'Preso pelas raízes' });
         return;
       }
-      p.energy -= cost;
-      p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+      pay();
       abilityTrace(p.id, 'launch', def.name);
-      this.playAct(p, def, ang, inp);
+      this.playAct(p, def, ang, inp, dmg);
       return;
     }
     if (def.speed <= 0) {
@@ -3032,21 +3050,19 @@ export class Game {
         abilityTrace(p.id, 'deny', 'target');
         return;
       }
-      p.energy -= cost;
-      p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+      pay();
       abilityTrace(p.id, 'impact', def.name);
       this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
       for (const o of this.players) {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
         if (dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
         if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
-        this.deliverPower(p, o, def.element, def.dmg, knock, true);
+        this.deliverPower(p, o, def.element, dmg, knock, true);
       }
       if (def.grove === 'heal') this.placeGrove(p, pt.x, pt.y, def.radius, 4);
       return;
     }
-    p.energy -= cost;
-    p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+    pay();
     const muzzle = 18;
     const home = def.home ? this.nearestHostile(p, def.range) : null;
     this.bullets.push({
@@ -3056,7 +3072,7 @@ export class Game {
       vx: Math.cos(ang) * def.speed,
       vy: Math.sin(ang) * def.speed,
       owner: p.id,
-      dmg: def.dmg,
+      dmg,
       life: def.range / def.speed,
       weapon: VISUAL_WEAPON[def.element],
       pierce: !!def.pass,
@@ -3071,12 +3087,12 @@ export class Game {
   }
 
   /** Efeito já pago: arrancada, piscar, ilusão, bosque ou muralha. */
-  private playAct(p: Player, def: PowerDef, ang: number, inp?: Input) {
+  private playAct(p: Player, def: PowerDef, ang: number, inp: Input | undefined, dmg: number) {
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: def.radius });
     if (def.act === 'dash') {
       p.dir = ang;
       p.dashT = C.DASH_TIME;
-      p.dashDmg = def.dmg;
+      p.dashDmg = dmg;
       p.dashEl = def.element;
       p.dashHit = [];
       p.flowT = Math.max(p.flowT, FLOW_TIME);
@@ -3085,15 +3101,15 @@ export class Game {
       const ox = p.x;
       const oy = p.y;
       const moved = this.blinkTo(p, ang, def.step ?? BLINK_STEP);
-      if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, def.dmg) });
+      if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, dmg) });
       if (moved > 12) p.ambushT = AMBUSH_TIME;
       const foe = this.nearestHostile(p, 36);
-      if (foe) this.deliverPower(p, foe, def.element, def.dmg, 0);
+      if (foe) this.deliverPower(p, foe, def.element, dmg, 0);
     } else if (def.act === 'decoy') {
       const ox = p.x + Math.cos(ang) * 48;
       const oy = p.y + Math.sin(ang) * 48;
       const spot = this.isFree(ox, oy, 12) ? { x: ox, y: oy } : { x: p.x, y: p.y };
-      this.clones.push({ owner: p.id, x: spot.x, y: spot.y, dir: ang, t: 3.2, decoy: true, absorb: 1, pop: def.dmg });
+      this.clones.push({ owner: p.id, x: spot.x, y: spot.y, dir: ang, t: 3.2, decoy: true, absorb: 1, pop: dmg });
     } else if (def.act === 'wall') {
       const reach = Math.min(78, Math.max(48, def.range));
       const cx = p.x + Math.cos(ang) * reach;
@@ -3103,11 +3119,11 @@ export class Game {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
         if (dist(o.x, o.y, cx, cy) > def.radius + 8) continue;
         this.slow(o, 1.1);
-        this.deliverPower(p, o, def.element, def.dmg, 0, true);
+        this.deliverPower(p, o, def.element, dmg, 0, true);
       }
     } else {
       const pt = this.castPoint(p, inp, ang, def.range);
-      this.placeGrove(p, pt.x, pt.y, def.radius, def.dmg);
+      this.placeGrove(p, pt.x, pt.y, def.radius, dmg);
       this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
     }
   }
@@ -3162,7 +3178,7 @@ export class Game {
       p.energy -= def.cost;
       p.plasmaCd = def.cd;
       abilityTrace(p.id, 'launch', def.name);
-      this.playAct(p, def, ang, inp);
+      this.playAct(p, def, ang, inp, def.dmg);
       return;
     }
     if (def.speed <= 0) {
@@ -3244,6 +3260,7 @@ export class Game {
       burst = Math.min(PLASMA.burst, Math.max(0, PLASMA.cap - (damage + extra)));
     }
     this.hurt(dst, damage + extra + move + rootBonus, src.id, 'pulse');
+    if ((this.mode === 'duelo' || this.mode === 'dupla') && !src.boss) src.ultCharge = Math.min(100, src.ultCharge + COMBAT.ult.perAbility);
     if (burst > 0) {
       this.hurt(dst, burst, src.id, 'pulse');
       this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Explosão de Plasma', bonus: burst, pid: src.id });

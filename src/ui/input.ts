@@ -15,7 +15,7 @@ export const WASD_KEYS: KeyBinds = {
   skill: 'KeyE',
   ult: 'KeyR',
   dash: 'Space',
-  item: 'Digit1',
+  item: 'KeyX',
   bonus: 'KeyF',
   plasma: 'KeyZ',
   fire: 'KeyJ',
@@ -153,6 +153,18 @@ export function nearestAim(ox: number, oy: number, foes: { id: string; x: number
   return best;
 }
 
+/**
+ * Mira pelo teclado. As setas escolhem a direção do tiro.
+ * Sem seta, a mira acompanha o passo. WASD continua só o movimento.
+ */
+export function keyboardAimAngle(prev: number, arrows: { x: number; y: number }, move: { x: number; y: number }): number {
+  if (arrows.x || arrows.y) return Math.atan2(arrows.y, arrows.x);
+  if (move.x || move.y) return Math.atan2(move.y, move.x);
+  return prev;
+}
+
+const PREPARE: Record<string, Slot> = { Digit1: 'ability', Digit2: 'skill', Digit3: 'bonus' };
+
 /** Clique curto no notebook ligava o tiro. O notebook agora atira só enquanto o botão está pressionado. */
 export function clickFireLatch(latch: boolean, heldMs: number, toggle: boolean): boolean {
   if (!toggle || heldMs >= 280) return latch;
@@ -280,6 +292,10 @@ export class InputManager {
   powers = false;
   /** auto segue o estilo. manual espera o clique. release solta ao erguer a tecla. */
   castMode: CastChoice = 'auto';
+  /** setas miram e WASD anda. Shift liga e desliga, se o Shift não for a esquiva. */
+  keyboardAim = false;
+  kbAim = 0;
+  onAimMode: ((on: boolean) => void) | null = null;
   manualSlots = new Set<Slot>();
   /** both: Esc e botão direito. esc: só Esc. */
   cancelAimButtons: 'both' | 'esc' = 'both';
@@ -324,6 +340,16 @@ export class InputManager {
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
         this.lockOn = !this.lockOn;
         this.onLock?.(this.lockOn);
+        return;
+      }
+      if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && !this.shiftIsBound()) {
+        this.keyboardAim = !this.keyboardAim;
+        this.onAimMode?.(this.keyboardAim);
+        return;
+      }
+      const prep = PREPARE[e.code];
+      if (prep && !this.codeBound(e.code)) {
+        this.press(prep);
         return;
       }
       const slot = this.slotOf(e.code);
@@ -626,6 +652,13 @@ export class InputManager {
     return this.aimStick.active;
   }
 
+  private codeBound(code: string) {
+    return (Object.values(this.binds) as string[]).includes(code);
+  }
+  private shiftIsBound() {
+    return this.codeBound('ShiftLeft') || this.codeBound('ShiftRight') || this.binds.dash === 'ShiftLeft' || this.binds.dash === 'ShiftRight';
+  }
+
   private slotOf(code: string): Slot | null {
     for (const k of Object.keys(this.binds) as Action[]) if (k !== 'fire' && this.binds[k] === code) return k;
     if (code === 'ShiftRight' && this.binds.dash === 'ShiftLeft') return 'dash';
@@ -681,10 +714,16 @@ export class InputManager {
     const k = this.keys;
     const bound = new Set(Object.values(this.binds));
     const held = (code: string) => k.has(code) && !bound.has(code);
-    if (held('ArrowLeft')) mx -= 1;
-    if (held('ArrowRight')) mx += 1;
-    if (held('ArrowUp')) my -= 1;
-    if (held('ArrowDown')) my += 1;
+    let ax = 0;
+    let ay = 0;
+    if (k.has('ArrowLeft')) ax -= 1;
+    if (k.has('ArrowRight')) ax += 1;
+    if (k.has('ArrowUp')) ay -= 1;
+    if (k.has('ArrowDown')) ay += 1;
+    if (!this.keyboardAim) {
+      mx += ax;
+      my += ay;
+    }
     if (this.moveScheme === 'wasd') {
       if (held('KeyA')) mx -= 1;
       if (held('KeyD')) mx += 1;
@@ -700,6 +739,7 @@ export class InputManager {
       mx = this.stick.x;
       my = this.stick.y;
     }
+    if (this.keyboardAim) this.kbAim = keyboardAimAngle(this.kbAim, { x: ax, y: ay }, { x: mx, y: my });
     const fire = (this.fireTouch || this.fireMouse || this.fireLatch || k.has(this.binds.fire)) && !this.rmbAim;
     const q = this.queued;
     const out = {

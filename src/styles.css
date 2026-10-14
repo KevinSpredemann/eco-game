@@ -4087,11 +4087,19 @@ body.rewinding #hud-status {
   height: auto;
   max-height: 100%;
 }
+#screen-options .sheet.fit.narrow {
+  height: 100%;
+  max-height: 100%;
+}
 #screen-options.screen.fit,
 #screen-online.screen.fit {
   align-items: center;
 }
-#screen-options .opts.pane,
+#screen-options .opts.pane {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
 #screen-online .pane {
   overflow: hidden;
 }
