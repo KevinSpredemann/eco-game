@@ -26,6 +26,7 @@ import { Carousel, fitText } from './ui/carousel';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
+import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, cooldownOf, kitOf } from './game/elements';
 import { ACTION_LABEL, Action, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
@@ -531,7 +532,7 @@ const MODE_INFO: { id: MatchMode; name: string; desc: string; tag: string; color
   {
     id: 'duelo',
     name: 'X1 Online',
-    desc: 'Um contra um. Melhor de 5. Morte súbita se ninguém cair.',
+    desc: 'Um contra um, só com poderes. Q, E, R e F. Combine os elementos. Melhor de 5.',
     tag: 'Online',
     color: '#ff5a3c',
     icon: '<svg viewBox="0 0 48 48"><path d="M8 40 30 18M18 40 40 18" stroke="#ff5a3c" stroke-width="4" stroke-linecap="round"/><circle cx="34" cy="12" r="5" fill="#ffd08a"/><circle cx="14" cy="12" r="5" fill="#ffd08a"/></svg>',
@@ -1584,16 +1585,19 @@ function beginMatchView(g: AnyGame) {
   hintStage = training() ? 1 : 0;
   hintT = 0;
   const me = g.human;
-  $('#btn-ability .tlabel').textContent = me.boss ? 'IMPACTO' : me.char.ability.label.toUpperCase();
+  const powers = g.mode === 'duelo' && !me.boss;
+  const kit = powers ? kitOf(me.char.id) : null;
+  $('#btn-ability .tlabel').textContent = me.boss ? 'IMPACTO' : powers ? 'Q' : me.char.ability.label.toUpperCase();
   $('#touch').classList.toggle('combat', g.combat);
   $('#touch').classList.toggle('boss', me.boss);
-  $('#btn-fire').hidden = !g.combat;
-  $('#btn-item').hidden = !g.combat || me.boss;
-  $('#btn-bonus').hidden = training() && !isOnline();
+  $('#btn-fire').hidden = !g.combat || powers;
+  $('#btn-item').hidden = !g.combat || me.boss || powers;
+  $('#btn-bonus').hidden = powers ? false : training() && !isOnline();
   $('#btn-skill').hidden = !g.combat;
   $('#btn-ult').hidden = !g.combat;
-  $('#btn-skill .tlabel').textContent = me.boss ? 'BARRAGEM' : SKILLS[me.loadout.skill].name.toUpperCase();
-  $('#btn-ult .tlabel').textContent = me.boss ? 'ROCHAS' : 'ULT';
+  $('#btn-skill .tlabel').textContent = me.boss ? 'BARRAGEM' : powers ? kit!.powers[1].name.toUpperCase() : SKILLS[me.loadout.skill].name.toUpperCase();
+  $('#btn-ult .tlabel').textContent = me.boss ? 'ROCHAS' : powers ? kit!.powers[2].name.toUpperCase() : 'ULT';
+  if (powers) $('#btn-bonus .tlabel').textContent = kit!.powers[3].name.toUpperCase();
   $('#btn-dash .tlabel').textContent = me.boss ? 'AVANÇO' : 'IMPULSO';
   $('#pause-loadout').hidden = !g.combat || me.boss || g.rules.rounds <= 1;
   skillBar.clear();
@@ -1725,7 +1729,7 @@ function duelScore(g: AnyGame) {
 
 function objectiveText(g: AnyGame) {
   if (g.mode === 'dupla') return '2x2. O time que sobrar vence a rodada. Melhor de 5. Depois o ECO rebobina.';
-  return '2 minutos. Quem elimina vence na hora. Depois o ECO rebobina e volta na rodada seguinte.';
+  return 'X1 só com poderes. Q, E, R e F. Gelo, raio, fogo e vento combinam. Quem zera a vida vence a rodada.';
 }
 
 const OBJ_SHORT: Record<string, string> = { dourado: '★ Fragmento dourado', tripla: '★ Entrega tripla', intocavel: '★ Sem levar dano' };
@@ -1774,6 +1778,27 @@ function buildSlots(g: AnyGame): SlotView[] {
   const me = g.human;
   const K = (a: Action) => keyLabel(settings.keys[a]);
   const slots: SlotView[] = [];
+  if (g.mode === 'duelo' && !me.boss) {
+    const kit = kitOf(me.char.id);
+    const ids: Slot[] = ['ability', 'skill', 'ult', 'bonus'];
+    const labels = ['Q', 'E', 'R', 'F'];
+    kit.powers.forEach((pw, i) => {
+      const left = me.powerCd[i] ?? 0;
+      const cd = cooldownOf(me.char.id, pw.cd);
+      slots.push({
+        id: ids[i],
+        key: input.touchMode ? labels[i] : labels[i],
+        name: pw.name,
+        art: { kind: 'symbol', id: me.char.id, color: ELEMENT_COLOR[pw.element] },
+        color: ELEMENT_COLOR[pw.element],
+        cd: left / cd,
+        secs: left,
+        desc: `${pw.name} (${ELEMENT_NAME[pw.element]}): ${ELEMENT_FX[pw.element]}. Recarga ${cd.toFixed(1)}s. ${kit.passiveName}: ${kit.passiveDesc}`,
+      });
+    });
+    slots.push({ id: 'dash', key: K('dash'), name: 'Impulso', art: { kind: 'dash', id: 'dash', color: '#9ad8ff' }, color: '#9ad8ff', cd: me.dashCd / C.DASH_CD, secs: me.dashCd, off: me.stasisT > 0, note: me.stasisT > 0 ? 'BLOQUEADO' : undefined, desc: 'Arrancada curta na direção em que você anda (recarga 2,2 s).' });
+    return slots;
+  }
   // arma (tiro): primeiro espaço — clique do mouse. Cinza quando não dá para atirar (tonto, caído, fora da rodada)
   if (g.combat) {
     const w = WEAPONS[me.weapon];
@@ -1896,6 +1921,11 @@ function deniedReason(slot: Slot): string {
     if ((game.bossPhase ?? 1) < BOSS.skills[k].phase) return `Fase ${BOSS.skills[k].phase}`;
     return `Recarga ${Math.ceil(me.bossCd[k])}s`;
   }
+  if (game.mode === 'duelo') {
+    const map: Partial<Record<Slot, number>> = { ability: 0, skill: 1, ult: 2, bonus: 3, item: 3 };
+    const i = map[slot];
+    if (i !== undefined) return `Recarga ${Math.ceil(me.powerCd[i] ?? 0)}s`;
+  }
   if (slot === 'ability') return `Recarga ${Math.ceil(me.abilCd)}s`;
   if (slot === 'skill') return `Recarga ${Math.ceil(me.skillCd)}s`;
   if (slot === 'ult') return `Carga ${Math.floor(me.ultCharge)}%`;
@@ -1922,14 +1952,23 @@ function updateSkills(g: AnyGame) {
       drawCooldown('#btn-ult', (g.bossPhase ?? 1) < 2 ? 1 : me.bossCd.chuva / BOSS.skills.chuva.cooldown, '#ff4a5a');
       $('#btn-bonus').classList.toggle('empty', (g.bossPhase ?? 1) < 2 || me.bossCd.obsidiana > 0);
       setText('#btn-bonus .tlabel', 'MURALHA');
+    } else if (g.mode === 'duelo') {
+      const kit = kitOf(me.char.id);
+      const cds = me.powerCd ?? [0, 0, 0, 0];
+      drawCooldown('#btn-ability', cds[0] / cooldownOf(me.char.id, kit.powers[0].cd), ELEMENT_COLOR[kit.powers[0].element]);
+      drawCooldown('#btn-skill', cds[1] / cooldownOf(me.char.id, kit.powers[1].cd), ELEMENT_COLOR[kit.powers[1].element]);
+      drawCooldown('#btn-ult', cds[2] / cooldownOf(me.char.id, kit.powers[2].cd), ELEMENT_COLOR[kit.powers[2].element]);
+      drawCooldown('#btn-bonus', cds[3] / cooldownOf(me.char.id, kit.powers[3].cd), ELEMENT_COLOR[kit.powers[3].element]);
+      $('#btn-ult').classList.toggle('ready', cds[2] <= 0);
     } else {
       drawCooldown('#btn-skill', me.skillCd / SKILLS[me.loadout.skill].cooldown, '#3ee8ff');
       drawCooldown('#btn-ult', 1 - me.ultCharge / 100, '#ffd23e');
+      $('#btn-ult').classList.toggle('ready', me.ultCharge >= 100);
     }
-    $('#btn-ult').classList.toggle('ready', me.boss ? me.bossCd.chuva <= 0 && (g.bossPhase ?? 1) >= 2 : me.ultCharge >= 100);
+    if (me.boss) $('#btn-ult').classList.toggle('ready', me.bossCd.chuva <= 0 && (g.bossPhase ?? 1) >= 2);
   }
-  // aviso único quando a ultimate fica pronta
-  const ready = g.combat && !me.boss && me.ultCharge >= 100;
+  // aviso único quando a ultimate fica pronta (no X1 o R é só mais um poder)
+  const ready = g.combat && !me.boss && g.mode !== 'duelo' && me.ultCharge >= 100;
   if (ready && !ultWasReady && g.phase === 'play') {
     audio.power('dobro');
     $('#hud').classList.add('ult-flash');
@@ -1970,7 +2009,7 @@ function updateHud() {
     const f = Math.max(0, me.hp / (me.maxHp || MAX_HP));
     const cls = f > 0.5 ? '' : f > 0.25 ? 'mid' : 'low';
     const w = WEAPONS[me.weapon];
-    const wTxt = isPrimary(me.weapon) ? w.name : `${w.name} ${w.ammo ? me.ammo + 'x' : Math.ceil(me.weaponT) + 's'}`;
+    const wTxt = g.mode === 'duelo' ? kitOf(me.char.id).passiveName : isPrimary(me.weapon) ? w.name : `${w.name} ${w.ammo ? me.ammo + 'x' : Math.ceil(me.weaponT) + 's'}`;
     // no computador a barra de habilidades já mostra item e recargas
     const itTxt = me.item && input.touchMode ? `<span class="itm">${ITEMS[me.item].name} x${me.itemN}</span>` : '';
     setHTML(
@@ -1990,11 +2029,21 @@ function updateHud() {
   // habilidade extra pega no mapa
   const bAb = me.bonusAb ? CHARACTERS.find((c) => c.ability.id === me.bonusAb) : null;
   const bb = $('#btn-bonus');
-  bb.classList.toggle('empty', !bAb);
-  bb.style.setProperty('--bc', bAb ? bAb.color : '#6a6a8a');
-  setText('#btn-bonus .tlabel', bAb ? bAb.ability.label.toUpperCase() : 'PODER');
+  if (g.mode === 'duelo' && !me.boss) {
+    const kit = kitOf(me.char.id);
+    bb.classList.remove('empty');
+    bb.style.setProperty('--bc', ELEMENT_COLOR[kit.powers[3].element]);
+    setText('#btn-bonus .tlabel', kit.powers[3].name.toUpperCase());
+    setText('#btn-ability .tlabel', 'Q');
+    setText('#btn-skill .tlabel', kit.powers[1].name.toUpperCase());
+    setText('#btn-ult .tlabel', kit.powers[2].name.toUpperCase());
+  } else {
+    bb.classList.toggle('empty', !bAb);
+    bb.style.setProperty('--bc', bAb ? bAb.color : '#6a6a8a');
+    setText('#btn-bonus .tlabel', bAb ? bAb.ability.label.toUpperCase() : 'PODER');
+  }
   drawCooldown('#btn-dash', me.boss ? me.bossCd.avanco / BOSS.skills.avanco.cooldown : me.dashCd / C.DASH_CD, '#3ee8ff');
-  drawCooldown('#btn-ability', me.boss ? me.bossCd.impacto / BOSS.skills.impacto.cooldown : me.abilCd / ab.cooldown, me.color);
+  if (!(g.mode === 'duelo' && !me.boss)) drawCooldown('#btn-ability', me.boss ? me.bossCd.impacto / BOSS.skills.impacto.cooldown : me.abilCd / ab.cooldown, me.color);
   updateSkills(g);
 }
 
@@ -2004,8 +2053,10 @@ function drawCooldown(sel: string, frac: number, color: string) {
   const q = Math.round(f * 60);
   if (cdState[sel] === q) return;
   cdState[sel] = q;
-  const cv = $(sel).querySelector('canvas') as HTMLCanvasElement;
-  const g = cv.getContext('2d')!;
+  const cv = $(sel)?.querySelector('canvas');
+  if (!cv) return;
+  const g = cv.getContext('2d');
+  if (!g) return;
   g.clearRect(0, 0, 120, 120);
   if (f <= 0) {
     g.strokeStyle = color;
@@ -2130,6 +2181,9 @@ function onEvents(events: GameEvent[]) {
       case 'deliver':
         audio.deliver(e.count, panOf(e.x));
         if (mine && hintStage === 3) hintStage = 4;
+        break;
+      case 'combo':
+        showTip(`${e.name} +${e.bonus}`, 2.2);
         break;
       case 'hit':
         if (e.by === 'fall') audio.fall(panOf(e.x));

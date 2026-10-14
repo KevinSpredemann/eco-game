@@ -41,7 +41,7 @@ describe('cristais de habilidade e armas próprias', () => {
         { id: 'a', char: 'bruno', isBot: false },
         { id: 'b', char: 'kael', isBot: true },
       ];
-      const g = new Game({ arena: ARENAS[0], humanChar: 'bruno', bots: 0, difficulty: 'dificil', ownEchoDamage: true, training: false, mode: 'duelo', roster });
+      const g = new Game({ arena: ARENAS[0], humanChar: 'bruno', bots: 0, difficulty: 'dificil', ownEchoDamage: true, training: false, mode: 'dupla', roster });
       for (let i = 0; i < 60 * 120 && g.phase !== 'results' && reflects === 0; i++) {
         const a = g.players[0];
         const b = g.players[1];

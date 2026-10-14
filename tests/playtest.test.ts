@@ -16,7 +16,7 @@ function fight() {
     difficulty: 'normal',
     ownEchoDamage: true,
     training: false,
-    mode: 'duelo',
+    mode: 'dupla',
     roster: [
       { id: 'a', char: 'kael', isBot: false },
       { id: 'b', char: 'luna', isBot: false },
@@ -41,7 +41,7 @@ describe('conteúdo e feedback do playtest', () => {
       expect(weaponDps(WEAPONS[id])).toBeGreaterThan(24);
       expect(weaponDps(WEAPONS[id])).toBeLessThan(55);
     }
-    expect(PROTO).toBe(7);
+    expect(PROTO).toBe(8);
   });
 
   it('o pulso atordoa e a onda de choque causa dano', () => {

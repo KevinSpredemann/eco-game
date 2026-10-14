@@ -1083,6 +1083,10 @@ export class Renderer {
         case 'stunned':
           this.text(e.x, e.y - 100, 'TONTO!', '#ffd23e', 14);
           break;
+        case 'combo':
+          this.text(e.x, e.y - 108, `${e.name} +${e.bonus}`, '#ffe14a', 18);
+          this.ring(e.x, e.y - 20, '#ffe14a', 54);
+          break;
         case 'mark':
           this.ring(e.x, e.y - 28, '#ff5a3c', 40);
           break;
@@ -2181,7 +2185,9 @@ export class Renderer {
       ctx.stroke();
     }
     // lento (gelo / areia / fumaça)
-    if (p.slowT > 0) {
+    if (p.burnT > 0 && !this.reducedEffects && Math.random() < 0.35)
+      this.particles.push({ x: p.x + (Math.random() - 0.5) * 16, y: p.y - 28, vx: (Math.random() - 0.5) * 20, vy: -50 - Math.random() * 30, life: 0, max: 0.45, color: '#ff7a3a', size: 2.4, kind: 'spark' });
+    if (p.slowT > 0 || p.frozenT > 0) {
       ctx.strokeStyle = 'rgba(160,230,255,0.8)';
       ctx.lineWidth = 2;
       for (let k = 0; k < 3; k++) {

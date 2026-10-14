@@ -73,7 +73,7 @@ describe('balanceamento central', () => {
   });
 
   it('escudo só devolve tiro que vem da frente; de costas leva dano reduzido', () => {
-    const { g, pa, pb } = duel('kael', 'bruno');
+    const { g, pa, pb } = duel('kael', 'bruno', 'dupla');
     // B olha para A (frente) e liga o escudo
     pb.shieldT = 2;
     pb.aim = Math.PI;
@@ -97,7 +97,7 @@ describe('balanceamento central', () => {
   });
 
   it('tiro devolvido nunca fica mais forte e não volta duas vezes', () => {
-    const { g, pb } = duel('kael', 'bruno');
+    const { g, pb } = duel('kael', 'bruno', 'dupla');
     pb.shieldT = 2;
     pb.aim = Math.PI;
     g.step(STEP, { a: { ...idle, fire: true, aim: 0 }, b: { ...idle, aim: Math.PI } });
@@ -107,7 +107,7 @@ describe('balanceamento central', () => {
   });
 
   it('fase/sombra: atirar acaba com a invisibilidade', () => {
-    const { g, pa } = duel('luna', 'kael');
+    const { g, pa } = duel('luna', 'kael', 'dupla');
     g.step(STEP, { a: { ...idle, ability: true }, b: idle });
     expect(pa.phaseT).toBeGreaterThan(0);
     for (let i = 0; i < 30; i++) g.step(STEP, { a: idle, b: idle });
@@ -116,7 +116,7 @@ describe('balanceamento central', () => {
   });
 
   it('esquiva (rolamento) deixa intocável só durante o giro e respeita a recarga', () => {
-    const { g, pa } = duel('kael', 'luna', 'duelo', { skill: 'rolamento' });
+    const { g, pa } = duel('kael', 'luna', 'dupla', { skill: 'rolamento' });
     g.step(STEP, { a: { ...idle, skill: true, ca: Math.PI / 2 }, b: idle });
     expect(pa.dodgeT).toBeGreaterThan(0);
     expect(pa.skillCd).toBeGreaterThan(4);
@@ -135,7 +135,7 @@ describe('balanceamento central', () => {
   });
 
   it('ultimate meteoro: aviso antes, dano só depois do tempo de reação', () => {
-    const { g, pa, pb } = duel('kael', 'luna', 'duelo', { ult: 'meteoro' });
+    const { g, pa, pb } = duel('kael', 'luna', 'dupla', { ult: 'meteoro' });
     pa.ultCharge = 100;
     const hp = pb.hp;
     g.step(STEP, { a: { ...idle, ult: true, ca: 0, cr: 160 }, b: idle });
@@ -148,7 +148,7 @@ describe('balanceamento central', () => {
   });
 
   it('meteoro: quem foge da área marcada não leva dano', () => {
-    const { g, pa, pb } = duel('kael', 'luna', 'duelo', { ult: 'meteoro' });
+    const { g, pa, pb } = duel('kael', 'luna', 'dupla', { ult: 'meteoro' });
     pa.ultCharge = 100;
     const hp = pb.hp;
     g.step(STEP, { a: { ...idle, ult: true, ca: 0, cr: 160 }, b: idle });
@@ -157,7 +157,7 @@ describe('balanceamento central', () => {
   });
 
   it('feixe atravessa rivais mas é bloqueado por parede', () => {
-    const { g, pa, pb } = duel('kael', 'luna', 'duelo', { ult: 'feixe' });
+    const { g, pa, pb } = duel('kael', 'luna', 'dupla', { ult: 'feixe' });
     pa.ultCharge = 100;
     // muro de gelo entre os dois
     g.iceWalls.push({ id: 999, owner: 'x', kind: 'gelo', x: 470, y: 250, w: 24, h: 160, t: 5 });
@@ -168,14 +168,14 @@ describe('balanceamento central', () => {
   });
 
   it('ultimate não pode ser usada sem carga', () => {
-    const { g, pa } = duel('kael', 'luna', 'duelo', { ult: 'meteoro' });
+    const { g, pa } = duel('kael', 'luna', 'dupla', { ult: 'meteoro' });
     pa.ultCharge = 40;
     g.step(STEP, { a: { ...idle, ult: true, ca: 0, cr: 100 }, b: idle });
     expect(g.casts).toHaveLength(0);
   });
 
   it('torreta tem vida e pode ser destruída', () => {
-    const { g, pa } = duel('rex', 'kael');
+    const { g, pa } = duel('rex', 'kael', 'dupla');
     g.step(STEP, { a: { ...idle, ability: true, ca: 0 }, b: idle });
     expect(g.turrets).toHaveLength(1);
     const t = g.turrets[0];

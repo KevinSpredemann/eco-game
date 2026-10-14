@@ -10,6 +10,7 @@ import { loadoutPrimary } from '../game/weapons';
 import type { EchoDigest, RoundEchoLine } from '../systems/echo/digest';
 import { assignUniqueColors, assignUniqueNames } from '../game/colors';
 import { BOSS, COMBAT, DEFAULT_LOADOUT, Loadout, sanitizeLoadout } from '../game/balance';
+import { speedMul } from '../game/elements';
 import { CAST_KINDS, ENEMY_KINDS, ITEM_IDS, Snapshot, StartInfo, WALL_KINDS, WEAPON_IDS } from './protocol';
 import type { EchoRecording } from '../shared/types';
 
@@ -168,7 +169,7 @@ export class ClientGame {
     this.zones = s.Z;
 
     for (const row of s.P) {
-      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd] = row as any[];
+      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks] = row as any[];
       const p = this.players.find((q) => q.id === id);
       if (!p) continue;
       const wasAlive = p.alive;
@@ -195,6 +196,10 @@ export class ClientGame {
       p.stasisT = fl & 524288 ? 1 : 0;
       p.castT = fl & 1048576 ? 1 : 0;
       p.exhaustT = fl & 2097152 ? 1 : 0;
+      p.burnT = burnT ?? (fl & 4194304 ? 1 : 0);
+      p.frozenT = frozenT ?? (fl & 8388608 ? 1 : 0);
+      p.powerCd = [pcd0 ?? 0, pcd1 ?? 0, pcd2 ?? 0, pcd3 ?? 0];
+      p.comboStacks = stacks ?? 0;
       p.maxHp = maxHp ?? COMBAT.maxHp;
       p.skillCd = skillCd ?? 0;
       p.ultCharge = ult ?? 0;
@@ -344,7 +349,7 @@ export class ClientGame {
         const onIce = (this.arena.ice ?? []).some((r) => inRect(this.pred!.x, this.pred!.y, r));
         const grip = onIce ? 0.12 : this.arena.grip;
         const kIce = 1 - Math.exp(-12 * grip * dt);
-        const speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * (p.slowT > 0 ? 0.6 : 1) * (p.castT > 0 ? COMBAT.castMove : 1) * (p.boss ? BOSS.speedMul : 1) * (p.stunT > 0 ? 0 : 1);
+        const speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * (p.slowT > 0 ? 0.6 : 1) * (p.castT > 0 ? COMBAT.castMove : 1) * (p.boss ? BOSS.speedMul : 1) * (p.stunT > 0 ? 0 : 1) * (this.mode === 'duelo' ? speedMul(p.char.id, p.comboStacks) : 1);
         this.predV.x += (mx * speed - this.predV.x) * kIce;
         this.predV.y += (my * speed - this.predV.y) * kIce;
         this.pred.x += this.predV.x * dt;
@@ -445,6 +450,15 @@ function blankPlayer(id: string, name: string, char: ReturnType<typeof getCharac
     phaseT: 0,
     shieldT: 0,
     portalCd: 0,
+    burnT: 0,
+    frozenT: 0,
+    gustT: 0,
+    shockT: 0,
+    burnAcc: 0,
+    burnDps: 0,
+    burnFrom: '',
+    powerCd: [0, 0, 0, 0],
+    comboStacks: 0,
     hidden: false,
     tookDamage: false,
     tripleDone: false,

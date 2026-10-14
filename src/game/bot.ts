@@ -2,6 +2,7 @@ import { ArenaDef, BORDER, WORLD_H, WORLD_W, bridgeState, inRect } from './arena
 import { GUN_Y, WEAPONS, isPrimary } from './weapons';
 import { BOSS, ULTS } from './balance';
 import type { Difficulty, Game, Input, Player } from './sim';
+import { WALL_REACH, botPower, kitOf, wallSlam } from './elements';
 import * as C from './constants';
 
 const CELL = 20;
@@ -461,7 +462,7 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
   // pouca vida: recua para pegar cura (ou usa o kit)
   const lowHp = p.hp < p.maxHp * 0.35;
   const roleDist: Record<string, number> = { investida: -50, escudo: -24, explosao: -36, cura: 36, teleporte: 48, fase: 20, muralha: -12, torreta: 16 };
-  const want = (RANGE[p.weapon] ?? WEAPONS[p.weapon]?.range ?? 280) + (roleDist[p.char.ability.id] ?? 0);
+  const want = game.mode === 'duelo' ? 150 : (RANGE[p.weapon] ?? WEAPONS[p.weapon]?.range ?? 280) + (roleDist[p.char.ability.id] ?? 0);
   const dTarget = target ? Math.hypot(target.x - p.x, target.y - p.y) : Infinity;
 
   // objetivo de movimento
@@ -620,6 +621,45 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
   }
   out.mx = dx;
   out.my = dy;
+
+  // X1: sem tiro. Escolhe um poder e tenta o combo que já está armado.
+  if (game.mode === 'duelo') {
+    out.fire = false;
+    out.item = false;
+    if (b.restT > 0) b.restT -= dt;
+    const foe = target?.player;
+    if (foe && p.stunT <= 0) {
+      const d = Math.hypot(foe.x - p.x, foe.y - p.y);
+      const clear = game.nav.lineClear(p.x, p.y, foe.x, foe.y, game.worldT);
+      if (clear && d < 340) {
+        const ang = Math.atan2(foe.y - p.y, foe.x - p.x);
+        if (Math.random() < dt * 1.3) b.aimDrift = Math.random() * 2 - 1;
+        b.aimOff += (b.aimDrift * b.aimErr - b.aimOff) * Math.min(1, dt * 2.5);
+        out.aim = ang + b.aimOff * 0.25;
+        out.ca = out.aim;
+        out.cr = d;
+        const slot = botPower(
+          kitOf(p.char.id),
+          p.powerCd,
+          { burn: foe.burnT, frozen: foe.frozenT, gust: foe.gustT, shock: foe.shockT },
+          d,
+          wallSlam(p.x, p.y, foe.x, foe.y, WALL_REACH, (x, y) => !game.isFree(x, y, 10)),
+        );
+        if (slot !== null && b.seenT >= b.react && b.restT <= 0) {
+          if (slot === 0) out.ability = true;
+          else if (slot === 1) out.skill = true;
+          else if (slot === 2) out.ult = true;
+          else {
+            out.bonus = true;
+            out.item = true;
+          }
+          b.restT = Math.max(0.28, b.react * 0.55);
+        }
+      }
+    }
+    if (p.dashCd <= 0 && threat > 0.5 && Math.random() < b.dashSkill * 0.3) out.dash = true;
+    return out;
+  }
 
   // mirar e atirar
   if (target) {

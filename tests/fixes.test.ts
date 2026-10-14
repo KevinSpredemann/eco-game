@@ -130,7 +130,7 @@ describe('portais, gelo, morte e colisão', () => {
   });
 
   it('um tiro acerta uma vez e o eco avisa a origem', () => {
-    const g = started('lab', 'duelo');
+    const g = started('lab', 'dupla');
     const a = g.players[0];
     const b = g.players[1];
     a.x = 400;

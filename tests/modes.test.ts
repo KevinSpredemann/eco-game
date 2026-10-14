@@ -59,7 +59,7 @@ describe('2x2', () => {
       difficulty: 'normal',
       ownEchoDamage: true,
       training: false,
-      mode: 'duelo',
+      mode: 'dupla',
       roster: [
         { id: 'a', char: 'kael', isBot: false },
         { id: 'b', char: 'luna', isBot: true },

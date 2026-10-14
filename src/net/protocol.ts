@@ -25,7 +25,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 7;
+export const PROTO = 8;
 
 export interface RoomInfo {
   code: string;
@@ -173,7 +173,9 @@ function flags(p: Player): number {
     (p.overT > 0 ? 262144 : 0) |
     (p.stasisT > 0 ? 524288 : 0) |
     (p.castT > 0 ? 1048576 : 0) |
-    (p.exhaustT > 0 ? 2097152 : 0)
+    (p.exhaustT > 0 ? 2097152 : 0) |
+    (p.burnT > 0 ? 4194304 : 0) |
+    (p.frozenT > 0 ? 8388608 : 0)
   );
 }
 
@@ -238,6 +240,13 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
       Math.round(p.stats.dmg),
       p.stats.obj,
       Math.ceil(p.portalCd),
+      r1(p.powerCd[0]),
+      r1(p.powerCd[1]),
+      r1(p.powerCd[2]),
+      r1(p.powerCd[3]),
+      r1(p.burnT),
+      r1(p.frozenT),
+      p.comboStacks,
     ]),
     F: g.fragments.map((f) => [f.id, r1(f.x), r1(f.y), f.golden ? 1 : 0]),
     W: g.powerups.map((w) => [w.id, w.kind, r1(w.x), r1(w.y), r1(w.age)]),

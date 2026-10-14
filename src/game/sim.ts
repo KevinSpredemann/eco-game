@@ -30,6 +30,31 @@ import { BOMB_DAMAGE, BOMB_FUSE, BOMB_RADIUS, ECHO_DAMAGE_MULT, GUN_Y, ICE_DAMAG
 import { withSkin } from './characters';
 import { choosePortalExit, portalPairAt } from './portals';
 import { DUEL, duelTiebreak, type DuelReason } from './duel';
+import {
+  BURN_TICK,
+  BURN_TIME,
+  FROZEN_TIME,
+  KNOCK,
+  MARK_TIME,
+  VISUAL_WEAPON,
+  WALL_BONUS,
+  WALL_REACH,
+  bonusDamage,
+  burnDpsOf,
+  comboOf,
+  cooldownOf,
+  gustSlow,
+  healOnCombo,
+  kitOf,
+  knockMul,
+  refundOnCombo,
+  speedMul,
+  stunTime,
+  tuneCombo,
+  wallSlam,
+  wallStun,
+  type Element,
+} from './elements';
 
 export type Difficulty = 'facil' | 'normal' | 'dificil';
 export type ObjectiveId = 'dourado' | 'tripla' | 'intocavel';
@@ -134,6 +159,18 @@ export interface Player {
   phaseT: number;
   shieldT: number;
   portalCd: number;
+  /** marcas elementais do X1 (segundos). Queimadura dói em tiques; as outras armam combo. */
+  burnT: number;
+  frozenT: number;
+  gustT: number;
+  shockT: number;
+  burnAcc: number;
+  burnDps: number;
+  burnFrom: string;
+  /** recarga dos quatro poderes (Q E R F) */
+  powerCd: [number, number, number, number];
+  /** combos fechados nesta rodada (a ninja fica mais rápida) */
+  comboStacks: number;
   hidden: boolean;
   tookDamage: boolean;
   tripleDone: boolean;
@@ -383,6 +420,9 @@ export interface Bullet {
   hit: string[];
   /** já foi devolvido por um escudo (não volta de novo) */
   refl?: boolean;
+  /** poder do X1: o acerto aplica o elemento, não o efeito da arma desenhada */
+  el?: Element;
+  knock?: number;
 }
 
 export interface Bomb {
@@ -531,7 +571,8 @@ export type GameEvent =
   | { type: 'exhaust'; x: number; y: number }
   | { type: 'minion'; x: number; y: number; kind: MinionKind }
   | { type: 'block'; x: number; y: number }
-  | { type: 'stunned'; x: number; y: number; pid: string };
+  | { type: 'stunned'; x: number; y: number; pid: string }
+  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string };
 
 export type Phase = 'prep' | 'play' | 'rewind' | 'call' | 'results';
 /** de onde veio o dano (para o indicador de direção e a cor do número) */
@@ -700,6 +741,15 @@ export class Game {
       phaseT: 0,
       shieldT: 0,
       portalCd: 0,
+      burnT: 0,
+      frozenT: 0,
+      gustT: 0,
+      shockT: 0,
+      burnAcc: 0,
+      burnDps: 0,
+      burnFrom: '',
+      powerCd: [0, 0, 0, 0],
+      comboStacks: 0,
       hidden: false,
       tookDamage: false,
       tripleDone: false,
@@ -845,6 +895,15 @@ export class Game {
         phaseT: 0,
         shieldT: 0,
         portalCd: 0,
+        burnT: 0,
+        frozenT: 0,
+        gustT: 0,
+        shockT: 0,
+        burnAcc: 0,
+        burnDps: 0,
+        burnFrom: '',
+        powerCd: [0, 0, 0, 0],
+        comboStacks: 0,
         tookDamage: false,
         tripleDone: false,
         hitFlash: 0,
@@ -1276,6 +1335,20 @@ export class Game {
     p.phaseT = Math.max(0, p.phaseT - dt);
     p.shieldT = Math.max(0, p.shieldT - dt);
     p.portalCd = Math.max(0, p.portalCd - dt);
+    if (this.mode === 'duelo') {
+      p.burnT = Math.max(0, p.burnT - dt);
+      p.frozenT = Math.max(0, p.frozenT - dt);
+      p.gustT = Math.max(0, p.gustT - dt);
+      p.shockT = Math.max(0, p.shockT - dt);
+      for (let i = 0; i < 4; i++) p.powerCd[i] = Math.max(0, p.powerCd[i] - dt);
+      if (p.burnT > 0 && p.alive) {
+        p.burnAcc += dt;
+        while (p.burnAcc >= BURN_TICK && p.alive) {
+          p.burnAcc -= BURN_TICK;
+          this.hurt(p, p.burnDps, p.burnFrom || null, 'pulse');
+        }
+      } else p.burnAcc = 0;
+    }
     p.hitFlash = Math.max(0, p.hitFlash - dt);
     p.slowT = Math.max(0, p.slowT - dt);
     p.vampT = Math.max(0, p.vampT - dt);
@@ -1320,6 +1393,14 @@ export class Game {
         p.recorder?.event(tms, 'dash');
         this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
       }
+      if (this.mode === 'duelo') {
+        if (free && p.alive) {
+          if (inp.ability) this.castPower(p, 0, castAng, inp);
+          if (inp.skill) this.castPower(p, 1, castAng, inp);
+          if (inp.ult) this.castPower(p, 2, castAng, inp);
+          if (inp.bonus || inp.item) this.castPower(p, 3, castAng, inp);
+        }
+      } else {
       if (inp.ability && p.abilCd <= 0 && free) this.useAbility(p, castAng, inp);
       if (inp.bonus && p.bonusAb && free) {
         const def = abilityDef(p.bonusAb);
@@ -1337,6 +1418,7 @@ export class Game {
       if (inp.fire && p.fireCd <= 0 && free) this.fire(p);
       if (inp.item && p.item && p.itemN > 0 && free) this.useItem(p);
     }
+      }
 
     const inBush = (this.arena.bushes ?? []).some((b) => dist(p.x, p.y, b.x, b.y) < b.r);
     const sand = (this.arena.sand ?? []).find((c) => dist(p.x, p.y, c.x, c.y) < c.r);
@@ -1346,6 +1428,7 @@ export class Game {
     // lentidões não se multiplicam sem limite: a mais forte vale, e há uma velocidade mínima
     const slowK = Math.min(p.slowT > 0 ? 0.6 : 1, p.stasisT > 0 ? 0.35 : 1, sand ? 0.55 : 1, p.castT > 0 ? COMBAT.castMove : 1) * (inBush ? 0.92 : 1) * (carrying ? 0.92 : 1);
     let speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * Math.max(COMBAT.minSpeed, slowK) * (p.boss ? BOSS.speedMul * (p.exhaustT > 0 ? 0.5 : 1) : 1);
+    if (this.mode === 'duelo') speed *= speedMul(p.char.id, p.comboStacks);
     if (p.isBot) speed *= p.brain!.speedMul;
 
     if (p.chargeT > 0) {
@@ -2572,6 +2655,97 @@ export class Game {
     }
   }
 
+  /** X1: Q E R F. Não grava tiro no Eco e não usa a arma. */
+  private castPower(p: Player, slot: number, ang: number, inp?: Input) {
+    if (p.powerCd[slot] > 0) return;
+    const def = kitOf(p.char.id).powers[slot];
+    p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+    const knock = KNOCK[def.element];
+    if (def.speed <= 0) {
+      const pt = this.castPoint(p, inp, ang, def.range);
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element });
+      for (const o of this.players) {
+        if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
+        if (dist(o.x, o.y, pt.x, pt.y) <= def.radius) this.deliverPower(p, o, def.element, def.dmg, knock);
+      }
+      return;
+    }
+    const muzzle = 18;
+    this.bullets.push({
+      id: this.fragId++,
+      x: p.x + Math.cos(ang) * muzzle,
+      y: p.y - GUN_Y + Math.sin(ang) * muzzle,
+      vx: Math.cos(ang) * def.speed,
+      vy: Math.sin(ang) * def.speed,
+      owner: p.id,
+      dmg: def.dmg,
+      life: def.range / def.speed,
+      weapon: VISUAL_WEAPON[def.element],
+      pierce: false,
+      fromEcho: false,
+      hit: [],
+      el: def.element,
+      knock,
+    });
+    this.events.push({ type: 'shoot', x: p.x, y: p.y, pid: p.id, weapon: VISUAL_WEAPON[def.element] });
+  }
+
+  /** Lê o combo, grava o elemento novo e aplica queimadura, lentidão, tontura ou empurrão. */
+  private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number) {
+    if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
+    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT };
+    const extra = bonusDamage(src.char.id, aura, dst.stunT > 0);
+    const combo = tuneCombo(src.char.id, comboOf(aura, element));
+    this.hurt(dst, damage + extra, src.id, 'pulse');
+    if (element === 'fire') {
+      dst.burnT = BURN_TIME;
+      dst.burnDps = burnDpsOf(src.char.id);
+      dst.burnFrom = src.id;
+      dst.burnAcc = 0;
+    } else if (element === 'ice') {
+      dst.frozenT = FROZEN_TIME;
+      this.slow(dst, FROZEN_TIME);
+    } else if (element === 'lightning') dst.shockT = MARK_TIME;
+    else dst.gustT = MARK_TIME;
+    if (combo) {
+      if (combo.clearFrozen) {
+        dst.frozenT = 0;
+        dst.slowT = 0;
+      }
+      this.hurt(dst, combo.bonus, src.id, 'pulse');
+      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: combo.name, bonus: combo.bonus, pid: src.id });
+      src.comboStacks = Math.min(8, src.comboStacks + 1);
+      const refund = refundOnCombo(src.char.id);
+      if (refund) for (let i = 0; i < 4; i++) src.powerCd[i] = Math.max(0, src.powerCd[i] - refund);
+      const healN = healOnCombo(src.char.id);
+      if (healN && src.alive) this.heal(src, src, healN);
+      if (combo.aoe) {
+        for (const o of this.players) {
+          if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
+          if (dist(o.x, o.y, dst.x, dst.y) < combo.aoe) this.hurt(o, combo.bonus * 0.5, src.id, 'pulse');
+        }
+      }
+    }
+    if (element === 'lightning') this.stun(dst, stunTime(src.char.id));
+    if (element === 'wind') {
+      const slammed = wallSlam(src.x, src.y, dst.x, dst.y, WALL_REACH, (x, y) => !this.isFree(x, y, 10));
+      if (slammed) {
+        this.stun(dst, wallStun(src.char.id));
+        this.hurt(dst, WALL_BONUS, src.id, 'pulse');
+        this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Pancada', bonus: WALL_BONUS, pid: src.id });
+        src.comboStacks = Math.min(8, src.comboStacks + 1);
+      }
+      const ang = Math.atan2(dst.y - src.y, dst.x - src.x);
+      const k = knock * knockMul(src.char.id);
+      this.knock(dst, Math.cos(ang) * k, Math.sin(ang) * k);
+      const gs = gustSlow(src.char.id);
+      if (gs) this.slow(dst, gs);
+    } else if (knock > 0) {
+      const ang = Math.atan2(dst.y - src.y, dst.x - src.x);
+      this.knock(dst, Math.cos(ang) * knock, Math.sin(ang) * knock);
+    }
+  }
+
   private fire(p: Player) {
     const w = WEAPONS[p.weapon];
     // atirar revela quem está em fase/sombra (invulnerabilidade nunca vem junto com ataque)
@@ -2791,6 +2965,18 @@ export class Game {
             if (o.id !== b.owner && ownerTeam >= 0 && ownerTeam === o.team) continue;
           }
           if (!this.bodyHit(o, b.x, b.y)) continue;
+          // poder do X1: dano e elemento aqui. A arma desenhada não queima, cura nem empurra de novo.
+          if (b.el) {
+            b.hit.push(o.id);
+            const src = this.players.find((q) => q.id === b.owner);
+            if (src) this.deliverPower(src, o, b.el, b.dmg, b.knock ?? 0);
+            else this.hurt(o, b.dmg, b.owner, 'shot', Math.atan2(b.vy, b.vx));
+            if (!b.pierce) {
+              b.life = 0;
+              break;
+            }
+            continue;
+          }
           // esquiva e fase: o tiro atravessa
           if (o.dodgeT > 0 || o.phaseT > 0) continue;
           if (o.shieldT > 0 && this.combat && !enemyShot && this.reflect(o, b)) break;
@@ -2857,7 +3043,7 @@ export class Game {
       }
       // foguete e lança-granadas explodem ao bater ou no fim do alcance
       const bw = WEAPONS[b.weapon];
-      if (bw.blast && b.life <= 0) this.explode(b.x, b.y + GUN_Y, bw.blast.r, bw.blast.dmg * (b.fromEcho ? ECHO_DAMAGE_MULT : 1), b.owner, b.fromEcho);
+      if (bw.blast && b.life <= 0 && !b.el) this.explode(b.x, b.y + GUN_Y, bw.blast.r, bw.blast.dmg * (b.fromEcho ? ECHO_DAMAGE_MULT : 1), b.owner, b.fromEcho);
     }
     this.bullets = this.bullets.filter((b) => b.life > 0);
     this.enemies = this.enemies.filter((e) => e.hp > 0);
