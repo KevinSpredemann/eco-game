@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { WEAPONS } from '../src/game/weapons';
 
 const STEP = 1 / 60;
 const idle: Input = { mx: 0, my: 0, dash: false, ability: false };
@@ -51,7 +50,7 @@ describe('2x2', () => {
     expect(g.players[2].roundWins).toBe(0);
   });
 
-  it('um tiro na altura do peito acerta o bot com o dano cheio da arma', () => {
+  it('o poder acerta o bot e o clique não cria bala de arma', () => {
     const g = new Game({
       arena: getArena('lab'),
       humanChar: 'kael',
@@ -75,11 +74,12 @@ describe('2x2', () => {
     a.invulnT = 0;
     b.invulnT = 0;
     b.isBot = true;
-    const aim = Math.atan2(b.y - 48 - a.y, b.x - a.x);
+    const aim = Math.atan2(b.y - a.y, b.x - a.x);
     b.isBot = false;
     const before = b.hp;
-    for (let i = 0; i < 40; i++) g.step(STEP, { a: { ...idle, fire: i === 0, aim }, b: idle });
-    expect(before - b.hp).toBeGreaterThanOrEqual(WEAPONS[a.weapon].damage);
+    for (let i = 0; i < 40; i++) g.step(STEP, { a: { ...idle, ability: i === 0, aim, ca: aim }, b: idle });
+    expect(g.bullets.every((n) => n.el)).toBe(true);
+    expect(b.hp).toBeLessThan(before);
   });
 
   it('o mesmo tiro tira o mesmo tanto de um humano e de um bot', () => {

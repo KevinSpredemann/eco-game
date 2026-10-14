@@ -27,6 +27,8 @@ export interface SlotView {
   note?: string;
   /** descrição curta (aparece ao passar o mouse) */
   desc: string;
+  /** combo pronto neste poder */
+  hot?: boolean;
 }
 
 export function drawSlotArt(cv: HTMLCanvasElement, a: SlotArt) {
@@ -161,6 +163,7 @@ export class SkillBar {
       e.classList.toggle('ready', ready);
       e.classList.toggle('cool', !ready);
       e.classList.toggle('off', !!s.off);
+      e.classList.toggle('combo', !!s.hot);
       e.style.setProperty('--p', String(charge ? 1 - Math.min(100, s.charge ?? 0) / 100 : Math.max(0, Math.min(1, s.cd))));
       const num = e.querySelector('.sk-num')!;
       const t = s.note ?? (charge ? (ready ? 'PRONTA' : `${Math.floor(s.charge ?? 0)}%`) : s.secs > 0 ? `${Math.ceil(s.secs)}s` : '');

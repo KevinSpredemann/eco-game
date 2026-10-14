@@ -1,4 +1,4 @@
-// Poderes elementais do X1. O 2x2 continua com tiro e equipamento.
+// Poderes elementais do X1 e do 2x2. Os dois modos usam só estes golpes.
 // Cada golpe deixa uma marca curta. O próximo elemento lê a marca ANTES de gravar a sua.
 
 export type Element = 'fire' | 'ice' | 'lightning' | 'wind';
@@ -257,4 +257,36 @@ export function botPower(kitDef: Kit, cds: number[], mark: Aura, dist: number, n
     }
   }
   return best;
+}
+
+const POWER_KEY = ['Q', 'E', 'R', 'F'] as const;
+
+/** Q E R F, e o F do notebook (item) cai no mesmo poder. */
+export function powerSlotIndex(slot: string): number | null {
+  if (slot === 'ability') return 0;
+  if (slot === 'skill') return 1;
+  if (slot === 'ult') return 2;
+  if (slot === 'bonus' || slot === 'item') return 3;
+  return null;
+}
+
+/** Recusa o uso sem mexer na recarga. Null significa que o poder pode sair. */
+export function denyPowerCast(slot: string, cd: readonly number[]): string | null {
+  const i = powerSlotIndex(slot);
+  if (i === null) return null;
+  if ((cd[i] ?? 0) > 0) return 'Habilidade em recarga';
+  return null;
+}
+
+/** Combo que já está armado num rival e cabe num poder pronto. */
+export function comboReady(charId: string, cds: readonly number[], foes: readonly Aura[]): { slot: number; key: string; name: string } | null {
+  const kitDef = kitOf(charId);
+  for (const aura of foes) {
+    for (let i = 0; i < 4; i++) {
+      if ((cds[i] ?? 0) > 0) continue;
+      const combo = tuneCombo(charId, comboOf(aura, kitDef.powers[i].element));
+      if (combo) return { slot: i, key: POWER_KEY[i], name: combo.name };
+    }
+  }
+  return null;
 }

@@ -19,7 +19,7 @@ describe('modo 2x2', () => {
     const ev = play(g, 60 * 400);
     expect(g.phase).toBe('results');
     expect(g.players.map((p) => p.team)).toEqual([0, 0, 1, 1]);
-    expect(ev.shoot ?? 0).toBeGreaterThan(10);
+    expect((ev.skill ?? 0) + (ev.combo ?? 0)).toBeGreaterThan(10);
     expect(Math.max(...g.players.map((p) => p.roundWins)) === 3 || g.round >= 5).toBe(true);
   }, 20000);
 
@@ -36,22 +36,21 @@ describe('modo 2x2', () => {
     expect(top === 3 || g.round >= 5).toBe(true);
   });
 
-  it('Ecos repetem os tiros gravados', () => {
+  it('segurar o clique no 2x2 não grava tiro de arma para o Eco', () => {
     const roster = [
       { id: 'a', char: 'kael', isBot: false },
       { id: 'b', char: 'luna', isBot: false },
     ];
     const g = new Game({ arena: getArena('lab'), humanChar: 'kael', bots: 0, difficulty: 'normal', ownEchoDamage: true, training: false, mode: 'dupla', roster, roundSec: 12, suddenSec: 4 });
     const fire = { mx: 0, my: 0, dash: false, ability: false, fire: true, aim: 0 };
-    for (let i = 0; i < 60 * 20; i++) g.step(1 / 60, { a: fire, b: idle });
-    // termina a rodada 1 por tempo
+    for (let i = 0; i < 60 * 8; i++) g.step(1 / 60, { a: fire, b: idle });
     while (g.round === 1) g.step(1 / 60, { a: idle, b: idle });
     while (g.phase !== 'play') g.step(1 / 60, { a: idle, b: idle });
     let echoShots = 0;
-    for (let i = 0; i < 60 * 10; i++) {
+    for (let i = 0; i < 60 * 6; i++) {
       g.step(1 / 60, { a: idle, b: idle });
-      echoShots += g.bullets.filter((b) => b.fromEcho).length > 0 ? 1 : 0;
+      echoShots += g.bullets.filter((b) => b.fromEcho && !b.el).length;
     }
-    expect(echoShots).toBeGreaterThan(10);
+    expect(echoShots).toBe(0);
   });
 });

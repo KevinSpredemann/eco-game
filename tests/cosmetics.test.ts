@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACCESSORIES, SKINS, buy, canEquipWeapon, coinText, equip, grantStarters, itemPrice, itemView, newProfile, normalizeProfile, owns, type Profile } from '../src/game/economy';
+import { ACCESSORIES, SKINS, buy, canEquipWeapon, coinText, equip, grantStarters, itemPrice, itemView, missingCoinsText, newProfile, normalizeProfile, owns, type Profile } from '../src/game/economy';
 
 describe('cosméticos', () => {
   it('libera de graça o padrão e tranca o resto com preço', () => {
@@ -74,5 +74,12 @@ describe('cosméticos', () => {
     const before = p.coins;
     expect(itemView({ owned: false, equipped: false, price: 900, coins: p.coins }).view).toBe('short');
     expect(p.coins).toBe(before);
+    expect(missingCoinsText(724)).toBe('Você precisa de mais 724 moedas para adquirir este item.');
+    const broke = newProfile();
+    const coins = broke.coins;
+    expect(buy(broke, 'skin:inexistente')).toBeTruthy();
+    expect(broke.coins).toBe(coins);
+    const pricey = buy(broke, 'skin:fantasma');
+    if (pricey) expect(broke.coins).toBe(coins);
   });
 });

@@ -5,6 +5,7 @@ import { ENEMY_STATS, TEAM_COLORS } from '../game/sim';
 import type { EchoView, Game, GameEvent, Player } from '../game/sim';
 import { PowerId, getPower } from '../game/powerups';
 import { WEAPONS, BOMB_FUSE, BOMB_RADIUS, MAX_HP, GUN_Y, PULSE_FUSE, PULSE_RADIUS } from '../game/weapons';
+import { ELEMENT_COLOR, type Element } from '../game/elements';
 import { TRAILS } from '../game/economy';
 import { sampleRecording } from '../systems/echo/recorder';
 import { BOSS, SKILLS, ULTS } from '../game/balance';
@@ -1098,8 +1099,10 @@ export class Renderer {
         case 'skill': {
           this.animOf(e.pid).cast = 1;
           const p = pc(e.pid);
-          const col = p?.color ?? '#fff';
+          const el = e.skill as Element;
+          const col = ELEMENT_COLOR[el] ?? p?.color ?? '#fff';
           this.ring(e.x, e.y - 10, col, 44);
+          if (ELEMENT_COLOR[el]) this.burst(e.x, e.y - 10, col, 12, 180);
           if (e.skill === 'rolamento') this.burst(e.x, e.y, '#bff4ff', 10, 160);
           if (e.skill === 'estimulo') this.ring(e.x, e.y, '#5dffb8', SKILLS.estimulo.radius ?? 160);
           break;
@@ -2243,10 +2246,11 @@ export class Renderer {
     const rk = an.recoil * an.recoil * 3;
     const rx = -Math.cos(p.aim) * rk;
     const ry = -Math.sin(p.aim) * rk * 0.5;
-    if (game.combat && human && p.alive) this.drawAimGuide(game, p, time);
+    const powers = game.mode === 'duelo' || game.mode === 'dupla';
+    if (game.combat && human && p.alive && !powers) this.drawAimGuide(game, p, time);
     ctx.save();
     ctx.translate(rx, ry);
-    if (gunBehind) this.drawGun(p);
+    if (gunBehind && !powers) this.drawGun(p);
     // vida: inclina ao correr, pula de alegria, amassa ao levar dano
     const sp = Math.hypot(p.vx, p.vy);
     const lean = p.moving ? Math.max(-0.14, Math.min(0.14, (p.vx / C.SPEED) * 0.09)) : 0;
@@ -2285,7 +2289,7 @@ export class Renderer {
         this.particles.push({ x: p.x - Math.cos(p.dir) * 8 + (Math.random() - 0.5) * 8, y: p.y + 2, vx: -p.vx * 0.12, vy: -20 - Math.random() * 20, life: 0, max: 0.45, color: dc, size: 3 + Math.random() * 2, kind: 'spark' });
       }
     }
-    if (game.combat && !gunBehind) this.drawGun(p);
+    if (game.combat && !gunBehind && !powers) this.drawGun(p);
     ctx.restore();
     if (p.hitFlash > 0) {
       ctx.globalAlpha = p.hitFlash * 2;

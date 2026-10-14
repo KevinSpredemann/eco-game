@@ -1,6 +1,6 @@
 import { ArenaDef, BORDER, WORLD_H, WORLD_W, bridgeState, inRect } from './arenas';
-import { GUN_Y, WEAPONS, isPrimary } from './weapons';
-import { BOSS, ULTS } from './balance';
+import { GUN_Y, isPrimary } from './weapons';
+import { BOSS } from './balance';
 import type { Difficulty, Game, Input, Player } from './sim';
 import { WALL_REACH, botPower, kitOf, wallSlam } from './elements';
 import * as C from './constants';
@@ -433,7 +433,6 @@ function chooseTarget(game: Game, p: Player): { x: number; y: number } | null {
 }
 
 // ====================================================================== combate
-const RANGE: Record<string, number> = { blaster: 300, metralhadora: 240, escopeta: 150, laser: 430, foguete: 330, congelante: 260 };
 
 export function botCombat(game: Game, p: Player, dt: number): Input {
   const b = p.brain!;
@@ -461,8 +460,7 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
   } else b.seenT += dt;
   // pouca vida: recua para pegar cura (ou usa o kit)
   const lowHp = p.hp < p.maxHp * 0.35;
-  const roleDist: Record<string, number> = { investida: -50, escudo: -24, explosao: -36, cura: 36, teleporte: 48, fase: 20, muralha: -12, torreta: 16 };
-  const want = game.mode === 'duelo' ? 150 : (RANGE[p.weapon] ?? WEAPONS[p.weapon]?.range ?? 280) + (roleDist[p.char.ability.id] ?? 0);
+  const want = 180;
   const dTarget = target ? Math.hypot(target.x - p.x, target.y - p.y) : Infinity;
 
   // objetivo de movimento
@@ -622,9 +620,8 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
   out.mx = dx;
   out.my = dy;
 
-  // X1: sem tiro. Escolhe um poder e tenta o combo que já está armado.
-  if (game.mode === 'duelo') {
-    out.fire = false;
+  // X1 e 2x2: sem tiro. Escolhe um poder e tenta o combo que já está armado.
+  out.fire = false;
     out.item = false;
     if (b.restT > 0) b.restT -= dt;
     const foe = target?.player;
@@ -658,136 +655,5 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
       }
     }
     if (p.dashCd <= 0 && threat > 0.5 && Math.random() < b.dashSkill * 0.3) out.dash = true;
-    return out;
-  }
-
-  // mirar e atirar
-  if (target) {
-    const d = Math.hypot(target.x - p.x, target.y - p.y);
-    const clear = game.nav.lineClear(p.x, p.y, target.x, target.y, game.worldT);
-    if (clear && d < want + 140) {
-      // antecipa só parte do movimento (depende da dificuldade) e erra de forma "humana"
-      const lead = (d / 650) * b.lead;
-      const ax = target.x + target.vx * lead;
-      const ay = target.y + target.vy * lead;
-      // o erro muda de lado mais ou menos 1x por segundo e a mira desliza até ele (erra de verdade)
-      if (Math.random() < dt * 1.3) b.aimDrift = Math.random() * 2 - 1;
-      b.aimOff += (b.aimDrift * b.aimErr - b.aimOff) * Math.min(1, dt * 2.5);
-      const moving = Math.hypot(target.vx, target.vy) > 60 ? 1.3 : 0.8;
-      out.aim = Math.atan2(ay - p.y, ax - p.x) + b.aimOff * moving + (Math.random() - 0.5) * b.aimErr * 0.4;
-      // tempo de reação a um alvo novo + rajadas com pausas
-      if (b.restT > 0) b.restT -= dt;
-      else {
-        b.fireT += dt;
-        if (b.fireT > b.burst * (0.7 + Math.random() * 0.6)) {
-          b.fireT = 0;
-          b.restT = b.pauseLen * (0.6 + Math.random() * 0.8);
-        }
-      }
-      const crew = game.players
-        .filter((q) => q.alive && q.brain && q.brain.targetId === tid)
-        .map((q) => ({ id: q.id, d: Math.hypot(q.x - target.x, q.y - target.y) }));
-      if (!crew.some((q) => q.id === p.id)) crew.push({ id: p.id, d });
-      out.fire = fireSlot(crew, p.id, b.focus) && b.seenT >= b.react && b.restT <= 0;
-      if (p.item === 'kit' && p.hp < p.maxHp * 0.5) out.item = true;
-      if (p.item === 'bomba' && d < 240 && Math.random() < 0.04) out.item = true;
-      void WEAPONS;
-      if (p.item === 'mina' && d < 180 && Math.random() < 0.03) out.item = true;
-    }
-    // habilidade
-    if (p.abilCd <= 0 && Math.random() < b.abilitySkill * 0.06) {
-      switch (p.char.ability.id) {
-        case 'investida':
-          out.ability = clear && d < 220;
-          if (out.ability) out.mx = (target.x - p.x) / (d || 1);
-          if (out.ability) out.my = (target.y - p.y) / (d || 1);
-          break;
-        case 'raio':
-          out.ability = d < 290;
-          break;
-        case 'gravidade':
-          out.ability = clear && d < 300;
-          break;
-        case 'gancho':
-          out.ability = clear && d > 120 && d < 330;
-          break;
-        case 'muralha':
-          out.ability = threat > 0.35;
-          break;
-        case 'fumaca':
-          out.ability = p.hp < 45 || threat > 0.5;
-          break;
-        case 'turbo':
-          out.ability = d > 350 || p.hp < 40;
-          break;
-        case 'fase':
-        case 'sombra':
-          out.ability = threat > 0.4 || p.hp < 35;
-          break;
-        case 'escudo':
-          out.ability = threat > 0.3;
-          break;
-        case 'teleporte':
-          out.ability = d > 380;
-          break;
-        case 'explosao':
-          out.ability = d < 150;
-          break;
-        case 'clone':
-        case 'torreta':
-          out.ability = clear && d < 420;
-          break;
-        case 'cura':
-          out.ability = p.hp < 60;
-          break;
-      }
-      if (out.ability && ['teleporte', 'sombra', 'investida', 'muralha', 'gancho', 'gravidade'].includes(p.char.ability.id)) {
-        out.ca = Math.atan2(target.y - p.y, target.x - p.x);
-        out.cr = d;
-      }
-    }
-    // habilidade do equipamento (E)
-    if (p.skillCd <= 0 && Math.random() < b.abilitySkill * 0.05) {
-      const toT = Math.atan2(target.y - p.y, target.x - p.x);
-      switch (p.loadout.skill) {
-        case 'rolamento':
-          out.skill = threat > 0.45;
-          out.ca = toT + (b.jitter > 0 ? 1 : -1) * Math.PI * 0.5;
-          break;
-        case 'armadilha':
-          out.skill = d < 300;
-          out.ca = toT;
-          out.cr = d;
-          break;
-        case 'barreira':
-          out.skill = threat > 0.4;
-          out.ca = toT;
-          break;
-        case 'marcador':
-          out.skill = clear && d < 480;
-          out.ca = toT;
-          break;
-        case 'estimulo':
-          out.skill = p.hp < p.maxHp * 0.6;
-          break;
-      }
-    }
-    // ultimate (R): mira onde o alvo vai estar
-    if (p.ultCharge >= 100 && Math.random() < b.abilitySkill * 0.04) {
-      const u = ULTS[p.loadout.ult];
-      const lead = u.windup;
-      const tx = target.x + target.vx * lead * 0.6;
-      const ty = target.y + target.vy * lead * 0.6;
-      out.ca = Math.atan2(ty - p.y, tx - p.x);
-      out.cr = Math.hypot(tx - p.x, ty - p.y);
-      if (u.id === 'meteoro') out.ult = d < u.range;
-      else if (u.id === 'feixe') out.ult = clear && d < u.range - 60;
-      else if (u.id === 'estase') out.ult = d < u.range;
-      else out.ult = d < 350;
-    }
-  }
-  if (p.dashCd <= 0 && threat > 0.5 && Math.random() < b.dashSkill * 0.3) out.dash = true;
-  if (p.bonusAb && target && Math.random() < b.abilitySkill * 0.03 && Math.hypot(target.x - p.x, target.y - p.y) < 260) out.bonus = true;
   return out;
 }
-

@@ -207,6 +207,12 @@ export function coinText(n: number): string {
   return `🪙 ${Math.max(0, Math.floor(n))}`;
 }
 
+/** Aviso de compra recusada. O saldo não muda. */
+export function missingCoinsText(missing: number): string {
+  const n = Math.max(0, Math.ceil(missing));
+  return `Você precisa de mais ${n} moedas para adquirir este item.`;
+}
+
 /** Arma favorita: a do personagem, ou uma arma padrão que você já pode usar. */
 export function canEquipWeapon(p: Profile, id: string | undefined): boolean {
   if (!id) return false;

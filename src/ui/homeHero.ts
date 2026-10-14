@@ -2,6 +2,7 @@
 import type { CharacterDef } from '../game/characters';
 import { accessoryById } from '../game/economy';
 import { WEAPONS, loadoutPrimary } from '../game/weapons';
+import { ELEMENT_COLOR, ELEMENT_NAME, kitOf } from '../game/elements';
 import { drawCharacter } from '../render/chars';
 import { accessoryBehind, drawAccessory } from '../render/accessories';
 import { hexA } from './portraits';
@@ -73,8 +74,10 @@ export class HomeHero {
     const c = this.char;
     if (!el || !c) return;
     const acc = accessoryById(this.acc);
-    const gun = WEAPONS[loadoutPrimary(c.id, this.weapon)];
-    const bits = [gun.name, acc.id === 'nenhum' ? '' : acc.name].filter(Boolean).join(' · ');
+    const kit = kitOf(c.id);
+    const main = kit.powers[0];
+    const visual = this.weapon && this.weapon !== 'assinatura' ? `Visual: ${WEAPONS[loadoutPrimary(c.id, this.weapon)].name}` : '';
+    const bits = [`Poder: ${main.name} (${ELEMENT_NAME[main.element]})`, kit.passiveName, acc.id === 'nenhum' ? '' : acc.name, visual].filter(Boolean).join(' · ');
     el.innerHTML = `<b style="color:${c.color}">${c.name.toUpperCase()}</b><span class="role">${c.title}</span><span class="line">${bits}</span>`;
   }
 
@@ -96,8 +99,8 @@ export class HomeHero {
       const avail = Math.max(120, floor - top);
       return { floor, s: Math.min(avail / 70, (this.w * 0.72) / 36) };
     }
-    const top = box.top - parent.top + cap + 8;
-    const floor = box.bottom - parent.top - 10;
+    const top = box.top - parent.top + 8;
+    const floor = box.bottom - parent.top - cap - 12;
     const avail = Math.max(96, floor - top);
     const s = Math.min(avail / 70, (box.width * 0.78) / 36);
     return { floor, s };
@@ -148,7 +151,13 @@ export class HomeHero {
     if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
     drawCharacter(g, c, 'down', this.phase, false);
     if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
-    paintWeapon(g, c.id, this.weapon);
+    if (this.weapon && this.weapon !== 'assinatura') paintWeapon(g, c.id, this.weapon);
+    else {
+      g.fillStyle = ELEMENT_COLOR[kitOf(c.id).powers[0].element];
+      g.beginPath();
+      g.arc(16, -28, 5, 0, Math.PI * 2);
+      g.fill();
+    }
     g.restore();
   }
 }

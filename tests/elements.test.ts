@@ -5,7 +5,9 @@ import {
   bonusDamage,
   botPower,
   comboOf,
+  comboReady,
   cooldownOf,
+  denyPowerCast,
   kitOf,
   speedMul,
   tuneCombo,
@@ -74,5 +76,16 @@ describe('poderes elementais', () => {
     expect(tuneCombo('kai', comboOf({ ...clear, frozen: 1 }, 'lightning'))?.bonus).toBe(24);
     expect(tuneCombo('leo', comboOf({ ...clear, gust: 1 }, 'lightning'))?.bonus).toBe(18);
     expect(tuneCombo('mei', comboOf({ ...clear, frozen: 1 }, 'fire'))?.aoe).toBe(108);
+  });
+
+  it('recusa a recarga sem zerar o tempo e mostra o combo só enquanto a marca existe', () => {
+    expect(denyPowerCast('skill', [0, 1.2, 0, 0])).toBe('Habilidade em recarga');
+    expect(denyPowerCast('ability', [0, 1.2, 0, 0])).toBeNull();
+    expect(denyPowerCast('fire', [9, 9, 9, 9])).toBeNull();
+    const frozen = { ...clear, frozen: 2 };
+    expect(comboReady('kai', [0, 0, 0, 0], [frozen])).toMatchObject({ slot: 1, key: 'E', name: 'Estilhaçar' });
+    expect(comboReady('kai', [0, 2, 0, 0], [frozen])).toMatchObject({ slot: 2, key: 'R', name: 'Vapor' });
+    expect(comboReady('kai', [0, 2, 2, 0], [frozen])).toBeNull();
+    expect(comboReady('kai', [0, 0, 0, 0], [clear])).toBeNull();
   });
 });

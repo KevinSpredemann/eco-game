@@ -24,6 +24,7 @@
         <div class="round" id="hud-round">RODADA 1/4</div>
         <div class="timer" id="hud-timer">30</div>
         <div class="objective" id="hud-objective"></div>
+        <div class="combo-hint" id="hud-combo" hidden></div>
         <div class="lead-note" id="lead-note" role="status" hidden></div>
       </div>
       <div class="hud-right">
@@ -263,7 +264,7 @@
         </div>
         <div class="lobby-actions">
           <button class="btn" data-action="lobby-char">Trocar personagem</button>
-          <button class="btn" data-action="lobby-loadout">Equipamento</button>
+          <button class="btn" data-action="lobby-loadout">Poderes</button>
           <button class="btn" data-action="lobby-ready" id="lobby-ready">Estou pronto</button>
           <button class="btn primary" data-action="lobby-start" id="lobby-start">Começar</button>
         </div>
@@ -397,11 +398,11 @@
           <div class="howto-grid" id="howto-grid">
           <div class="card">
             <h4>Duelo x1</h4>
-            <p>Online, você contra um rival, só com poderes. Q, E, R e F. Cada poder é fogo, gelo, raio ou vento. Juntar os efeitos na ordem certa dá dano extra (o nome do combo aparece na tela). Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. O 2x2 continua com armas.</p>
+            <p>Online ou offline, você contra um rival, só com poderes. Q, E, R e F. Cada poder é fogo, gelo, raio ou vento. Juntar os efeitos na ordem certa dá dano extra (a linha COMBO DISPONÍVEL aparece quando a janela está aberta). Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Sem arma e sem munição.</p>
           </div>
           <div class="card">
             <h4>2x2</h4>
-            <p>Dois times. Jogue com um amigo e bots, ou os quatro online. O time que sobrar vence a rodada. Melhor de 5. No fim do tempo, vale a vida e o dano do time.</p>
+            <p>Dois times, com os mesmos poderes do X1. Offline: você, um aliado bot e dois rivais bot. Online: sala com gente e bots. O time que sobrar vence a rodada. Melhor de 5. No fim do tempo, vale a vida e o dano do time. Sem arma.</p>
           </div>
           <div class="card">
             <h4>ECO Mundo</h4>
@@ -409,15 +410,15 @@
           </div>
           <div class="card">
             <h4>Cristais de poder</h4>
-            <p>De vez em quando surge um cristal brilhante com o símbolo de um personagem. Passe por cima para pegar a habilidade dele e use uma vez com o botão PODER (ou R / botão direito do mouse).</p>
+            <p>No X1 e no 2x2 não há cristal de habilidade. O F é o quarto poder do personagem. A marca do golpe dura poucos segundos: se a janela passar, o próximo poder volta ao efeito normal.</p>
           </div>
           <div class="card">
             <h4>Controles</h4>
-            <p><b>Computador:</b> WASD anda · mouse mira, clique atira · <b>Q</b> habilidade do personagem · <b>E</b> habilidade do equipamento · <b>R</b> ultimate · <b>Shift</b> impulso · <b>Espaço</b> item · <b>F</b> poder do cristal · <b>Esc</b> cancela a mira ou pausa. Segure Q, E ou R para ver a prévia e solte para usar. Dá para trocar as teclas em Opções.<br /><b>Celular:</b> analógico da esquerda anda. O da direita (ATIRAR) mira em qualquer direção e atira enquanto você segura; só tocar atira na mira automática. Toque numa habilidade para usar na direção da mira, ou arraste o botão para ver a área e solte. Para cancelar, solte em cima do "✕".</p>
+            <p><b>Computador:</b> WASD anda · mouse mira · <b>Q E R F</b> poderes · <b>Shift</b> impulso · <b>Esc</b> cancela a mira ou pausa. No notebook, um toque usa o poder na mira. No clássico, segure para ver a área e solte para usar. Recarga, atordoamento ou queda recusam o poder e não começam outra recarga.<br /><b>Celular:</b> analógico da esquerda anda. Toque no poder para usar na mira, ou arraste para ver a área e solte. Para cancelar, solte em cima do "✕".</p>
           </div>
           <div class="card">
             <h4>Equipamento</h4>
-            <p>Antes da partida escolha a arma principal (a sua ou uma padrão), o item, a habilidade do E e a ultimate do R. Cada opção tem vantagens e limites, nada é só "mais forte". A ultimate carrega com o tempo e com a luta.</p>
+            <p>Antes da partida você vê o poder principal e os quatro golpes do personagem, com elemento, recarga e efeito. Arma, granada e ultimate não entram no X1 nem no 2x2. A roupa não muda o dano. Trocar quais poderes entram na partida ainda não está liberado.</p>
           </div>
           <div class="card">
             <h4>Lendo os Ecos</h4>
@@ -429,7 +430,7 @@
           </div>
           <div class="card">
           <h4>Poderes</h4>
-          <p>Escudo, Ímã, Gelo nos Ecos, Turbo, Energia em dobro, Apagar Eco, Invisível e Cura aparecem pela arena. Nos modos com armas também caem metralhadora, escopeta, laser, lança-foguetes, raio congelante, vampiro, bombas e minas. É só encostar para pegar.</p>
+          <p>Na arena competitiva caem cura, escudo, turbo e outros apoios. Metralhadora, escopeta, laser, foguete, bomba e mina não aparecem no X1 nem no 2x2. O dano vem dos poderes.</p>
         </div>
           </div>
           <button class="car-arrow right" id="howto-next" aria-label="Próximo"><svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg></button>
@@ -493,7 +494,7 @@
         <h2>Pausado</h2>
         <div class="menu">
           <button class="btn primary" data-action="resume">Continuar</button>
-          <button class="btn" data-action="pause-loadout" id="pause-loadout">Equipamento (próxima rodada)</button>
+          <button class="btn" data-action="pause-loadout" id="pause-loadout">Poderes da partida</button>
           <button class="btn" data-action="restart">Reiniciar partida</button>
           <button class="btn" data-action="options">Opções</button>
           <button class="btn ghost" data-action="quit">Sair para o menu</button>
@@ -522,7 +523,7 @@
       <div class="rotate-icon" aria-hidden="true">⟲</div>
       <p>Gire o celular para jogar na horizontal.</p>
     </div>
-    <div id="toast" hidden></div>
+    <div id="toasts" class="toast-stack" aria-live="polite"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

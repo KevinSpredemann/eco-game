@@ -3,7 +3,6 @@ import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
 import * as C from '../src/game/constants';
 import { COMBAT } from '../src/game/balance';
-import { WEAPONS } from '../src/game/weapons';
 import { fireSlot } from '../src/game/bot';
 import { choosePortalExit, portalPairAt } from '../src/game/portals';
 import { rematchStatus } from '../src/net/rematch';
@@ -129,7 +128,7 @@ describe('portais, gelo, morte e colisão', () => {
     expect(p.alive).toBe(false);
   });
 
-  it('um tiro acerta uma vez e o eco avisa a origem', () => {
+  it('um poder acerta e o eco avisa a origem', () => {
     const g = started('lab', 'dupla');
     const a = g.players[0];
     const b = g.players[1];
@@ -140,14 +139,13 @@ describe('portais, gelo, morte e colisão', () => {
     a.dir = 0;
     b.dir = Math.PI;
     a.aim = 0;
-    a.weapon = 'blaster';
     a.invulnT = b.invulnT = 0;
     const before = b.hp;
     g.drainEvents();
-    const shoot: Input = { ...idle, fire: true, aim: 0 };
-    g.step(STEP, { a: shoot, b: idle });
+    g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 40 && b.hp === before; i++) g.step(STEP, { a: idle, b: idle });
-    expect(before - b.hp).toBe(WEAPONS.blaster.damage);
+    expect(b.hp).toBeLessThan(before);
+    expect(g.bullets.every((n) => n.el || n.life <= 0)).toBe(true);
     b.invulnT = 0;
     g.drainEvents();
     g.hurt(b, 12, null, 'echo', Math.PI);

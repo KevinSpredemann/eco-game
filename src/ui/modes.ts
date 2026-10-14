@@ -37,7 +37,7 @@ export const PLAY_MODES: ModeCard[] = [
     id: 'dupla',
     name: '2x2',
     category: 'Times',
-    desc: 'Dois contra dois, com armas. Offline entra você, um aliado bot e dois rivais. Online cabe gente e bots.',
+    desc: 'Dois contra dois, só com poderes. Offline: você, um aliado bot e dois rivais. Online: sala com gente e bots.',
     players: '4',
     where: 'Online e offline',
     available: true,

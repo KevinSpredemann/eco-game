@@ -28,29 +28,38 @@ function fight(mode: 'duelo' | 'dupla', a = 'kai', b = 'luna', bot = false) {
   return g;
 }
 
-describe('X1 só com poderes', () => {
-  it('o clique não atira no X1 e continua atirando no 2x2', () => {
-    const x1 = fight('duelo');
-    const [a, b] = x1.players;
+describe('X1 e 2x2 só com poderes', () => {
+  it('o clique não atira no X1 nem no 2x2', () => {
+    for (const mode of ['duelo', 'dupla'] as const) {
+      const g = fight(mode);
+      const [a, b] = g.players;
+      a.x = 640;
+      a.y = 360;
+      b.x = 760;
+      b.y = 360;
+      g.step(STEP, { a: { ...idle, fire: true, aim: 0 }, b: idle });
+      expect(g.bullets.filter((n) => !n.el)).toHaveLength(0);
+      expect(b.hp).toBe(b.maxHp);
+      expect(a.powerCd.every((n) => n === 0)).toBe(true);
+    }
+  });
+
+  it('R e F saem sem carga de ultimate e sem cristal, e a recarga não reinicia', () => {
+    const g = fight('dupla', 'kai', 'luna');
+    const [a] = g.players;
+    a.ultCharge = 0;
+    a.bonusAb = null;
     a.x = 640;
     a.y = 360;
-    b.x = 760;
-    b.y = 360;
-    x1.step(STEP, { a: { ...idle, fire: true, aim: 0 }, b: idle });
-    expect(x1.bullets.filter((n) => !n.el)).toHaveLength(0);
-    expect(b.hp).toBe(b.maxHp);
-
-    const duo = fight('dupla');
-    const [p, q] = duo.players;
-    p.x = 640;
-    p.y = 360;
-    q.x = 760;
-    q.y = 360;
-    const before = q.hp;
-    duo.step(STEP, { a: { ...idle, fire: true, aim: 0 }, b: idle });
-    expect(duo.bullets.some((n) => !n.el)).toBe(true);
-    for (let i = 0; i < 40 && q.hp === before; i++) duo.step(STEP, { a: idle, b: idle });
-    expect(q.hp).toBeLessThan(before);
+    g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0 }, b: idle });
+    expect(a.powerCd[2]).toBeGreaterThan(3);
+    const left = a.powerCd[2];
+    g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0 }, b: idle });
+    expect(a.powerCd[2]).toBeLessThan(left);
+    expect(a.powerCd[2]).toBeGreaterThan(left - 0.05);
+    g.step(STEP, { a: { ...idle, bonus: true, aim: 0, ca: 0 }, b: idle });
+    expect(a.powerCd[3]).toBeGreaterThan(0);
+    expect(a.bonusAb).toBeNull();
   });
 
   it('Q lança o poder e gelo seguido de raio vira Estilhaçar', () => {
@@ -95,8 +104,24 @@ describe('X1 só com poderes', () => {
     expect(b.stunT).toBeGreaterThan(0);
   });
 
-  it('o bot do X1 usa poder e não atira', () => {
-    const g = fight('duelo', 'maya', 'nyx', true);
+  it('gelo que já passou não vira Estilhaçar', () => {
+    const g = fight('duelo', 'kai', 'luna');
+    const [a, b] = g.players;
+    a.x = 640;
+    a.y = 360;
+    b.x = 760;
+    b.y = 360;
+    b.frozenT = 0.05;
+    g.drainEvents();
+    for (let i = 0; i < 8; i++) g.step(STEP, { a: idle, b: idle });
+    expect(b.frozenT).toBe(0);
+    g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 120 }, b: idle });
+    const ev = g.drainEvents();
+    expect(ev.some((e) => e.type === 'combo')).toBe(false);
+  });
+
+  it('o bot do X1 e do 2x2 usa poder e não atira', () => {
+    const g = fight('dupla', 'maya', 'nyx', true);
     const [a, b] = g.players;
     a.x = 640;
     a.y = 360;

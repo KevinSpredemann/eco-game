@@ -9,6 +9,8 @@ describe('tela de modos', () => {
     expect(offline?.where).toBe('Offline');
     expect(offline?.available).toBe(true);
     expect(modeById('dupla')?.teams).toBe('Azul × Vermelho');
+    expect(modeById('dupla')?.desc ?? '').not.toMatch(/arma/i);
+    expect(PLAY_MODES.some((m) => /mapa aberto/i.test(m.name + m.desc))).toBe(false);
     expect(modeById('mundo')?.players).toBe('1');
     expect(LATER_MODES.length).toBeGreaterThan(0);
     expect(LATER_MODES.every((m) => m.available === false && !!m.reason)).toBe(true);

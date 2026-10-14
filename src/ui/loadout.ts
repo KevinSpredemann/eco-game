@@ -4,6 +4,7 @@
 import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout } from '../game/balance';
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
+import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, kitOf } from '../game/elements';
 import { drawGear, GearKind } from './gearArt';
 import { Carousel, fitText } from './carousel';
 
@@ -91,7 +92,26 @@ export class LoadoutScreen {
     this.carTab = null;
     this.root.querySelector('.lo-sub')!.textContent = opts.subtitle;
     this.root.querySelectorAll<HTMLElement>('[data-lo-confirm]').forEach((b) => (b.textContent = opts.confirmText));
-    this.render();
+    const title = this.root.querySelector('h2');
+    if (title) title.textContent = 'Poderes';
+    this.renderPowers();
+  }
+
+  /** X1 e 2x2 entram com o kit do personagem. Arma e ultimate não mudam o dano. */
+  private renderPowers() {
+    const kit = kitOf(this.charId);
+    const keys = ['Q', 'E', 'R', 'F'];
+    const slots = this.root.querySelector('.lo-slots')!;
+    slots.innerHTML = kit.powers
+      .map(
+        (pw, i) =>
+          `<div class="lo-slot on" style="--c:${ELEMENT_COLOR[pw.element]}"><span class="lo-slot-k">${keys[i]}</span><b>${pw.name}</b><small>${ELEMENT_NAME[pw.element]} · ${pw.cd.toFixed(1)}s · ${pw.speed <= 0 ? 'área' : 'projétil'}</small></div>`,
+      )
+      .join('');
+    const list = this.root.querySelector<HTMLElement>('.lo-list');
+    if (list) list.hidden = true;
+    const det = this.root.querySelector('.lo-detail')!;
+    det.innerHTML = `<div class="lo-dhead"><span class="lo-state on">Poder principal · ${kit.passiveName}</span></div><p class="lo-desc">${kit.passiveDesc} ${kit.powers.map((pw, i) => `${keys[i]} ${pw.name}: ${ELEMENT_FX[pw.element]}.`).join(' ')}</p><p class="lo-cmp">Estes quatro poderes já vêm com o personagem. Arma, granada e ultimate ficam de fora da partida. Escolher outros poderes ainda não está liberado.</p>`;
   }
 
   get value() {

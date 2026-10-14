@@ -3,7 +3,7 @@ import { audio } from './audio/audio';
 import { ARENAS, WORLD_W, getArena } from './game/arenas';
 import { CHARACTERS, getCharacter, withLevel, withSkin } from './game/characters';
 import * as C from './game/constants';
-import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, canEquipWeapon, coinText, itemView, owns, upgradePrice } from './game/economy';
+import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, canEquipWeapon, coinText, itemView, missingCoinsText, owns, upgradePrice } from './game/economy';
 import { roundBanner, type DuelReason } from './game/duel';
 import type { RoundEchoLine } from './systems/echo/digest';
 import { Game, GameEvent, GameMode, Input, MIN_PLAYERS, MINION_INFO, MinionKind, MODE_RULES, OBJECTIVES, RosterEntry, TEAM_COLORS } from './game/sim';
@@ -27,7 +27,7 @@ import { Carousel, fitText } from './ui/carousel';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
-import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, cooldownOf, kitOf } from './game/elements';
+import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, comboReady, cooldownOf, denyPowerCast, kitOf, powerSlotIndex } from './game/elements';
 import { ACTION_LABEL, Action, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
@@ -760,7 +760,7 @@ async function chooseCosmetic(kind: CosTab, id: string, price: number) {
   const equipped = kind === 'skin' ? p.equipped.skin === id : kind === 'acc' ? (p.equipped.acc || 'nenhum') === id : (p.equipped.weapon || 'assinatura') === id;
   const st = itemView({ owned, equipped, price, coins: p.coins });
   if (st.view === 'equipped') return;
-  if (st.view === 'short') return toast(st.label);
+  if (st.view === 'short') return toast(missingCoinsText(st.missing));
   if (st.view === 'soon' || st.view === 'locked') return toast(st.label);
   if (st.view === 'buy') {
     const err = await account.buy(`${kind === 'weapon' ? 'gear' : kind}:${id}`);
@@ -1239,7 +1239,7 @@ function openShop(tab: 'char' | 'skin' | 'trail', keep?: number) {
     $('#shop-act').querySelector('.shop-go')?.addEventListener('click', async () => {
       if (st.view === 'short' || st.view === 'locked' || st.view === 'soon' || st.view === 'equipped') return;
       if (!owned) {
-        if (p.coins < it.price) return toast(`MOEDAS INSUFICIENTES · faltam ${it.price - p.coins}`);
+        if (p.coins < it.price) return toast(missingCoinsText(it.price - p.coins));
         const err = await account.buy(key);
         if (err) return toast(err);
         audio.objective();
@@ -1689,7 +1689,7 @@ function beginMatchView(g: AnyGame) {
   hintStage = training() ? 1 : 0;
   hintT = 0;
   const me = g.human;
-  const powers = g.mode === 'duelo' && !me.boss;
+  const powers = powersMatch(g);
   const kit = powers ? kitOf(me.char.id) : null;
   $('#btn-ability .tlabel').textContent = me.boss ? 'IMPACTO' : powers ? 'Q' : me.char.ability.label.toUpperCase();
   $('#touch').classList.toggle('combat', g.combat);
@@ -1878,26 +1878,45 @@ function vsBoss(_g: AnyGame, _id: string) {
   return '';
 }
 /** os espaços de habilidade do jogador local (usados na barra e no aviso de "não dá para usar") */
+function powersMatch(g: AnyGame) {
+  return (g.mode === 'duelo' || g.mode === 'dupla') && !g.human.boss;
+}
+
+function comboLine(g: AnyGame): string {
+  const me = g.human;
+  if (!me.alive) return '';
+  const foes = g.players
+    .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
+    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT }));
+  const hit = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes);
+  return hit ? `COMBO DISPONÍVEL ${hit.key}: ${hit.name}` : '';
+}
+
 function buildSlots(g: AnyGame): SlotView[] {
   const me = g.human;
   const K = (a: Action) => keyLabel(settings.keys[a]);
   const slots: SlotView[] = [];
-  if (g.mode === 'duelo' && !me.boss) {
+  if (powersMatch(g)) {
     const kit = kitOf(me.char.id);
     const ids: Slot[] = ['ability', 'skill', 'ult', 'bonus'];
     const labels = ['Q', 'E', 'R', 'F'];
+    const foes = g.players
+      .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
+      .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT }));
+    const ready = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes);
     kit.powers.forEach((pw, i) => {
       const left = me.powerCd[i] ?? 0;
       const cd = cooldownOf(me.char.id, pw.cd);
       slots.push({
         id: ids[i],
-        key: input.touchMode ? labels[i] : labels[i],
-        name: pw.name,
+        key: labels[i],
+        name: pw.name.toUpperCase(),
         art: { kind: 'symbol', id: me.char.id, color: ELEMENT_COLOR[pw.element] },
         color: ELEMENT_COLOR[pw.element],
         cd: left / cd,
         secs: left,
-        desc: `${pw.name} (${ELEMENT_NAME[pw.element]}): ${ELEMENT_FX[pw.element]}. Recarga ${cd.toFixed(1)}s. ${kit.passiveName}: ${kit.passiveDesc}`,
+        desc: `${labels[i]} — ${pw.name} (${ELEMENT_NAME[pw.element]}): ${ELEMENT_FX[pw.element]}. Recarga ${cd.toFixed(1)}s.`,
+        hot: ready?.slot === i,
       });
     });
     slots.push({ id: 'dash', key: K('dash'), name: 'Impulso', art: { kind: 'dash', id: 'dash', color: '#9ad8ff' }, color: '#9ad8ff', cd: me.dashCd / C.DASH_CD, secs: me.dashCd, off: me.stasisT > 0, note: me.stasisT > 0 ? 'BLOQUEADO' : undefined, desc: 'Arrancada curta na direção em que você anda (recarga 2,2 s).' });
@@ -2025,10 +2044,9 @@ function deniedReason(slot: Slot): string {
     if ((game.bossPhase ?? 1) < BOSS.skills[k].phase) return `Fase ${BOSS.skills[k].phase}`;
     return `Recarga ${Math.ceil(me.bossCd[k])}s`;
   }
-  if (game.mode === 'duelo') {
-    const map: Partial<Record<Slot, number>> = { ability: 0, skill: 1, ult: 2, bonus: 3, item: 3 };
-    const i = map[slot];
-    if (i !== undefined) return `Recarga ${Math.ceil(me.powerCd[i] ?? 0)}s`;
+  if (game.mode === 'duelo' || game.mode === 'dupla') {
+    const why = denyPowerCast(slot, me.powerCd ?? [0, 0, 0, 0]);
+    if (powerSlotIndex(slot) !== null) return why ?? '';
   }
   if (slot === 'ability') return `Recarga ${Math.ceil(me.abilCd)}s`;
   if (slot === 'skill') return `Recarga ${Math.ceil(me.skillCd)}s`;
@@ -2056,7 +2074,7 @@ function updateSkills(g: AnyGame) {
       drawCooldown('#btn-ult', (g.bossPhase ?? 1) < 2 ? 1 : me.bossCd.chuva / BOSS.skills.chuva.cooldown, '#ff4a5a');
       $('#btn-bonus').classList.toggle('empty', (g.bossPhase ?? 1) < 2 || me.bossCd.obsidiana > 0);
       setText('#btn-bonus .tlabel', 'MURALHA');
-    } else if (g.mode === 'duelo') {
+    } else if (g.mode === 'duelo' || g.mode === 'dupla') {
       const kit = kitOf(me.char.id);
       const cds = me.powerCd ?? [0, 0, 0, 0];
       drawCooldown('#btn-ability', cds[0] / cooldownOf(me.char.id, kit.powers[0].cd), ELEMENT_COLOR[kit.powers[0].element]);
@@ -2072,7 +2090,7 @@ function updateSkills(g: AnyGame) {
     if (me.boss) $('#btn-ult').classList.toggle('ready', me.bossCd.chuva <= 0 && (g.bossPhase ?? 1) >= 2);
   }
   // aviso único quando a ultimate fica pronta (no X1 o R é só mais um poder)
-  const ready = g.combat && !me.boss && g.mode !== 'duelo' && me.ultCharge >= 100;
+  const ready = false;
   if (ready && !ultWasReady && g.phase === 'play') {
     audio.power('dobro');
     $('#hud').classList.add('ult-flash');
@@ -2097,6 +2115,10 @@ function updateHud() {
   const obj = objectiveHud(g);
   setText('#hud-objective', obj);
   $('#hud-objective').hidden = !obj;
+  const combo = powersMatch(g) ? comboLine(g) : '';
+  const comboEl = $('#hud-combo');
+  comboEl.hidden = !combo;
+  if (comboEl.textContent !== combo) comboEl.textContent = combo;
   scoreboard.update(g);
   const me = g.human;
   const ab = me.char.ability;
@@ -2113,7 +2135,7 @@ function updateHud() {
     const f = Math.max(0, me.hp / (me.maxHp || MAX_HP));
     const cls = f > 0.5 ? '' : f > 0.25 ? 'mid' : 'low';
     const w = WEAPONS[me.weapon];
-    const wTxt = g.mode === 'duelo' ? kitOf(me.char.id).passiveName : isPrimary(me.weapon) ? w.name : `${w.name} ${w.ammo ? me.ammo + 'x' : Math.ceil(me.weaponT) + 's'}`;
+    const wTxt = g.mode === 'duelo' || g.mode === 'dupla' ? kitOf(me.char.id).passiveName : isPrimary(me.weapon) ? w.name : `${w.name} ${w.ammo ? me.ammo + 'x' : Math.ceil(me.weaponT) + 's'}`;
     // no computador a barra de habilidades já mostra item e recargas
     const itTxt = me.item && input.touchMode ? `<span class="itm">${ITEMS[me.item].name} x${me.itemN}</span>` : '';
     setHTML(
@@ -2133,7 +2155,7 @@ function updateHud() {
   // habilidade extra pega no mapa
   const bAb = me.bonusAb ? CHARACTERS.find((c) => c.ability.id === me.bonusAb) : null;
   const bb = $('#btn-bonus');
-  if (g.mode === 'duelo' && !me.boss) {
+  if (powersMatch(g)) {
     const kit = kitOf(me.char.id);
     bb.classList.remove('empty');
     bb.style.setProperty('--bc', ELEMENT_COLOR[kit.powers[3].element]);
@@ -2147,7 +2169,7 @@ function updateHud() {
     setText('#btn-bonus .tlabel', bAb ? bAb.ability.label.toUpperCase() : 'PODER');
   }
   drawCooldown('#btn-dash', me.boss ? me.bossCd.avanco / BOSS.skills.avanco.cooldown : me.dashCd / C.DASH_CD, '#3ee8ff');
-  if (!(g.mode === 'duelo' && !me.boss)) drawCooldown('#btn-ability', me.boss ? me.bossCd.impacto / BOSS.skills.impacto.cooldown : me.abilCd / ab.cooldown, me.color);
+  if (!powersMatch(g)) drawCooldown('#btn-ability', me.boss ? me.bossCd.impacto / BOSS.skills.impacto.cooldown : me.abilCd / ab.cooldown, me.color);
   updateSkills(g);
 }
 
@@ -2734,6 +2756,20 @@ function slotInfo(slot: Slot): { kind: 'instant' | 'direction' | 'point'; range:
     if (slot === 'ability') return { ...none, r: S.impacto.radius ?? 175, name: S.impacto.name, color: '#ff3b3b' };
     return none;
   }
+  if ((game.mode === 'duelo' || game.mode === 'dupla') && powerSlotIndex(slot) !== null) {
+    const i = powerSlotIndex(slot)!;
+    const pw = kitOf(me.char.id).powers[i];
+    const instant = pw.speed <= 0;
+    return {
+      kind: instant ? 'instant' : 'direction',
+      range: pw.range,
+      r: pw.radius,
+      w: 0,
+      shape: instant ? 'circle' : 'arrow',
+      name: pw.name,
+      color: ELEMENT_COLOR[pw.element],
+    };
+  }
   if (slot === 'ability' || slot === 'bonus') {
     const id = slot === 'bonus' ? me.bonusAb : me.char.ability.id;
     if (!id || !game.combat) return none;
@@ -2758,13 +2794,16 @@ function slotRange(slot: Slot) {
 }
 input.aimKind = (slot) => slotInfo(slot).kind;
 input.canUse = (slot) => {
-  if (!game || game.phase !== 'play' || !game.human.alive) return true;
+  if (!game) return true;
+  if (game.phase !== 'play' || !game.human.alive) return false;
   const me = game.human;
+  if (me.stunT > 0) return false;
   if (me.boss) {
     const map: Partial<Record<Slot, keyof typeof BOSS.skills>> = { ability: 'impacto', skill: 'barragem', ult: 'chuva', bonus: 'obsidiana', dash: 'avanco' };
     const k = map[slot];
     return !k || (me.bossCd[k] <= 0 && (game.bossPhase ?? 1) >= BOSS.skills[k].phase);
   }
+  if ((game.mode === 'duelo' || game.mode === 'dupla') && powerSlotIndex(slot) !== null) return denyPowerCast(slot, me.powerCd ?? [0, 0, 0, 0]) === null;
   if (slot === 'ability') return me.abilCd <= 0;
   if (slot === 'skill') return me.skillCd <= 0;
   if (slot === 'ult') return me.ultCharge >= 100;
@@ -2929,11 +2968,30 @@ const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches |
 if (isIOS && !isStandalone && !isNative) $('#btn-install').hidden = false;
 
 function toast(msg: string, ms = 4500) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.hidden = false;
-  clearTimeout((toast as any)._t);
-  (toast as any)._t = setTimeout(() => (t.hidden = true), ms);
+  const root = $('#toasts');
+  const same = [...root.querySelectorAll<HTMLElement>('.toast-item')].find((el) => el.dataset.msg === msg);
+  if (same) {
+    window.clearTimeout(Number(same.dataset.timer));
+    same.dataset.timer = String(window.setTimeout(() => dismissToast(same), ms));
+    return;
+  }
+  const el = document.createElement('div');
+  el.className = 'toast-item';
+  el.dataset.msg = msg;
+  const coin = /moeda/i.test(msg);
+  el.innerHTML = `${coin ? '<span class="toast-coin" aria-hidden="true">🪙</span>' : ''}<span class="toast-text"></span>`;
+  el.querySelector('.toast-text')!.textContent = msg;
+  root.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('in'));
+  el.dataset.timer = String(window.setTimeout(() => dismissToast(el), ms));
+}
+
+function dismissToast(el: HTMLElement) {
+  if (!el.isConnected) return;
+  window.clearTimeout(Number(el.dataset.timer));
+  el.classList.remove('in');
+  el.classList.add('out');
+  window.setTimeout(() => el.remove(), 280);
 }
 
 async function installApp() {

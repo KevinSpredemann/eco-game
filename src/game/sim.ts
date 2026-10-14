@@ -22,7 +22,7 @@ import {
   windState,
 } from './arenas';
 import { AbilityId, CHARACTERS, CharacterDef, getCharacter, withLevel } from './characters';
-import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, KITS, Loadout, SKILLS, ULTS, botLoadout, levelMult, sanitizeLoadout } from './balance';
+import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, Loadout, SKILLS, ULTS, botLoadout, levelMult, sanitizeLoadout } from './balance';
 import * as C from './constants';
 import { botCombat, BotBrain, NavGrid } from './bot';
 import { PowerId, getPower, randomPower } from './powerups';
@@ -1335,7 +1335,7 @@ export class Game {
     p.phaseT = Math.max(0, p.phaseT - dt);
     p.shieldT = Math.max(0, p.shieldT - dt);
     p.portalCd = Math.max(0, p.portalCd - dt);
-    if (this.mode === 'duelo') {
+    if (this.mode === 'duelo' || this.mode === 'dupla') {
       p.burnT = Math.max(0, p.burnT - dt);
       p.frozenT = Math.max(0, p.frozenT - dt);
       p.gustT = Math.max(0, p.gustT - dt);
@@ -1393,31 +1393,11 @@ export class Game {
         p.recorder?.event(tms, 'dash');
         this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
       }
-      if (this.mode === 'duelo') {
-        if (free && p.alive) {
-          if (inp.ability) this.castPower(p, 0, castAng, inp);
-          if (inp.skill) this.castPower(p, 1, castAng, inp);
-          if (inp.ult) this.castPower(p, 2, castAng, inp);
-          if (inp.bonus || inp.item) this.castPower(p, 3, castAng, inp);
-        }
-      } else {
-      if (inp.ability && p.abilCd <= 0 && free) this.useAbility(p, castAng, inp);
-      if (inp.bonus && p.bonusAb && free) {
-        const def = abilityDef(p.bonusAb);
-        p.bonusAb = null;
-        this.useAbility(p, castAng, inp, def);
-      }
-      if (this.combat && inp.skill && p.skillCd <= 0 && free) this.useSkill(p, castAng, inp);
-      if (this.combat && inp.ult && p.ultCharge >= 100 && free) this.useUlt(p, castAng, inp);
-    if (this.combat) {
-      p.fireCd = Math.max(0, p.fireCd - dt);
-      if (!isPrimary(p.weapon) && WEAPONS[p.weapon].time > 0) {
-        p.weaponT -= dt;
-        if (p.weaponT <= 0) p.weapon = this.primaryFor(p);
-      }
-      if (inp.fire && p.fireCd <= 0 && free) this.fire(p);
-      if (inp.item && p.item && p.itemN > 0 && free) this.useItem(p);
-    }
+      if (free && p.alive) {
+        if (inp.ability) this.castPower(p, 0, castAng, inp);
+        if (inp.skill) this.castPower(p, 1, castAng, inp);
+        if (inp.ult) this.castPower(p, 2, castAng, inp);
+        if (inp.bonus || inp.item) this.castPower(p, 3, castAng, inp);
       }
 
     const inBush = (this.arena.bushes ?? []).some((b) => dist(p.x, p.y, b.x, b.y) < b.r);
@@ -1428,7 +1408,7 @@ export class Game {
     // lentidões não se multiplicam sem limite: a mais forte vale, e há uma velocidade mínima
     const slowK = Math.min(p.slowT > 0 ? 0.6 : 1, p.stasisT > 0 ? 0.35 : 1, sand ? 0.55 : 1, p.castT > 0 ? COMBAT.castMove : 1) * (inBush ? 0.92 : 1) * (carrying ? 0.92 : 1);
     let speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * Math.max(COMBAT.minSpeed, slowK) * (p.boss ? BOSS.speedMul * (p.exhaustT > 0 ? 0.5 : 1) : 1);
-    if (this.mode === 'duelo') speed *= speedMul(p.char.id, p.comboStacks);
+    if (this.mode === 'duelo' || this.mode === 'dupla') speed *= speedMul(p.char.id, p.comboStacks);
     if (p.isBot) speed *= p.brain!.speedMul;
 
     if (p.chargeT > 0) {
@@ -1619,14 +1599,9 @@ export class Game {
     p.weapon = this.primaryFor(p);
     p.weaponT = 0;
     p.ammo = 0;
-    const kit = KITS[p.loadout.kit];
-    if (this.combat && !p.boss && kit) {
-      p.item = kit.id;
-      p.itemN = kit.count;
-    } else {
-      p.item = null;
-      p.itemN = 0;
-    }
+    // X1 e 2x2 não usam granada nem item de arma.
+    p.item = null;
+    p.itemN = 0;
   }
 
   /** atordoamento com limite e imunidade logo depois (sempre há chance de reagir) */
@@ -2467,7 +2442,7 @@ export class Game {
       if (this.powerups.length < (this.combat ? 4 : 2) && this.roundT < this.roundDur - 3) {
         const s = this.randomFreeSpot(90);
         if (s) {
-          const kind = randomPower();
+          const kind = this.pickPower();
           this.powerups.push({ id: this.fragId++, kind, x: s.x, y: s.y, age: 0 });
           this.events.push({ type: 'powerSpawn', x: s.x, y: s.y, power: kind });
         }
@@ -2496,6 +2471,10 @@ export class Game {
 
   // ------------------------------------------------------------------ cristais de habilidade
   private updateAbilityOrbs(dt: number) {
+    if (this.mode === 'duelo' || this.mode === 'dupla') {
+      this.abilityOrbs = [];
+      return;
+    }
     for (const o of this.abilityOrbs) o.age += dt;
     if (this.cfg.training) return;
     this.orbTimer -= dt;
@@ -2655,7 +2634,17 @@ export class Game {
     }
   }
 
-  /** X1: Q E R F. Não grava tiro no Eco e não usa a arma. */
+  /** Poder de arena que não é arma. Recusa (recarga) não reinicia o tempo. */
+  private pickPower(): PowerId {
+    const banned = new Set<PowerId>(['metralhadora', 'escopeta', 'laser', 'foguete', 'congelante', 'bomba', 'mina']);
+    for (let i = 0; i < 8; i++) {
+      const kind = randomPower();
+      if (!banned.has(kind)) return kind;
+    }
+    return 'turbo';
+  }
+
+  /** Q E R F no X1 e no 2x2. Não grava tiro no Eco e não usa a arma. */
   private castPower(p: Player, slot: number, ang: number, inp?: Input) {
     if (p.powerCd[slot] > 0) return;
     const def = kitOf(p.char.id).powers[slot];
@@ -2687,7 +2676,7 @@ export class Game {
       el: def.element,
       knock,
     });
-    this.events.push({ type: 'shoot', x: p.x, y: p.y, pid: p.id, weapon: VISUAL_WEAPON[def.element] });
+    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
   }
 
   /** Lê o combo, grava o elemento novo e aplica queimadura, lentidão, tontura ou empurrão. */
@@ -3434,7 +3423,7 @@ export class Game {
       this.events.push({ type: 'enemyKill', x: e.x, y: e.y, kind: e.kind, by: p ? p.id : null });
       if (e.kind === 'boss') this.explode(e.x, e.y, 140, 0, 'boss', false);
       if (Math.random() < (e.kind === 'drone' ? 0.12 : 0.4) && this.powerups.length < 6)
-        this.powerups.push({ id: this.fragId++, kind: randomPower(), x: e.x, y: e.y, age: 0 });
+        this.powerups.push({ id: this.fragId++, kind: this.pickPower(), x: e.x, y: e.y, age: 0 });
     }
   }
 

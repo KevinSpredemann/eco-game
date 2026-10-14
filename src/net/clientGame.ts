@@ -349,7 +349,7 @@ export class ClientGame {
         const onIce = (this.arena.ice ?? []).some((r) => inRect(this.pred!.x, this.pred!.y, r));
         const grip = onIce ? 0.12 : this.arena.grip;
         const kIce = 1 - Math.exp(-12 * grip * dt);
-        const speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * (p.slowT > 0 ? 0.6 : 1) * (p.castT > 0 ? COMBAT.castMove : 1) * (p.boss ? BOSS.speedMul : 1) * (p.stunT > 0 ? 0 : 1) * (this.mode === 'duelo' ? speedMul(p.char.id, p.comboStacks) : 1);
+        const speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * (p.slowT > 0 ? 0.6 : 1) * (p.castT > 0 ? COMBAT.castMove : 1) * (p.boss ? BOSS.speedMul : 1) * (p.stunT > 0 ? 0 : 1) * speedMul(p.char.id, p.comboStacks);
         this.predV.x += (mx * speed - this.predV.x) * kIce;
         this.predV.y += (my * speed - this.predV.y) * kIce;
         this.pred.x += this.predV.x * dt;

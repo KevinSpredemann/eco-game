@@ -5695,7 +5695,7 @@ body.rewinding #hud-status {
   margin: 0;
 }
 .account-chip .coin {
-  display: none;
+  display: inline-block;
 }
 #screen-modes .sheet.fit {
   overflow: auto;
@@ -5792,4 +5792,114 @@ body.rewinding #hud-status {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+/* avisos: embaixo, no centro, sem cobrir o título */
+.toast-stack {
+  position: fixed;
+  z-index: 80;
+  left: 50%;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.toast-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(10, 8, 24, 0.88);
+  border: 1.5px solid #3ee8ff;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  color: #f4f7ff;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+.toast-item.in { opacity: 1; transform: none; }
+.toast-item.out { opacity: 0; transform: translateY(8px); }
+.toast-text { flex: 1; line-height: 1.35; overflow-wrap: anywhere; }
+.toast-coin { flex: none; font-size: 1.15rem; line-height: 1.2; }
+#hud-combo {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  color: #ffe14a;
+  text-align: center;
+}
+.sk.combo { box-shadow: 0 0 0 2px #ffe14a; }
+
+/* início: a tela é uma coluna de ponta a ponta, conteúdo no centro */
+#screen-title {
+  flex-direction: column;
+  align-items: stretch;
+}
+#screen-title .home-col {
+  align-items: center;
+  width: 100%;
+  flex: 1 1 auto;
+}
+#screen-title .home-brand {
+  padding-right: 0;
+  width: min(720px, 100%);
+  margin-inline: auto;
+}
+#screen-title .home-stage {
+  width: min(720px, 100%);
+  margin-inline: auto;
+}
+#screen-title .title-cast {
+  top: auto;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+#screen-title .home-actions {
+  width: min(520px, 100%);
+  margin-inline: auto;
+}
+#screen-title .home-actions .play-btn {
+  justify-content: center;
+  text-align: center;
+  width: min(420px, 86vw);
+}
+
+/* modos: X1 lado a lado; 2x2 e ECO Mundo em linha cheia */
+#screen-modes .mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: none;
+  max-width: 980px;
+  height: auto;
+  flex: 0 0 auto;
+  align-items: stretch;
+  overflow: visible;
+}
+#screen-modes .mode-grid .mode-pick:nth-child(n + 3) {
+  grid-column: 1 / -1;
+}
+#screen-modes .mode-pick {
+  flex-direction: column;
+  align-items: stretch;
+  height: auto;
+}
+#screen-modes .mode-pick .mbody { min-width: 0; }
+#screen-modes .mode-pick .md { overflow-wrap: anywhere; }
+#screen-modes .mode-acts { margin-top: auto; }
+@media (max-width: 800px) {
+  #screen-modes .mode-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    height: auto;
+  }
+  #screen-modes .mode-grid .mode-pick:nth-child(n + 3) { grid-column: auto; }
+  #screen-modes .mode-pick { height: auto; }
+  #screen-title .home-brand .logo { margin-right: 0; flex: none; }
 }

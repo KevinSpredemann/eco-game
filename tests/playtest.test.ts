@@ -44,21 +44,21 @@ describe('conteúdo e feedback do playtest', () => {
     expect(PROTO).toBe(8);
   });
 
-  it('o pulso atordoa e a onda de choque causa dano', () => {
+  it('Q e E do 2x2 causam dano de poder, não de item', () => {
     const g = fight();
     const [a, b] = g.players;
     a.x = 400;
     a.y = 330;
-    b.x = 590;
+    b.x = 560;
     b.y = 330;
-    a.item = 'pulso';
-    a.itemN = 1;
+    a.item = null;
+    a.itemN = 0;
     a.aim = 0;
     const before = b.hp;
-    g.step(STEP, { a: { ...idle, aim: 0, item: true }, b: idle });
-    for (let i = 0; i < 55; i++) g.step(STEP, { a: idle, b: idle });
+    g.step(STEP, { a: { ...idle, aim: 0, ca: 0, ability: true }, b: idle });
+    for (let i = 0; i < 40; i++) g.step(STEP, { a: idle, b: idle });
     expect(b.hp).toBeLessThan(before);
-    expect(b.stunT).toBeGreaterThan(0);
+    expect(g.bullets.every((n) => !!n.el)).toBe(true);
 
     const g2 = fight();
     const [p, q] = g2.players;
@@ -66,11 +66,11 @@ describe('conteúdo e feedback do playtest', () => {
     p.y = 330;
     q.x = 450;
     q.y = 330;
-    p.loadout.ult = 'onda';
-    p.ultCharge = 100;
+    p.ultCharge = 0;
     const hp = q.hp;
-    g2.step(STEP, { a: { ...idle, ult: true }, b: idle });
-    for (let i = 0; i < 40; i++) g2.step(STEP, { a: idle, b: idle });
+    g2.step(STEP, { a: { ...idle, skill: true, ca: 0, cr: 80 }, b: idle });
+    expect(p.powerCd[1]).toBeGreaterThan(0);
+    for (let i = 0; i < 5; i++) g2.step(STEP, { a: idle, b: idle });
     expect(q.hp).toBeLessThan(hp);
   });
 });
