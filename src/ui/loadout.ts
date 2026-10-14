@@ -4,7 +4,7 @@
 import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout } from '../game/balance';
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
-import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, PLASMA, PLASMA_COLOR, kitOf } from '../game/elements';
+import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, PLASMA, PLASMA_COLOR, SLOT_COST, describePower, kitOf } from '../game/elements';
 import { drawGear, GearKind } from './gearArt';
 import { Carousel, fitText } from './carousel';
 
@@ -107,13 +107,13 @@ export class LoadoutScreen {
     const kitHtml = kit.powers
       .map(
         (pw, i) =>
-          `<div class="lo-slot on" style="--c:${ELEMENT_COLOR[pw.element]}"><span class="lo-slot-k">${keys[i]}</span><b>${pw.name}</b><small>${ELEMENT_NAME[pw.element]} · ${pw.cd.toFixed(1)}s · ${pw.speed <= 0 ? 'área' : 'projétil'}</small></div>`,
+          `<div class="lo-slot on" style="--c:${ELEMENT_COLOR[pw.element]}"><span class="lo-slot-k">${keys[i]}</span><b>${pw.name}</b><small>dano ${pw.dmg} · alcance ${pw.range} · ${pw.speed <= 0 ? `raio ${pw.radius}` : 'projétil'} · ${pw.cd}s · ${SLOT_COST[i]} energia</small></div>`,
       )
       .join('');
     const state = !unlocked ? 'bloqueada' : on ? 'equipada' : 'livre';
     slots.innerHTML =
       kitHtml +
-      `<button type="button" class="lo-slot ${on ? 'on' : ''} ${unlocked ? '' : 'lock'}" data-sec="plasma" style="--c:${PLASMA_COLOR}"><span class="lo-slot-k">X</span><b>${PLASMA.name}</b><small>${state} · ${PLASMA.cd.toFixed(1)}s · projétil · 1 espaço</small></button>`;
+      `<button type="button" class="lo-slot ${on ? 'on' : ''} ${unlocked ? '' : 'lock'}" data-sec="plasma" style="--c:${PLASMA_COLOR}"><span class="lo-slot-k">X</span><b>${PLASMA.name}</b><small>${state} · dano ${PLASMA.dmg}, alcance ${PLASMA.range}, recarga ${PLASMA.cd}s, energia ${PLASMA.cost}, projétil, para na parede</small></button>`;
     slots.querySelector<HTMLButtonElement>('[data-sec]')?.addEventListener('click', () => {
       this.deps.click();
       if (!this.deps.owns('power:plasma')) {
@@ -126,7 +126,7 @@ export class LoadoutScreen {
     const list = this.root.querySelector<HTMLElement>('.lo-list');
     if (list) list.hidden = true;
     const det = this.root.querySelector('.lo-detail')!;
-    det.innerHTML = `<div class="lo-dhead"><span class="lo-state on">Poder principal · ${kit.passiveName}</span></div><p class="lo-desc">${kit.passiveDesc} ${kit.powers.map((pw, i) => `${keys[i]} ${pw.name}: ${ELEMENT_FX[pw.element]}.`).join(' ')}</p><p class="lo-cmp">Q, E, R e F já vêm com o personagem. O espaço extra cabe em um poder: Rajada de Plasma, depois da primeira partida. Não se compra. Arma, granada e ultimate ficam de fora. Projétil gasta energia e recarga ao sair, mesmo se errar. Poder em área sem inimigo no círculo não gasta nada.</p>`;
+    det.innerHTML = `<div class="lo-dhead"><span class="lo-state on">Poder principal · ${kit.passiveName}</span></div><p class="lo-desc">${kit.passiveDesc} ${kit.powers.map((pw, i) => describePower(pw, keys[i], SLOT_COST[i]) + ' ' + ELEMENT_FX[pw.element] + '.').join(' ')} Unidades do mapa. O Impulso (Shift) é mobilidade e para na parede.</p><p class="lo-cmp">Q, E, R e F já vêm com o personagem. Trocar a Rajada de Plasma só vale fora da luta, para a próxima rodada. Ela libera depois da primeira partida e não se compra. Projétil gasta energia e recarga ao sair, mesmo se errar. Área sem inimigo visível no círculo não gasta nada. Cancelar a mira não gasta.</p>`;
   }
 
   get value() {

@@ -1,6 +1,6 @@
 import './styles.css';
 import { audio } from './audio/audio';
-import { ARENAS, WORLD_W, getArena } from './game/arenas';
+import { ARENAS, BORDER, WORLD_H, WORLD_W, getArena } from './game/arenas';
 import { CHARACTERS, getCharacter, withLevel, withSkin } from './game/characters';
 import * as C from './game/constants';
 import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, acceptedLoadout, canEquipWeapon, coinText, itemView, missingCoinsText, owns, upgradePrice } from './game/economy';
@@ -27,7 +27,9 @@ import { Carousel, fitText } from './ui/carousel';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
-import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, comboReady, cooldownOf, denyPlasma, denyPowerCast, kitOf, powerSlotIndex } from './game/elements';
+import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, comboReady, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex } from './game/elements';
+import { setAbilityTrace } from './game/abilityTrace';
+import { sweepCircle } from './game/sweep';
 import { ACTION_LABEL, Action, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
@@ -36,6 +38,13 @@ import type { AimPreview } from './render/combatFx';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
 const settings: Settings = loadSettings();
+if (import.meta.env.DEV) {
+  try {
+    if (localStorage.getItem('eco.dev') === '1') setAbilityTrace(true);
+  } catch {
+    /* sem armazenamento */
+  }
+}
 
 const canvas = $<HTMLCanvasElement>('#game');
 const renderer = new Renderer(canvas);
@@ -90,14 +99,17 @@ function applySettings() {
   renderer.showTrails = settings.trails;
   input.control = settings.control;
   input.aimSens = settings.aimSens / 100;
+  input.castMode = settings.castMode;
+  input.manualSlots = new Set(settings.manualAim as Slot[]);
+  input.cancelAimButtons = settings.cancelAim;
   const sensRow = document.querySelector<HTMLElement>('#opt-sens-row');
   if (sensRow) sensRow.hidden = settings.control !== 'notebook';
   const note = document.querySelector<HTMLElement>('#opt-control-note');
   if (note) {
     note.textContent =
       settings.control === 'notebook'
-        ? 'WASD anda. O mouse mira com ajuda para o inimigo perto da mira. C trava no inimigo mais perto. Clique atira nessa direção enquanto segura. Q, E, R e F usam a habilidade na mira atual, num toque. Shift esquiva. Esc pausa.'
-        : 'WASD ou setas andam. O mouse mira por alguns segundos e o clique esquerdo atira enquanto segura. Botão direito usa o poder. Esc pausa. Trocar o estilo recoloca as teclas; depois dá para remapear.';
+        ? 'WASD anda. O mouse mira com ajuda para o inimigo perto da mira. C trava no inimigo mais perto. No automático, Q, E, R e F saem na hora. Shift esquiva. Esc cancela a mira e não gasta o poder. No X1 e no 2x2 o botão direito também cancela, e não solta o F.'
+        : 'WASD ou setas andam. No automático, segure Q, E, R ou F para ver a mira e solte para usar. Esc cancela e não gasta energia nem recarga. No X1 e no 2x2 o botão direito cancela a mira. W continua andando.';
   }
   refreshMuteIcon();
   saveSettings(settings);
@@ -154,6 +166,46 @@ function bindOptions() {
     applySettings();
     renderKeybinds();
     audio.click();
+  });
+  const cast = $<HTMLSelectElement>('#opt-cast');
+  cast.value = settings.castMode;
+  cast.addEventListener('change', () => {
+    const v = cast.value;
+    settings.castMode = v === 'instant' || v === 'manual' || v === 'release' ? v : 'auto';
+    applySettings();
+    audio.click();
+  });
+  const range = $<HTMLSelectElement>('#opt-range');
+  range.value = settings.rangeIndicator;
+  range.addEventListener('change', () => {
+    settings.rangeIndicator = range.value === 'always' ? 'always' : 'aiming';
+    applySettings();
+    audio.click();
+  });
+  const cancel = $<HTMLSelectElement>('#opt-cancel');
+  cancel.value = settings.cancelAim;
+  cancel.addEventListener('change', () => {
+    settings.cancelAim = cancel.value === 'esc' ? 'esc' : 'both';
+    applySettings();
+    audio.click();
+  });
+  renderManualAim();
+}
+
+function renderManualAim() {
+  const box = document.querySelector<HTMLElement>('#opt-manual');
+  if (!box) return;
+  const slots: Slot[] = ['ability', 'skill', 'ult', 'bonus', 'plasma'];
+  const names = ['Q', 'E', 'R', 'F', 'X'];
+  box.innerHTML = slots
+    .map((s, i) => `<label class="row check"><input type="checkbox" data-manual="${s}" ${settings.manualAim.includes(s) ? 'checked' : ''}/> Mira manual no ${names[i]}</label>`)
+    .join('');
+  box.querySelectorAll<HTMLInputElement>('[data-manual]').forEach((el) => {
+    el.addEventListener('change', () => {
+      const id = el.dataset.manual ?? '';
+      settings.manualAim = el.checked ? [...new Set([...settings.manualAim, id])] : settings.manualAim.filter((x) => x !== id);
+      applySettings();
+    });
   });
 }
 
@@ -1689,6 +1741,7 @@ function beginMatchView(g: AnyGame) {
   layout();
   input.clear();
   input.combat = g.combat;
+  input.powers = g.mode === 'duelo' || g.mode === 'dupla';
   callShown = -1;
   $('#round-call').hidden = true;
   hintStage = training() ? 1 : 0;
@@ -1921,6 +1974,7 @@ function buildSlots(g: AnyGame): SlotView[] {
     kit.powers.forEach((pw, i) => {
       const left = me.powerCd[i] ?? 0;
       const cd = cooldownOf(me.char.id, pw.cd);
+      const low = left <= 0 && (me.energy ?? ENERGY_MAX) < SLOT_COST[i];
       slots.push({
         id: ids[i],
         key: labels[i],
@@ -1929,12 +1983,15 @@ function buildSlots(g: AnyGame): SlotView[] {
         color: ELEMENT_COLOR[pw.element],
         cd: left / cd,
         secs: left,
-        desc: `${labels[i]} — ${pw.name} (${ELEMENT_NAME[pw.element]}): ${ELEMENT_FX[pw.element]}. Recarga ${cd.toFixed(1)}s. Custa ${SLOT_COST[i]} de energia.`,
+        off: low,
+        note: low ? 'SEM ENERGIA' : undefined,
+        desc: `${describePower({ ...pw, cd }, labels[i], SLOT_COST[i])} ${ELEMENT_FX[pw.element]}.`,
         hot: ready?.slot === i || (!ready && plasmaUp && left <= 0),
       });
     });
     const plasmaLeft = me.plasmaCd ?? 0;
     const plasmaOn = !!me.plasmaOn;
+    const plasmaLow = plasmaOn && plasmaLeft <= 0 && (me.energy ?? ENERGY_MAX) < PLASMA.cost;
     slots.push({
       id: 'plasma',
       key: 'X',
@@ -1943,8 +2000,8 @@ function buildSlots(g: AnyGame): SlotView[] {
       color: PLASMA_COLOR,
       cd: plasmaOn ? plasmaLeft / PLASMA.cd : 1,
       secs: plasmaOn ? plasmaLeft : 0,
-      off: !plasmaOn,
-      note: plasmaOn ? undefined : 'BLOQUEADA',
+      off: !plasmaOn || plasmaLow,
+      note: !plasmaOn ? 'BLOQUEADA' : plasmaLow ? 'SEM ENERGIA' : undefined,
       desc: plasmaOn
         ? `X — ${PLASMA.name}: projétil médio, marca de ${PLASMA.mark}s. O próximo poder no alvo marcado explode (teto ${PLASMA.cap}). Recarga ${PLASMA.cd}s. Custa ${PLASMA.cost} de energia.`
         : 'Rajada de Plasma libera depois da primeira partida. Não se compra com moedas.',
@@ -2773,13 +2830,21 @@ function readInput(): Input {
       i.ca = i.touchCast.ang;
       i.cr = i.touchCast.ratio * slotRange(pressed);
     } else if (notebook && game.combat) {
-      const aim = typeof i.aim === 'number' ? i.aim : me.aim;
-      i.ca = aim;
-      i.cr = slotRange(pressed) * 0.72;
+      const info = slotInfo(pressed);
+      if (info.kind === 'direction') {
+        const aim = typeof i.aim === 'number' ? i.aim : me.aim;
+        i.ca = aim;
+        i.cr = (info.range || 200) * 0.72;
+      } else if (mouseOk) {
+        const w = renderer.toWorld(input.mouse.x, input.mouse.y);
+        i.ca = Math.atan2(w.y - me.y, w.x - me.x);
+        i.cr = Math.hypot(w.x - me.x, w.y - me.y);
+      }
     } else if (mouseOk && game.combat) {
       const w = renderer.toWorld(input.mouse.x, input.mouse.y);
-      i.ca = Math.atan2(w.y - me.y, w.x - me.x);
-      i.cr = Math.hypot(w.x - me.x, w.y - me.y);
+      const oy = castOriginY(pressed, me.y);
+      i.ca = Math.atan2(w.y - oy, w.x - me.x);
+      i.cr = Math.hypot(w.x - me.x, w.y - oy);
     }
   }
   delete i.touchCast;
@@ -2838,6 +2903,22 @@ function slotRange(slot: Slot) {
   const s = slotInfo(slot);
   return s.range || 200;
 }
+/** Projétil sai na altura da arma. Área usa os pés, igual ao ponto do golpe. */
+function castOriginY(slot: Slot, feetY: number) {
+  return slotInfo(slot).kind === 'direction' ? feetY - GUN_Y : feetY;
+}
+function clipAim(x: number, feetY: number, ang: number, range: number, g: AnyGame) {
+  const x1 = x + Math.cos(ang) * range;
+  const y1 = feetY + Math.sin(ang) * range;
+  const rects = g.iceWalls.length ? [...g.arena.walls, ...g.iceWalls] : g.arena.walls;
+  const t = sweepCircle(x, feetY, x1, y1, 3, rects, g.arena.pillars, {
+    minX: BORDER + 3,
+    minY: BORDER + 3,
+    maxX: WORLD_W - BORDER - 3,
+    maxY: WORLD_H - BORDER - 3,
+  });
+  return t === null ? range : Math.max(0, t * range);
+}
 input.aimKind = (slot) => slotInfo(slot).kind;
 input.canUse = (slot) => {
   if (!game) return true;
@@ -2882,11 +2963,17 @@ function updateAimPreview() {
   renderer.aimGuide = ma === null ? null : { ang: ma, held: input.aimHeld, color: game!.human.char.color };
   const a = input.aiming;
   if (!game || !a) {
-    renderer.aimPreview = null;
+    if (game && settings.rangeIndicator === 'always' && powersMatch(game) && game.phase === 'play' && game.human.alive) {
+      const me = game.human;
+      const info = slotInfo('ability');
+      const reach = clipAim(me.x, me.y, me.aim, info.range, game);
+      renderer.aimPreview = { shape: 'arrow', x: me.x, y: me.y - GUN_Y, ang: me.aim, dist: reach, range: info.range, r: info.r, w: 0, color: info.color, label: info.name };
+    } else renderer.aimPreview = null;
     return;
   }
   const me = game.human;
   const info = slotInfo(a.slot);
+  const oy = castOriginY(a.slot, me.y);
   let ang = me.aim;
   let dist = info.range * 0.7;
   if (a.touch) {
@@ -2897,10 +2984,13 @@ function updateAimPreview() {
     }
   } else {
     const w = renderer.toWorld(input.mouse.x, input.mouse.y);
-    ang = Math.atan2(w.y - me.y, w.x - me.x);
-    dist = Math.hypot(w.x - me.x, w.y - me.y);
+    ang = Math.atan2(w.y - oy, w.x - me.x);
+    dist = Math.hypot(w.x - me.x, w.y - oy);
   }
-  renderer.aimPreview = { shape: info.shape, x: me.x, y: me.y, ang, dist: info.shape === 'wall' && info.kind === 'direction' ? Math.max(50, Math.min(info.range, 70)) : Math.min(dist, info.range || dist), range: info.range, r: info.r, w: info.w, color: info.color, label: `${info.name} · solte para usar` };
+  const capped = info.shape === 'wall' && info.kind === 'direction' ? Math.max(50, Math.min(info.range, 70)) : Math.min(dist, info.range || dist);
+  const reach = info.kind === 'direction' ? clipAim(me.x, oy + GUN_Y, ang, capped, game) : capped;
+  const how = input.castMode === 'manual' || input.manualSlots.has(a.slot) ? 'clique para usar' : 'solte para usar';
+  renderer.aimPreview = { shape: info.shape, x: me.x, y: oy, ang, dist: reach, range: info.range, r: info.r, w: info.w, color: info.color, label: `${info.name} · ${how}` };
 }
 
 let laidW = 0;

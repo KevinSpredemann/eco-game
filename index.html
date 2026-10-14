@@ -482,6 +482,27 @@
             </select>
           </label>
           <label class="row" id="opt-sens-row">Sensibilidade da mira <input type="range" id="opt-aim" min="40" max="180" /></label>
+          <label class="row">Como soltar o poder
+            <select id="opt-cast">
+              <option value="auto">Automático</option>
+              <option value="instant">Na hora, ao apertar</option>
+              <option value="release">Ao soltar, com a mira</option>
+              <option value="manual">Mira manual (clique confirma)</option>
+            </select>
+          </label>
+          <label class="row">Indicador de alcance
+            <select id="opt-range">
+              <option value="aiming">Só enquanto mira</option>
+              <option value="always">Sempre o alcance do Q</option>
+            </select>
+          </label>
+          <label class="row">Cancelar a mira
+            <select id="opt-cancel">
+              <option value="both">Esc ou botão direito</option>
+              <option value="esc">Só Esc</option>
+            </select>
+          </label>
+          <div id="opt-manual"></div>
           <p class="form-note" id="opt-control-note"></p>
           <div class="keybinds" id="keybinds"></div>
           <button class="btn small ghost" id="keys-reset">Voltar ao padrão deste estilo</button>

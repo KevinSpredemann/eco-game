@@ -59,6 +59,8 @@ import {
   wallStun,
   type Element,
 } from './elements';
+import { abilityTrace } from './abilityTrace';
+import { sweepCapsule, sweepCircle } from './sweep';
 
 export type Difficulty = 'facil' | 'normal' | 'dificil';
 export type ObjectiveId = 'dourado' | 'tripla' | 'intocavel';
@@ -249,6 +251,8 @@ export interface Player {
   stasisT: number;
   /** preparando um golpe (não atira, anda devagar) */
   castT: number;
+  /** golpe com preparo: ainda não gastou energia nem recarga */
+  pendingCast: { slot: number; ang: number; ca?: number | null; cr?: number | null; at: number } | null;
   /** Chefe exausto: janela para atacar (mais dano, sem golpes) */
   exhaustT: number;
   /** último dano levado (relógio da rodada): a recuperação lenta começa depois de um tempo */
@@ -439,6 +443,8 @@ export interface Bullet {
   knock?: number;
   /** Rajada de Plasma: marca o alvo. Não usa o efeito da arma desenhada. */
   plasma?: boolean;
+  /** persegue este id. Some se o alvo cair ou sair da partida. Nenhum poder atual liga isso. */
+  homeId?: string;
 }
 
 export interface Bomb {
@@ -820,6 +826,7 @@ export class Game {
       ccResistT: 0,
       stasisT: 0,
       castT: 0,
+      pendingCast: null,
       exhaustT: 0,
       lastHurtAt: 0,
       boss: false,
@@ -947,6 +954,7 @@ export class Game {
         ccResistT: 0,
         stasisT: 0,
         castT: 0,
+        pendingCast: null,
         exhaustT: 0,
         chargeDmg: 0,
         lastHurtAt: 0,
@@ -1413,6 +1421,16 @@ export class Game {
     if (this.combat) p.aim = typeof inp.aim === 'number' && isFinite(inp.aim) ? inp.aim : this.autoAim(p);
     // direção das habilidades: a mira escolhida; senão para onde anda; senão a mira automática
     const castAng = typeof inp.ca === 'number' && isFinite(inp.ca) ? inp.ca : moving ? Math.atan2(my, mx) : this.combat ? p.aim : p.dir;
+    if (p.pendingCast && (p.stunT > 0 || !p.alive)) {
+      p.pendingCast = null;
+      p.castT = 0;
+      abilityTrace(p.id, 'windup-cancel', 'interrupted');
+    } else if (p.pendingCast && this.roundT >= p.pendingCast.at) {
+      const c = p.pendingCast;
+      p.pendingCast = null;
+      p.castT = 0;
+      this.castPower(p, c.slot, c.ang, { mx: 0, my: 0, dash: false, ability: false, ca: c.ca, cr: c.cr });
+    }
     const free = p.stunT <= 0 && p.castT <= 0;
 
     if (inp.dash && p.dashCd <= 0 && free && p.stasisT <= 0) {
@@ -1422,10 +1440,10 @@ export class Game {
         this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
       }
       if (free && p.alive) {
-        if (inp.ability) this.castPower(p, 0, castAng, inp);
-        if (inp.skill) this.castPower(p, 1, castAng, inp);
-        if (inp.ult) this.castPower(p, 2, castAng, inp);
-        if (inp.bonus || inp.item) this.castPower(p, 3, castAng, inp);
+        if (inp.ability) this.beginPower(p, 0, castAng, inp);
+        if (inp.skill) this.beginPower(p, 1, castAng, inp);
+        if (inp.ult) this.beginPower(p, 2, castAng, inp);
+        if (inp.bonus || inp.item) this.beginPower(p, 3, castAng, inp);
         if (inp.plasma) this.castPlasma(p, castAng);
       }
 
@@ -1500,8 +1518,7 @@ export class Game {
         p.vy += ((w.y - p.y) / d) * f;
       }
     }
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
+    this.integrate(p, dt);
     // esteiras
     for (const cv of this.arena.conveyors ?? []) {
       if (inRect(p.x, p.y, cv)) {
@@ -1641,6 +1658,10 @@ export class Game {
     if (t < 0.05) return;
     p.stunT = Math.max(p.stunT, t);
     p.castT = 0;
+    if (p.pendingCast) {
+      p.pendingCast = null;
+      abilityTrace(p.id, 'windup-cancel', 'stun');
+    }
     p.ccResistT = p.stunT + COMBAT.ccResist;
     this.events.push({ type: 'stunned', x: p.x, y: p.y, pid: p.id });
   }
@@ -2673,8 +2694,118 @@ export class Game {
     return 'turbo';
   }
 
-  private foeInRadius(p: Player, x: number, y: number, radius: number) {
-    return this.players.some((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, x, y) <= radius);
+  private foeInRadius(p: Player, x: number, y: number, radius: number, los = false) {
+    return this.players.some((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, x, y) <= radius && (!los || this.sight(p.x, p.y, o.x, o.y)));
+  }
+
+  /** Parede, pilar e borda no meio do trecho. As pontas não contam. */
+  private sight(ax: number, ay: number, bx: number, by: number) {
+    const d = Math.hypot(bx - ax, by - ay);
+    if (d < 14) return true;
+    const inset = 8 / d;
+    return (
+      this.solidAlong(ax + (bx - ax) * inset, ay + (by - ay) * inset, bx - (bx - ax) * inset, by - (by - ay) * inset, 2) === null
+    );
+  }
+
+  /** Anda em passos curtos. Um impulso contra a parede para; não aparece do outro lado. */
+  private integrate(p: Player, dt: number) {
+    const distMoved = Math.hypot(p.vx, p.vy) * dt;
+    const n = Math.max(1, Math.ceil(distMoved / 8));
+    const step = dt / n;
+    for (let i = 0; i < n; i++) {
+      const ox = p.x;
+      const oy = p.y;
+      p.x += p.vx * step;
+      p.y += p.vy * step;
+      this.collideWorld(p);
+      if (p.dashT > 0) {
+        const moved = Math.hypot(p.x - ox, p.y - oy);
+        const want = Math.hypot(p.vx, p.vy) * step;
+        if (want > 1 && moved < want * 0.25) {
+          p.dashT = 0;
+          abilityTrace(p.id, 'dash-block', `${Math.round(p.x)},${Math.round(p.y)}`);
+          break;
+        }
+      }
+    }
+  }
+
+  private solidAlong(x0: number, y0: number, x1: number, y1: number, r: number) {
+    const rects = this.iceWalls.length ? [...this.arena.walls, ...this.iceWalls] : this.arena.walls;
+    return sweepCircle(x0, y0, x1, y1, r, rects, this.arena.pillars, {
+      minX: BORDER + r,
+      minY: BORDER + r,
+      maxX: WORLD_W - BORDER - r,
+      maxY: WORLD_H - BORDER - r,
+    });
+  }
+
+  private earliestBody(b: Bullet, x0: number, y0: number, x1: number, y1: number, enemyShot: boolean, ownerTeam: number) {
+    let best: number | null = null;
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || b.hit.includes(o.id)) continue;
+      if (!enemyShot) {
+        if (o.id === b.owner && !b.fromEcho) continue;
+        if (o.id === b.owner && this.rules.teams) continue;
+        if (o.id !== b.owner && ownerTeam >= 0 && ownerTeam === o.team) continue;
+      }
+      const foot = o.y - 4;
+      const head = o.y - (o.boss ? 86 : 72);
+      const t = sweepCapsule(x0, y0, x1, y1, o.x, foot, head, this.hitR(o) + 6);
+      if (t === null) continue;
+      if (best === null || t < best) best = t;
+    }
+    return best;
+  }
+
+  private steerHome(b: Bullet, dt: number) {
+    const tgt = this.players.find((p) => p.id === b.homeId);
+    if (!tgt || !tgt.alive || !tgt.playing) {
+      b.life = 0;
+      abilityTrace(b.owner, 'home-end', b.homeId ?? '');
+      return;
+    }
+    const sp = Math.hypot(b.vx, b.vy);
+    if (sp < 1) return;
+    const want = Math.atan2(tgt.y - GUN_Y - b.y, tgt.x - b.x);
+    const cur = Math.atan2(b.vy, b.vx);
+    let diff = want - cur;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const cap = 6 * dt;
+    const turn = Math.abs(diff) > cap ? Math.sign(diff) * cap : diff;
+    const ang = cur + turn;
+    b.vx = Math.cos(ang) * sp;
+    b.vy = Math.sin(ang) * sp;
+  }
+
+  /** Prepara o golpe. Com windup, energia e recarga só caem quando ele sai. */
+  private beginPower(p: Player, slot: number, ang: number, inp?: Input) {
+    if (p.pendingCast) return;
+    const def = kitOf(p.char.id).powers[slot];
+    const wind = def.windup ?? 0;
+    if (wind <= 0) {
+      this.castPower(p, slot, ang, inp);
+      return;
+    }
+    if (p.powerCd[slot] > 0) return;
+    if (p.energy < SLOT_COST[slot]) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      abilityTrace(p.id, 'deny', 'energy');
+      return;
+    }
+    if (def.speed <= 0) {
+      const pt = this.castPoint(p, inp, ang, def.range);
+      if (!this.foeInRadius(p, pt.x, pt.y, def.radius, def.los !== false)) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido' });
+        abilityTrace(p.id, 'deny', 'target');
+        return;
+      }
+    }
+    p.pendingCast = { slot, ang, ca: inp?.ca, cr: inp?.cr, at: this.roundT + wind };
+    p.castT = Math.max(p.castT, wind);
+    abilityTrace(p.id, 'windup', def.name);
   }
 
   /**
@@ -2688,21 +2819,27 @@ export class Game {
     const cost = SLOT_COST[slot];
     if (p.energy < cost) {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      abilityTrace(p.id, 'deny', 'energy');
       return;
     }
     const knock = KNOCK[def.element];
     if (def.speed <= 0) {
       const pt = this.castPoint(p, inp, ang, def.range);
-      if (!this.foeInRadius(p, pt.x, pt.y, def.radius)) {
+      const los = def.los !== false;
+      if (!this.foeInRadius(p, pt.x, pt.y, def.radius, los)) {
         this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido' });
+        abilityTrace(p.id, 'deny', 'target');
         return;
       }
       p.energy -= cost;
       p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+      abilityTrace(p.id, 'impact', def.name);
       this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element });
       for (const o of this.players) {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
-        if (dist(o.x, o.y, pt.x, pt.y) <= def.radius) this.deliverPower(p, o, def.element, def.dmg, knock);
+        if (dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
+        if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
+        this.deliverPower(p, o, def.element, def.dmg, knock);
       }
       return;
     }
@@ -2719,12 +2856,13 @@ export class Game {
       dmg: def.dmg,
       life: def.range / def.speed,
       weapon: VISUAL_WEAPON[def.element],
-      pierce: false,
+      pierce: !!def.pass,
       fromEcho: false,
       hit: [],
       el: def.element,
       knock,
     });
+    abilityTrace(p.id, 'launch', def.name);
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
   }
 
@@ -2732,11 +2870,13 @@ export class Game {
   private castPlasma(p: Player, ang: number) {
     if (!p.plasmaOn) {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Habilidade ainda não desbloqueada' });
+      abilityTrace(p.id, 'deny', 'locked');
       return;
     }
     if (p.plasmaCd > 0) return;
     if (p.energy < PLASMA.cost) {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      abilityTrace(p.id, 'deny', 'energy');
       return;
     }
     p.energy -= PLASMA.cost;
@@ -2757,6 +2897,7 @@ export class Game {
       hit: [],
       plasma: true,
     });
+    abilityTrace(p.id, 'launch', PLASMA.name);
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: 'plasma' });
   }
 
@@ -2810,7 +2951,7 @@ export class Game {
       if (combo.aoe) {
         for (const o of this.players) {
           if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
-          if (dist(o.x, o.y, dst.x, dst.y) < combo.aoe) this.hurt(o, combo.bonus * 0.5, src.id, 'pulse');
+          if (dist(o.x, o.y, dst.x, dst.y) < combo.aoe && this.sight(dst.x, dst.y, o.x, o.y)) this.hurt(o, combo.bonus * 0.5, src.id, 'pulse');
         }
       }
     }
@@ -3015,6 +3156,7 @@ export class Game {
       p.alive = false;
       p.deaths++;
       p.castT = 0;
+      p.pendingCast = null;
       p.chargeT = 0;
       if (this.rules.respawn) p.respawnT = RESPAWN_TIME;
       else p.recorder?.finish(this.roundT * 1000, p.x, p.y, p.dir);
@@ -3033,17 +3175,39 @@ export class Game {
   private updateCombat(dt: number) {
     // balas
     for (const b of this.bullets) {
+      if (b.homeId) this.steerHome(b, dt);
+      if (b.life <= 0) continue;
       b.life -= dt;
-      const steps = Math.ceil((Math.hypot(b.vx, b.vy) * dt) / 10);
+      const steps = Math.max(1, Math.ceil((Math.hypot(b.vx, b.vy) * dt) / 4));
       const enemyShot = b.owner === 'enemy';
       const ownerTeam = enemyShot ? -2 : this.teamOf(b.owner);
       for (let i = 0; i < steps && b.life > 0; i++) {
-        b.x += (b.vx * dt) / steps;
-        b.y += (b.vy * dt) / steps;
-        if (!this.isFree(b.x, b.y + GUN_Y, 3) && !b.pierce) {
-          this.damageCover(b.x, b.y + GUN_Y, 4, b.dmg);
-          b.life = 0;
-          break;
+        const ox = b.x;
+        const oy = b.y;
+        const nx = ox + (b.vx * dt) / steps;
+        const ny = oy + (b.vy * dt) / steps;
+        if (!b.pierce) {
+          const wallT = this.solidAlong(ox, oy + GUN_Y, nx, ny + GUN_Y, 3);
+          const bodyT = this.earliestBody(b, ox, oy, nx, ny, enemyShot, ownerTeam);
+          if (wallT !== null && (bodyT === null || wallT <= bodyT)) {
+            const t = Math.max(0, Math.min(1, wallT));
+            b.x = ox + (nx - ox) * t;
+            b.y = oy + (ny - oy) * t;
+            this.damageCover(b.x, b.y + GUN_Y, 4, b.dmg);
+            b.life = 0;
+            abilityTrace(b.owner, 'wall', `${Math.round(b.x)},${Math.round(b.y)}`);
+            break;
+          }
+          if (bodyT !== null) {
+            b.x = ox + (nx - ox) * bodyT;
+            b.y = oy + (ny - oy) * bodyT;
+          } else {
+            b.x = nx;
+            b.y = ny;
+          }
+        } else {
+          b.x = nx;
+          b.y = ny;
         }
         for (const o of this.players) {
           if (!o.alive || !o.playing || b.hit.includes(o.id)) continue;

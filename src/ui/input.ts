@@ -139,6 +139,31 @@ export function confirmTouchCast(slot: string, kind: string, dragLen: number): b
   return true;
 }
 
+export type CastChoice = 'auto' | 'instant' | 'manual' | 'release';
+export type CastStyle = 'instant' | 'manual' | 'release';
+
+/** Como o aperto vira golpe. Cancelar nunca entra aqui: quem cancela não chama estas funções. */
+export function resolveCastStyle(o: {
+  castMode: CastChoice;
+  control: 'classic' | 'notebook';
+  touch: boolean;
+  manual: boolean;
+  kind: AimKind;
+}): CastStyle {
+  if (o.manual || o.castMode === 'manual') return 'manual';
+  if (o.castMode === 'instant') return 'instant';
+  if (o.castMode === 'release') return o.kind === 'instant' ? 'instant' : 'release';
+  if (o.touch || o.control === 'notebook' || o.kind === 'instant') return 'instant';
+  return 'release';
+}
+
+export function queuesOnPress(style: CastStyle) {
+  return style === 'instant';
+}
+export function queuesOnRelease(style: CastStyle) {
+  return style === 'release';
+}
+
 export class InputManager {
   private keys = new Set<string>();
   private stick = { x: 0, y: 0, active: false, id: -1, cx: 0, cy: 0 };
@@ -168,6 +193,13 @@ export class InputManager {
   mouse = { x: 0, y: 0, at: 0 };
   /** modo combate: Espaço vira item e o clique atira */
   combat = false;
+  /** X1 e 2x2: o botão direito cancela a mira e não solta o poder do F */
+  powers = false;
+  /** auto segue o estilo. manual espera o clique. release solta ao erguer a tecla. */
+  castMode: CastChoice = 'auto';
+  manualSlots = new Set<Slot>();
+  /** both: Esc e botão direito. esc: só Esc. */
+  cancelAimButtons: 'both' | 'esc' = 'both';
   touchMode = false;
   aiming: Aiming | null = null;
   /** como cada ação é mirada agora (depende do personagem/equipamento) */
@@ -218,7 +250,7 @@ export class InputManager {
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
       const slot = this.slotOf(e.code);
-      if (slot && this.aiming && this.aiming.slot === slot && !this.aiming.touch) this.release();
+      if (slot && this.aiming && this.aiming.slot === slot && !this.aiming.touch && queuesOnRelease(this.styleOf(slot, this.aiming.kind))) this.release();
     });
     // trocou de app / aba: solta tudo (nada fica "preso" apertado)
     const releaseAll = () => {
@@ -459,8 +491,10 @@ export class InputManager {
         }
       }
       if (e.button === 2) {
-        if (this.aiming) this.cancelAim();
-        else if (this.control === 'notebook') this.rmbAim = true;
+        if (this.aiming && this.cancelAimButtons === 'both') this.cancelAim();
+        else if (this.powers) {
+          /* no X1 e no 2x2 o direito não solta o F */
+        } else if (this.control === 'notebook') this.rmbAim = true;
         else this.press('bonus');
       }
     });
@@ -525,8 +559,8 @@ export class InputManager {
       this.onDenied?.(slot);
       return;
     }
-    // notebook: um toque usa a habilidade na mira atual (não pede um segundo clique)
-    if (kind === 'instant' || (this.control === 'notebook' && !this.touchMode) || (this.touchMode && confirmTouchCast(slot, kind, 0))) {
+    const style = this.styleOf(slot, kind);
+    if (queuesOnPress(style) || (this.touchMode && confirmTouchCast(slot, kind, 0))) {
       this.queued.add(slot);
       return;
     }
@@ -540,6 +574,15 @@ export class InputManager {
     this.touchCast = null;
     this.aiming = null;
     this.onAimChange?.(null);
+  }
+  private styleOf(slot: Slot, kind: AimKind): CastStyle {
+    return resolveCastStyle({
+      castMode: this.castMode,
+      control: this.control,
+      touch: this.touchMode,
+      manual: this.manualSlots.has(slot),
+      kind,
+    });
   }
   cancelAim() {
     if (!this.aiming) return;

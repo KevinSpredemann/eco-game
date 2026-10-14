@@ -1,6 +1,6 @@
 import type { Difficulty } from '../game/sim';
 import { DEFAULT_LOADOUT, type Loadout } from '../game/balance';
-import { DEFAULT_KEYS, type ControlStyle, type KeyBinds } from './input';
+import { DEFAULT_KEYS, type CastChoice, type ControlStyle, type KeyBinds } from './input';
 
 export interface Settings {
   master: number;
@@ -29,6 +29,14 @@ export interface Settings {
   control: ControlStyle;
   /** 100 = padrão. Só o notebook usa, para o trackpad não pular a mira. */
   aimSens: number;
+  /** auto: clássico segura a tecla, notebook solta na hora. */
+  castMode: CastChoice;
+  /** estes espaços sempre abrem a mira manual */
+  manualAim: string[];
+  /** aiming: círculo só enquanto mira. always: mostra o alcance do Q. */
+  rangeIndicator: 'aiming' | 'always';
+  /** both: Esc e botão direito. esc: só Esc. */
+  cancelAim: 'both' | 'esc';
   /** equipamento escolhido */
   loadout: Loadout;
   /** Caça ao Chefe contra bots: papel preferido */
@@ -63,6 +71,10 @@ export const DEFAULTS: Settings = {
   keys: { ...DEFAULT_KEYS },
   control: 'classic',
   aimSens: 100,
+  castMode: 'auto',
+  manualAim: [],
+  rangeIndicator: 'aiming',
+  cancelAim: 'both',
   loadout: { ...DEFAULT_LOADOUT },
   chefeRole: 'sorteio',
   bossTurns: 0,
@@ -75,7 +87,17 @@ export function loadSettings(): Settings {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const v = JSON.parse(raw);
-      return { ...DEFAULTS, ...v, keys: { ...DEFAULT_KEYS, ...(v.keys ?? {}) }, loadout: { ...DEFAULT_LOADOUT, ...(v.loadout ?? {}) } };
+      const mode = v.castMode === 'instant' || v.castMode === 'manual' || v.castMode === 'release' || v.castMode === 'auto' ? v.castMode : DEFAULTS.castMode;
+      return {
+        ...DEFAULTS,
+        ...v,
+        castMode: mode,
+        manualAim: Array.isArray(v.manualAim) ? v.manualAim.filter((s: unknown) => typeof s === 'string') : [],
+        rangeIndicator: v.rangeIndicator === 'always' ? 'always' : 'aiming',
+        cancelAim: v.cancelAim === 'esc' ? 'esc' : 'both',
+        keys: { ...DEFAULT_KEYS, ...(v.keys ?? {}) },
+        loadout: { ...DEFAULT_LOADOUT, ...(v.loadout ?? {}) },
+      };
     }
   } catch {
     /* armazenamento indisponível: usa padrões */

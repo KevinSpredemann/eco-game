@@ -10,6 +10,8 @@ export interface Aura {
   shock: number;
 }
 
+export type PowerCategory = 'attack' | 'defense' | 'mobility' | 'control' | 'support';
+
 export interface PowerDef {
   name: string;
   element: Element;
@@ -19,6 +21,32 @@ export interface PowerDef {
   /** 0 = explosão instantânea no ponto mirado */
   speed: number;
   radius: number;
+  category?: PowerCategory;
+  /** segundos de preparo. 0 ou ausente: sai na hora. */
+  windup?: number;
+  /** só atravessa parede se estiver marcado. O padrão para na parede. */
+  pass?: boolean;
+  /** área instantânea ignora parede se for false. O padrão respeita a linha de visão. */
+  los?: boolean;
+}
+
+export const CATEGORY_PT: Record<PowerCategory, string> = {
+  attack: 'Ataque',
+  defense: 'Defesa',
+  mobility: 'Mobilidade',
+  control: 'Controle',
+  support: 'Suporte',
+};
+
+export function powerCategory(pw: PowerDef): PowerCategory {
+  return pw.category ?? (pw.speed <= 0 ? 'control' : 'attack');
+}
+
+/** Números reais do golpe: dano, alcance e recarga nas unidades do mapa. */
+export function describePower(pw: PowerDef, key: string, cost: number): string {
+  const kind = pw.speed <= 0 ? `área, raio ${pw.radius}` : `projétil, velocidade ${pw.speed}, primeiro inimigo`;
+  const wall = pw.pass ? 'atravessa paredes' : pw.speed <= 0 ? 'respeita paredes' : 'para na parede';
+  return `${key} ${pw.name}: dano ${pw.dmg}, alcance ${pw.range}, recarga ${pw.cd}s, energia ${cost}, ${CATEGORY_PT[powerCategory(pw)]}, ${kind}, ${wall}.`;
 }
 
 export type PassiveId =

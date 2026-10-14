@@ -1,12 +1,13 @@
 // Espelho da partida online no aparelho: recebe o estado do servidor, suaviza o movimento
 // dos outros e prevê o movimento do próprio jogador para responder na hora.
-import { ArenaDef, getArena, inRect, isGround, windState } from '../game/arenas';
+import { ArenaDef, BORDER, WORLD_H, WORLD_W, getArena, inRect, isGround, windState } from '../game/arenas';
+import { sweepCircle } from '../game/sweep';
 import { choosePortalExit, portalPairAt } from '../game/portals';
 import { getCharacter, withLevel, withSkin } from '../game/characters';
 import * as C from '../game/constants';
 import { ENEMY_STATS, FlagState, Game, GameEvent, GameMode, Hill, Input, MODE_RULES, Player, Storm } from '../game/sim';
 import type { PowerId } from '../game/powerups';
-import { loadoutPrimary } from '../game/weapons';
+import { GUN_Y, loadoutPrimary } from '../game/weapons';
 import type { EchoDigest, RoundEchoLine } from '../systems/echo/digest';
 import { assignUniqueColors, assignUniqueNames } from '../game/colors';
 import { BOSS, COMBAT, DEFAULT_LOADOUT, Loadout, sanitizeLoadout } from '../game/balance';
@@ -413,8 +414,26 @@ export class ClientGame {
       }
     }
     for (const b of this.bullets) {
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
+      if (b.life <= 0 || (b.vx === 0 && b.vy === 0)) continue;
+      const x1 = b.x + b.vx * dt;
+      const y1 = b.y + b.vy * dt;
+      const rects = this.iceWalls.length ? [...this.arena.walls, ...this.iceWalls] : this.arena.walls;
+      const hit = sweepCircle(b.x, b.y + GUN_Y, x1, y1 + GUN_Y, 3, rects, this.arena.pillars, {
+        minX: BORDER + 3,
+        minY: BORDER + 3,
+        maxX: WORLD_W - BORDER - 3,
+        maxY: WORLD_H - BORDER - 3,
+      });
+      if (hit === null) {
+        b.x = x1;
+        b.y = y1;
+      } else {
+        b.x += (x1 - b.x) * hit;
+        b.y += (y1 - b.y) * hit;
+        b.vx = 0;
+        b.vy = 0;
+        b.life = 0;
+      }
     }
     for (const b of this.bombs) b.t += dt;
     for (const c of this.casts) c.t += dt;
@@ -516,6 +535,7 @@ function blankPlayer(id: string, name: string, char: ReturnType<typeof getCharac
     ccResistT: 0,
     stasisT: 0,
     castT: 0,
+    pendingCast: null,
     lastHurtAt: 0,
     exhaustT: 0,
     boss: false,
