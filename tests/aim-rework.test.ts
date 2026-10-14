@@ -138,7 +138,7 @@ describe('mira, carga e leitura do golpe', () => {
     expect(b.rootT).toBe(0);
   });
 
-  it('Q marca raiz e E em cima dela fecha o combo', () => {
+  it('Q marca e E na marca fecha Raiz firme, sem enraizar no primeiro golpe', () => {
     const g = fight([
       { id: 'a', char: 'nara' },
       { id: 'b', char: 'luna' },
@@ -149,12 +149,14 @@ describe('mira, carga e leitura do golpe', () => {
     b.x = 480;
     b.y = 250;
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
-    for (let i = 0; i < 40 && b.rootT <= 0; i++) g.step(STEP, { a: idle, b: idle });
-    expect(b.rootT).toBeGreaterThan(0);
+    for (let i = 0; i < 40 && b.markedT <= 0; i++) g.step(STEP, { a: idle, b: idle });
+    expect(b.markedT).toBeGreaterThan(0);
+    expect(b.rootT).toBe(0);
     const mid = b.hp;
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 80 }, b: idle });
     expect(b.hp).toBeLessThan(mid);
-    expect(g.drainEvents().some((e) => e.type === 'combo' && e.name === 'Raiz e impacto')).toBe(true);
+    expect(b.markedT).toBe(0);
+    expect(g.drainEvents().some((e) => e.type === 'combo' && e.name === 'Raiz firme')).toBe(true);
   });
 
   it('ultimate antes da carga não sai; carga cheia gasta e a carga parcial dói menos', () => {

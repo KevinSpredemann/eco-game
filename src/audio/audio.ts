@@ -197,6 +197,11 @@ export class AudioEngine {
     this.tone({ type: 'triangle', freq: base * 2, dur: 0.1, gain: 0.08, when: t + 0.05, pan });
     if (golden) [1318, 1568, 2093].forEach((f, i) => this.tone({ type: 'sine', freq: f, dur: 0.3, gain: 0.12, when: t + 0.08 + i * 0.07, pan }));
   }
+  combo(pan?: number, ult = false) {
+    const t = this.now;
+    const notes = ult ? [784, 988, 1318] : [660, 880];
+    notes.forEach((f, i) => this.tone({ type: ult ? 'triangle' : 'sine', freq: f, dur: 0.12, gain: ult ? 0.14 : 0.08, when: t + i * 0.05, pan }));
+  }
   lucky(pan?: number) {
     const t = this.now;
     [1568, 2093].forEach((f, i) => this.tone({ type: 'triangle', freq: f, dur: 0.15, gain: 0.12, when: t + 0.1 + i * 0.06, pan }));

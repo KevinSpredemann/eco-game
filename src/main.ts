@@ -27,7 +27,8 @@ import { Carousel, fitText } from './ui/carousel';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
-import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, comboReady, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex, studioOf } from './game/elements';
+import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex, studioOf } from './game/elements';
+import { comboReady } from './game/combos';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
 import { ACTION_LABEL, Action, MoveScheme, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
@@ -1528,6 +1529,7 @@ function sendLobbyLook() {
 
 // ------------------------------------------------------------------ equipamento
 let loadoutCtx: 'pre' | 'pause' | 'lobby' = 'pre';
+let practiceHint = '';
 let lobbyReady = false;
 const loadoutScreen = new LoadoutScreen($('#screen-loadout'), {
   owns: (k) => owns(account.profile, k),
@@ -1535,6 +1537,14 @@ const loadoutScreen = new LoadoutScreen($('#screen-loadout'), {
   buy: (k) => account.buy(k),
   toast: (m) => toast(m),
   click: () => audio.click(),
+  train: (charId, loadout, line) => {
+    settings.char = charId;
+    settings.loadout = loadout;
+    saveSettings(settings);
+    matchMode = 'duelo';
+    practiceHint = line;
+    startMatch();
+  },
   keyOf: (slot) => {
     if (input.touchMode) {
       const touch: Partial<Record<typeof slot, string>> = { skill: 'HAB 2', ult: 'ULT', item: 'ITEM' };
@@ -1776,6 +1786,8 @@ function localRoster(): RosterEntry[] {
 
 function startMatch() {
   audio.unlock();
+  const hint = practiceHint;
+  practiceHint = '';
   if (!owns(account.profile, 'char:' + settings.char)) settings.char = account.profile.equipped.char;
   const arena = getArena(settings.arena);
   const g = new Game({
@@ -1785,10 +1797,12 @@ function startMatch() {
     difficulty: settings.difficulty,
     ownEchoDamage: settings.ownEcho,
     training: training(),
+    dummy: hint.length > 0,
     mode: matchMode,
     roster: localRoster(),
   });
   beginMatchView(g);
+  if (hint) showTip(hint, 6);
 }
 
 function beginMatchView(g: AnyGame) {
@@ -2008,7 +2022,7 @@ function comboLine(g: AnyGame): string {
   if (!me.alive) return '';
   const foes = g.players
     .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT }));
+    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT }));
   const plasma = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
   if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return 'COMBO DISPONÍVEL: Explosão de Plasma';
   const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
@@ -2026,7 +2040,7 @@ function buildSlots(g: AnyGame): SlotView[] {
     const labels = [K('ability'), K('skill'), K('ult'), K('bonus')];
     const foes = g.players
       .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-      .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT }));
+      .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT }));
     const ready = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
     const plasmaUp = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
     // Barra: Q, E, F, R e depois o Z. O índice do kit não muda (R continua no espaço 2).
@@ -2496,7 +2510,8 @@ function onEvents(events: GameEvent[]) {
         if (mine && hintStage === 3) hintStage = 4;
         break;
       case 'combo':
-        showTip(`${e.name} +${e.bonus}`, 2.2);
+        showTip(e.name, 1.6);
+        audio.combo(panOf(e.x), e.vfx === 'ult');
         break;
       case 'deny':
         audio.fail(panOf(g.players.find((p) => p.id === e.pid)?.x ?? g.human.x));

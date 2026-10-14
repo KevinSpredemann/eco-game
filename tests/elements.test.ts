@@ -5,7 +5,6 @@ import {
   bonusDamage,
   botPower,
   comboOf,
-  comboReady,
   cooldownOf,
   denyPowerCast,
   kitOf,
@@ -14,6 +13,7 @@ import {
   wallSlam,
   type Aura,
 } from '../src/game/elements';
+import { comboReady } from '../src/game/combos';
 
 const clear: Aura = { burn: 0, frozen: 0, gust: 0, shock: 0 };
 

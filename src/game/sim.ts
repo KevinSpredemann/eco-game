@@ -47,7 +47,6 @@ import {
   KNOCK,
   MARK_TIME,
   PLASMA,
-  ROOT_AOE_BONUS,
   ROOT_RESIST,
   ROOT_TIME,
   SLOT_COST,
@@ -57,7 +56,6 @@ import {
   WALL_REACH,
   bonusDamage,
   burnDpsOf,
-  comboOf,
   cooldownOf,
   gustSlow,
   healOnCombo,
@@ -68,11 +66,11 @@ import {
   resolvedDamage,
   speedMul,
   stunTime,
-  tuneCombo,
   wallSlam,
   wallStun,
   type Element,
 } from './elements';
+import { FIELD_WINDOW, MARK_WINDOW, isElemental, resolveReaction } from './combos';
 import { abilityTrace } from './abilityTrace';
 import { castFamily, chargeFactor, chargeRadius, chargeReach } from './aimMath';
 import { sweepCapsule, sweepCircle } from './sweep';
@@ -126,6 +124,8 @@ export interface MatchConfig {
   training: boolean;
   /** fundo animado do menu: sem jogador humano */
   spectator?: boolean;
+  /** bot parado, para treinar uma sinergia */
+  dummy?: boolean;
   /** X1: duração da rodada e da morte súbita (testes e salas podem encurtar) */
   roundSec?: number;
   suddenSec?: number;
@@ -200,6 +200,13 @@ export interface Player {
   plasmaCd: number;
   /** marca de plasma neste jogador (segundos) */
   plasmaT: number;
+  /** marca de sinergia (Semente). Não é o marcador que aumenta dano. */
+  markedT: number;
+  /** campo elemental neste alvo, para o projétil compatível */
+  fieldT: number;
+  fieldEl: Element | '';
+  /** a mesma raiz não dispara o bônus de área outra vez */
+  reactCd: number;
   /** o espaço extra desta partida trouxe a Rajada de Plasma */
   plasmaOn: boolean;
   /** combos fechados nesta rodada (a ninja fica mais rápida) */
@@ -482,6 +489,10 @@ export interface Bullet {
   basic?: boolean;
   /** persegue este id. Some se o alvo cair ou sair da partida. */
   homeId?: string;
+  /** 0 Q, 1 E, 2 R, 3 F. Ausente = extra. */
+  slot?: number;
+  /** este projétil marca, não enraíza */
+  mark?: boolean;
 }
 
 export interface Bomb {
@@ -647,7 +658,7 @@ export type GameEvent =
   | { type: 'minion'; x: number; y: number; kind: MinionKind }
   | { type: 'block'; x: number; y: number }
   | { type: 'stunned'; x: number; y: number; pid: string }
-  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string }
+  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string; vfx?: 'ult' | 'burst' | 'root' | 'element' }
   | { type: 'deny'; pid: string; msg: string; x?: number; y?: number };
 
 export type Phase = 'prep' | 'play' | 'rewind' | 'call' | 'results';
@@ -839,6 +850,10 @@ export class Game {
       energy: ENERGY_MAX,
       plasmaCd: 0,
       plasmaT: 0,
+      markedT: 0,
+      fieldT: 0,
+      fieldEl: '',
+      reactCd: 0,
       plasmaOn: !!lo.secondary,
       comboStacks: 0,
       hidden: false,
@@ -1007,6 +1022,10 @@ export class Game {
         energy: ENERGY_MAX,
         plasmaCd: 0,
         plasmaT: 0,
+        markedT: 0,
+        fieldT: 0,
+        fieldEl: '',
+        reactCd: 0,
         comboStacks: 0,
         tookDamage: false,
         tripleDone: false,
@@ -1459,6 +1478,10 @@ export class Game {
       for (let i = 0; i < 4; i++) p.powerCd[i] = Math.max(0, p.powerCd[i] - dt);
       p.plasmaCd = Math.max(0, p.plasmaCd - dt);
       p.plasmaT = Math.max(0, p.plasmaT - dt);
+      p.markedT = Math.max(0, p.markedT - dt);
+      p.fieldT = Math.max(0, p.fieldT - dt);
+      if (p.fieldT <= 0) p.fieldEl = '';
+      p.reactCd = Math.max(0, p.reactCd - dt);
       p.basicCd = Math.max(0, p.basicCd - dt);
       p.rootT = Math.max(0, p.rootT - dt);
       p.rootResistT = Math.max(0, p.rootResistT - dt);
@@ -1725,6 +1748,7 @@ export class Game {
     const sp = p.team >= 0 ? this.teamSpawn(p.team, Math.floor(Math.random() * 3)) : this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)];
     p.recorder?.markJump();
     Object.assign(p, { x: sp.x, y: sp.y, vx: 0, vy: 0, alive: true, hp: p.maxHp, shieldHp: 0, invulnT: 1 + COMBAT.spawnProtect, stunT: 0, slowT: 0, pullT: 0, chargeT: 0, castT: 0, markT: 0, dodgeT: 0 });
+    this.clearMarks(p);
     // arma volta para a do equipamento; itens NÃO recarregam ao renascer (evita abuso)
     p.weapon = this.primaryFor(p);
     p.weaponT = 0;
@@ -2900,6 +2924,23 @@ export class Game {
     return n;
   }
 
+  private clearMarks(p: Player) {
+    p.burnT = 0;
+    p.burnAcc = 0;
+    p.frozenT = 0;
+    p.gustT = 0;
+    p.shockT = 0;
+    p.rootT = 0;
+    p.rootResistT = 0;
+    p.markedT = 0;
+    p.fieldT = 0;
+    p.fieldEl = '';
+    p.reactCd = 0;
+    p.plasmaT = 0;
+    p.stunT = 0;
+    p.slowT = 0;
+  }
+
   private applyRoot(p: Player, t: number) {
     if (t <= 0 || p.rootResistT > 0 || p.dodgeT > 0 || p.boss) return;
     p.rootT = Math.max(p.rootT, t);
@@ -2942,7 +2983,7 @@ export class Game {
       if (!o.alive || !o.playing || p.dashHit.includes(o.id) || !this.hostile(p, o)) continue;
       if (dist(p.x, p.y, o.x, o.y) > 36) continue;
       p.dashHit.push(o.id);
-      this.deliverPower(p, o, p.dashEl, p.dashDmg, KNOCK[p.dashEl]);
+      this.deliverPower(p, o, p.dashEl, p.dashDmg, KNOCK[p.dashEl], false, { slot: -1, projectile: false });
     }
   }
 
@@ -3061,7 +3102,7 @@ export class Game {
       }
       pay();
       abilityTrace(p.id, 'launch', def.name);
-      this.playAct(p, def, ang, inp, dmg, tune);
+      this.playAct(p, def, ang, inp, dmg, tune, slot);
       return;
     }
     if (def.speed <= 0) {
@@ -3079,7 +3120,7 @@ export class Game {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
         if (dist(o.x, o.y, pt.x, pt.y) > tune.radius) continue;
         if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
-        this.deliverPower(p, o, def.element, dmg, knock, true);
+        this.deliverPower(p, o, def.element, dmg, knock, true, { slot, projectile: false, mark: !!def.mark });
       }
       if (def.grove === 'heal') this.placeGrove(p, pt.x, pt.y, tune.radius, 4);
       if (ult) p.ultCharge = 0;
@@ -3104,13 +3145,15 @@ export class Game {
       el: def.element,
       knock,
       homeId: home?.id,
+      slot,
+      mark: !!def.mark,
     });
     abilityTrace(p.id, 'launch', def.name);
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
   }
 
   /** Efeito já pago: arrancada, piscar, ilusão, bosque ou muralha. */
-  private playAct(p: Player, def: PowerDef, ang: number, inp: Input | undefined, dmg: number, tune?: { range: number; radius: number; step: number }) {
+  private playAct(p: Player, def: PowerDef, ang: number, inp: Input | undefined, dmg: number, tune?: { range: number; radius: number; step: number }, slot = -1) {
     const range = tune?.range ?? def.range;
     const radius = tune?.radius ?? def.radius;
     const step = tune?.step ?? def.step ?? BLINK_STEP;
@@ -3130,7 +3173,7 @@ export class Game {
       if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, dmg) });
       if (moved > 12) p.ambushT = AMBUSH_TIME;
       const foe = this.nearestHostile(p, 36);
-      if (foe) this.deliverPower(p, foe, def.element, dmg, 0);
+      if (foe) this.deliverPower(p, foe, def.element, dmg, 0, false, { slot, projectile: false, mark: !!def.mark });
     } else if (def.act === 'decoy') {
       const ox = p.x + Math.cos(ang) * 48;
       const oy = p.y + Math.sin(ang) * 48;
@@ -3145,7 +3188,7 @@ export class Game {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
         if (dist(o.x, o.y, cx, cy) > radius + 8) continue;
         this.slow(o, 1.1);
-        this.deliverPower(p, o, def.element, dmg, 0, true);
+        this.deliverPower(p, o, def.element, dmg, 0, true, { slot, projectile: false, mark: !!def.mark });
       }
     } else {
       const pt = this.castPoint(p, inp, ang, range);
@@ -3204,7 +3247,7 @@ export class Game {
       p.energy -= def.cost;
       p.plasmaCd = def.cd;
       abilityTrace(p.id, 'launch', def.name);
-      this.playAct(p, def, ang, inp, def.dmg);
+      this.playAct(p, def, ang, inp, def.dmg, undefined, -1);
       return;
     }
     if (def.speed <= 0) {
@@ -3223,7 +3266,7 @@ export class Game {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
         if (dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
         if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
-        this.deliverPower(p, o, def.element, def.dmg, KNOCK[def.element], true);
+        this.deliverPower(p, o, def.element, def.dmg, KNOCK[def.element], true, { slot: -1, projectile: false });
         if (def.yank && def.yank > 0) {
           const dx = p.x - o.x;
           const dy = p.y - o.y;
@@ -3254,6 +3297,7 @@ export class Game {
       hit: [],
       el: def.element,
       knock: KNOCK[def.element],
+      slot: -1,
     });
     abilityTrace(p.id, 'launch', def.name);
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
@@ -3263,65 +3307,99 @@ export class Game {
   private deliverPlasma(src: Player, dst: Player, damage: number) {
     if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
     this.hurt(dst, Math.min(PLASMA.dmg, Math.max(0, damage)), src.id, 'pulse');
-    dst.plasmaT = PLASMA.mark;
+    if (dst.alive) dst.plasmaT = PLASMA.mark;
   }
 
-  /** Lê o combo, grava o elemento novo e aplica queimadura, lentidão, tontura ou empurrão. */
-  private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number, aoe = false) {
+  /** Uma reação por golpe. O bônus entra no mesmo dano, uma vez. */
+  private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number, aoe = false, cast?: { slot?: number; projectile?: boolean; mark?: boolean }) {
     if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
-    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT };
+    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT, marked: dst.markedT, field: dst.fieldT, fieldEl: dst.fieldEl, stun: dst.stunT };
     const extra = bonusDamage(src.char.id, aura, dst.stunT > 0);
     const move = this.mobilityBonus(src);
-    let rootBonus = 0;
-    if (aoe && dst.rootT > 0) {
-      rootBonus = Math.min(ROOT_AOE_BONUS, Math.max(0, EXTRA_CAP - move));
-      dst.rootT = 0;
-      if (rootBonus > 0) this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Raiz e impacto', bonus: rootBonus, pid: src.id });
+    const reaction = resolveReaction({
+      charId: src.char.id,
+      element,
+      aoe,
+      projectile: !!cast?.projectile,
+      slot: cast?.slot ?? -1,
+      appliesMark: !!cast?.mark,
+      roots: element === 'nature',
+      aura,
+      marked: dst.markedT,
+      field: dst.fieldT,
+      fieldEl: dst.fieldEl,
+      stun: dst.stunT,
+      reactCd: dst.reactCd,
+    });
+    if (reaction?.clearFrozen) {
+      dst.frozenT = 0;
+      dst.slowT = 0;
     }
-    const combo = tuneCombo(src.char.id, comboOf(aura, element));
-    const marked = dst.plasmaT > 0;
+    if (reaction?.clearBurn) {
+      dst.burnT = 0;
+      dst.burnAcc = 0;
+    }
+    if (reaction?.clearGust) dst.gustT = 0;
+    if (reaction?.clearShock) dst.shockT = 0;
+    if (reaction?.clearRoot) dst.rootT = 0;
+    if (reaction?.clearMarked) dst.markedT = 0;
+    if (reaction?.clearField) {
+      dst.fieldT = 0;
+      dst.fieldEl = '';
+    }
+    if (reaction?.reactLock) dst.reactCd = reaction.reactLock;
+    const bonus = reaction ? (reaction.id === 'root-aoe' ? Math.min(reaction.bonus, Math.max(0, EXTRA_CAP - move)) : reaction.bonus) : 0;
+    const plasma = dst.plasmaT > 0;
     let burst = 0;
-    if (marked) {
+    if (plasma) {
       dst.plasmaT = 0;
       burst = Math.min(PLASMA.burst, Math.max(0, PLASMA.cap - (damage + extra)));
     }
-    this.hurt(dst, damage + extra + move + rootBonus, src.id, 'pulse');
+    this.hurt(dst, damage + extra + move + bonus, src.id, 'pulse');
     if ((this.mode === 'duelo' || this.mode === 'dupla') && !src.boss) src.ultCharge = Math.min(100, src.ultCharge + COMBAT.ult.perAbility);
-    if (burst > 0) {
+    if (burst > 0 && dst.alive) {
       this.hurt(dst, burst, src.id, 'pulse');
-      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Explosão de Plasma', bonus: burst, pid: src.id });
+      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Explosão de Plasma', bonus: burst, pid: src.id, vfx: 'burst' });
       src.comboStacks = Math.min(8, src.comboStacks + 1);
     }
-    if (element === 'fire') {
-      dst.burnT = BURN_TIME;
-      dst.burnDps = burnDpsOf(src.char.id);
-      dst.burnFrom = src.id;
-      dst.burnAcc = 0;
-    } else if (element === 'ice') {
-      dst.frozenT = FROZEN_TIME;
-      this.slow(dst, FROZEN_TIME);
-    } else if (element === 'lightning') dst.shockT = MARK_TIME;
-    else if (element === 'wind') dst.gustT = MARK_TIME;
-    else if (element === 'nature') this.applyRoot(dst, ROOT_TIME);
-    if (combo) {
-      if (combo.clearFrozen) {
-        dst.frozenT = 0;
-        dst.slowT = 0;
+    if (dst.alive) {
+      if (element === 'fire') {
+        dst.burnT = BURN_TIME;
+        dst.burnDps = burnDpsOf(src.char.id);
+        dst.burnFrom = src.id;
+        dst.burnAcc = 0;
+      } else if (element === 'ice') {
+        dst.frozenT = FROZEN_TIME;
+        this.slow(dst, FROZEN_TIME);
+      } else if (element === 'lightning') dst.shockT = MARK_TIME;
+      else if (element === 'wind') dst.gustT = MARK_TIME;
+      else if (element === 'nature' && !cast?.mark) this.applyRoot(dst, reaction?.rootAdd ?? ROOT_TIME);
+      else if (cast?.mark) {
+        dst.markedT = MARK_WINDOW;
+        this.events.push({ type: 'mark', x: dst.x, y: dst.y, pid: dst.id });
       }
-      this.hurt(dst, combo.bonus, src.id, 'pulse');
-      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: combo.name, bonus: combo.bonus, pid: src.id });
+      if (aoe && !cast?.mark) {
+        dst.fieldT = FIELD_WINDOW;
+        dst.fieldEl = element;
+      }
+    }
+    if (bonus > 0 && reaction) {
+      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: reaction.name, bonus, pid: src.id, vfx: reaction.vfx });
       src.comboStacks = Math.min(8, src.comboStacks + 1);
-      const refund = refundOnCombo(src.char.id);
-      if (refund) for (let i = 0; i < 4; i++) src.powerCd[i] = Math.max(0, src.powerCd[i] - refund);
-      const healN = healOnCombo(src.char.id);
-      if (healN && src.alive) this.heal(src, src, healN);
-      if (combo.aoe) {
+      if (isElemental(reaction.id)) {
+        const refund = refundOnCombo(src.char.id);
+        if (refund) for (let i = 0; i < 4; i++) src.powerCd[i] = Math.max(0, src.powerCd[i] - refund);
+        const healN = healOnCombo(src.char.id);
+        if (healN && src.alive) this.heal(src, src, healN);
+      }
+      if (reaction.aoe) {
         for (const o of this.players) {
           if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
-          if (dist(o.x, o.y, dst.x, dst.y) < combo.aoe && this.sight(dst.x, dst.y, o.x, o.y)) this.hurt(o, combo.bonus * 0.5, src.id, 'pulse');
+          if (dist(o.x, o.y, dst.x, dst.y) < reaction.aoe && this.sight(dst.x, dst.y, o.x, o.y)) this.hurt(o, reaction.bonus * 0.5, src.id, 'pulse');
         }
       }
     }
+    if (!dst.alive) return;
     if (element === 'lightning') this.stun(dst, stunTime(src.char.id));
     if (element === 'plasma') {
       const ang = Math.atan2(dst.y - src.y, dst.x - src.x);
@@ -3531,6 +3609,7 @@ export class Game {
       p.castT = 0;
       p.pendingCast = null;
       p.chargeT = 0;
+      this.clearMarks(p);
       if (this.rules.respawn) p.respawnT = RESPAWN_TIME;
       else p.recorder?.finish(this.roundT * 1000, p.x, p.y, p.dir);
       const killer = src;
@@ -3624,7 +3703,7 @@ export class Game {
           if (b.el) {
             b.hit.push(o.id);
             const src = this.players.find((q) => q.id === b.owner);
-            if (src) this.deliverPower(src, o, b.el, b.dmg, b.knock ?? 0);
+            if (src) this.deliverPower(src, o, b.el, b.dmg, b.knock ?? 0, false, { slot: b.slot ?? -1, projectile: true, mark: !!b.mark });
             else this.hurt(o, b.dmg, b.owner, 'shot', Math.atan2(b.vy, b.vx));
             if (!b.pierce) {
               b.life = 0;

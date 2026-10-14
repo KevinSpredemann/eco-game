@@ -10,6 +10,10 @@ export interface Aura {
   shock: number;
   /** raiz ainda ativa. Ausente vale zero. */
   root?: number;
+  marked?: number;
+  field?: number;
+  fieldEl?: Element | '';
+  stun?: number;
 }
 
 export type PowerCategory = 'attack' | 'defense' | 'mobility' | 'control' | 'support';
@@ -46,6 +50,8 @@ export interface PowerDef {
   ghost?: boolean;
   /** área puxa o alvo esses pixels na direção de quem usou. */
   yank?: number;
+  /** marca de sinergia. Não enraíza neste golpe. */
+  mark?: boolean;
 }
 
 export const CATEGORY_PT: Record<PowerCategory, string> = {
@@ -110,10 +116,11 @@ export function describePower(pw: PowerDef, key: string, cost: number, slot?: nu
               : `projétil, velocidade ${pw.speed}, primeiro inimigo${pw.home ? ', teleguiado' : ''}`;
   const wall = pw.pass ? 'atravessa paredes' : 'para na parede';
   const prep = pw.charge || pw.windup ? `, segura para carregar${pw.windup ? ` (até ${pw.windup}s)` : ''}` : '';
+  const marked = pw.mark ? ', marca o alvo em vez de enraizar' : '';
   const hit = act === 'zone' && pw.zone === 'heal' ? `cura ${dmg}` : `dano ${dmg}`;
   const yank = pw.yank ? `, puxa ${pw.yank}` : '';
   const price = slot === 2 ? 'carga da ultimate' : `energia ${cost}`;
-  return `${key} ${pw.name}: ${hit}, alcance ${pw.range}, recarga ${pw.cd}s, ${price}, ${CATEGORY_PT[powerCategory(pw)]}, ${kind}, ${wall}${prep}${yank}.`;
+  return `${key} ${pw.name}: ${hit}, alcance ${pw.range}, recarga ${pw.cd}s, ${price}, ${CATEGORY_PT[powerCategory(pw)]}, ${kind}, ${wall}${prep}${yank}${marked}.`;
 }
 
 export type PassiveId =
@@ -285,7 +292,7 @@ export const KITS: Record<string, Kit> = {
   },
   nara: {
     powers: [
-      { name: 'Semente', element: 'nature', cd: 3.6, dmg: 8, range: 240, speed: 520, radius: 14, category: 'attack', home: true },
+      { name: 'Semente', element: 'nature', cd: 3.6, dmg: 8, range: 240, speed: 520, radius: 14, category: 'attack', home: true, mark: true },
       { name: 'Raízes', element: 'nature', cd: 5.2, dmg: 6, range: 140, speed: 0, radius: 78, category: 'control' },
       { name: 'Broto', element: 'nature', cd: 7.5, dmg: 12, range: 180, speed: 0, radius: 64, category: 'attack', grove: 'heal', charge: true },
       { name: 'Bosque', element: 'nature', cd: 6, dmg: 6, range: 160, speed: 0, radius: 72, category: 'support', act: 'zone', zone: 'heal' },
@@ -632,18 +639,5 @@ export function denyPlasma(on: boolean, cd: number, energy: number, cost: number
   if (!on) return 'Habilidade ainda não desbloqueada';
   if (cd > 0) return 'Habilidade em recarga';
   if (energy < cost) return 'Energia insuficiente';
-  return null;
-}
-
-/** Combo que já está armado num rival e cabe num poder pronto. */
-export function comboReady(charId: string, cds: readonly number[], foes: readonly Aura[], labels: readonly string[] = SLOT_LABEL): { slot: number; key: string; name: string } | null {
-  const kitDef = kitOf(charId);
-  for (const aura of foes) {
-    for (let i = 0; i < 4; i++) {
-      if ((cds[i] ?? 0) > 0) continue;
-      const combo = tuneCombo(charId, comboOf(aura, kitDef.powers[i].element));
-      if (combo) return { slot: i, key: labels[i] ?? SLOT_LABEL[i], name: combo.name };
-    }
-  }
   return null;
 }

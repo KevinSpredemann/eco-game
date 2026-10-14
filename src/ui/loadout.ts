@@ -1,14 +1,16 @@
 // Tela de equipamento: arma principal, item e poderes, com desenho de cada peça.
 // No topo ficam os 4 espaços do seu equipamento; embaixo, um carrossel (deslizar para o lado, igual aos
 // personagens e mapas) com as opções do espaço escolhido, e a ficha completa do item no centro.
-import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout } from '../game/balance';
+import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout, stageSecondary } from '../game/balance';
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
-import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, describePower, kitOf, resolvedDamage, studioOf, type PowerDef } from '../game/elements';
+import { ELEMENT_COLOR, ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, kitOf, studioOf, type PowerCategory, type PowerDef } from '../game/elements';
+import { kitSynergies, powerSheet } from '../game/combos';
 import { drawGear, GearKind } from './gearArt';
 import { Carousel, fitText } from './carousel';
 
 type Tab = GearKind;
+type PowerFilter = 'all' | PowerCategory | 'area';
 const TABS: { id: Tab; name: string; hint: string }[] = [
   { id: 'primary', name: 'Arma', hint: 'Escolha a arma principal' },
   { id: 'kit', name: 'Item', hint: 'Escolha o item da rodada' },
@@ -22,6 +24,7 @@ export interface LoadoutDeps {
   buy: (key: string) => Promise<string | null>;
   toast: (s: string) => void;
   click: () => void;
+  train?: (charId: string, loadout: Loadout, line: string) => void;
   keyOf: (slot: 'ability' | 'skill' | 'ult' | 'bonus' | 'item' | 'plasma' | 'dash') => string;
 }
 
@@ -77,6 +80,7 @@ export class LoadoutScreen {
   private focusKind: 'kit' | 'extra' = 'kit';
   private focusIndex = 0;
   private focusExtra = 'plasma';
+  private filter: PowerFilter = 'all';
 
   constructor(
     private root: HTMLElement,
@@ -105,27 +109,28 @@ export class LoadoutScreen {
     this.renderPowers();
   }
 
-  /** X1 e 2x2: kit visual e troca do poder extra entre os liberados. */
+  /** X1 e 2x2: kit fixo, biblioteca do Z e ficha com os números do combate. */
   private renderPowers() {
     const kit = kitOf(this.charId);
+    const synergies = kitSynergies(this.charId);
     const slotOf = ['ability', 'skill', 'ult', 'bonus'] as const;
     const order = [0, 1, 3, 2];
     const plasmaKey = this.deps.keyOf('plasma');
     const slots = this.root.querySelector('.lo-slots')!;
-    const kitHtml = order
-      .map((i) => this.powerCard(kit.powers[i], this.deps.keyOf(slotOf[i]), SLOT_COST[i], `data-kit="${i}"`, this.focusKind === 'kit' && this.focusIndex === i, i === 0 ? `art/studio/chars/${this.charId}-poder.webp` : '', i))
-      .join('');
     const current = studioOf(this.l.secondary);
-    const opened = studioOf(this.openedSecondary);
-    const extraHtml = STUDIO.map((s) => {
-      const owned = this.deps.owns('power:' + s.id);
-      const on = this.l.secondary === s.id;
-      const lock = owned ? '' : ' lock';
-      const mark = on ? ' on' : '';
-      const focus = this.focusKind === 'extra' && this.focusExtra === s.id ? ' focus' : '';
-      return `<button type="button" class="pw-card${mark}${lock}${focus}" draggable="${owned ? 'true' : 'false'}" data-sec="${s.id}" style="--c:${ELEMENT_COLOR[s.element]}">${this.powerFace(s, plasmaKey, s.cost, s.art)}${owned ? '' : `<em class="pw-lock">depois de ${s.unlockMatches} partida${s.unlockMatches === 1 ? '' : 's'}</em>`}</button>`;
-    }).join('');
-    slots.innerHTML = `<div class="lo-kit">${kitHtml}</div><div class="lo-swap"><div class="pw-now" id="pw-equipped">Extra ${plasmaKey}: <b>${current ? current.name : 'vazio'}</b> <span>na conta: ${opened ? opened.name : 'vazio'}</span></div><div class="lo-powers">${extraHtml}</div></div>`;
+    const kitHtml = order
+      .map((i) => {
+        const badge = synergies.some((s) => s.inKit && s.slots.includes(i));
+        const ult = i === 2 ? ' ult' : '';
+        const on = this.focusKind === 'kit' && this.focusIndex === i ? ' focus' : '';
+        return `<button type="button" class="pw-card${ult}${on}" data-kit="${i}">${this.powerFace(kit.powers[i], this.deps.keyOf(slotOf[i]), i, badge, i === 0 ? `art/studio/chars/${this.charId}-poder.webp` : '')}</button>`;
+      })
+      .join('');
+    const zOn = this.focusKind === 'extra' && this.focusExtra === (current?.id ?? '') ? ' focus' : '';
+    const zFace = current
+      ? this.powerFace(current, plasmaKey, -1, false, current.art)
+      : `<span class="pw-ico pw-letter">${plasmaKey}</span><b>Vazio</b><small>extra</small>`;
+    slots.innerHTML = `<div class="pw-equip">${kitHtml}<button type="button" class="pw-card z${zOn}" data-slot="z">${zFace}</button></div>`;
     slots.querySelectorAll<HTMLElement>('[data-kit]').forEach((el) => {
       el.addEventListener('click', () => {
         this.deps.click();
@@ -134,73 +139,115 @@ export class LoadoutScreen {
         this.renderPowers();
       });
     });
-    const equip = (id: string) => {
+    slots.querySelector('[data-slot="z"]')?.addEventListener('click', () => {
       this.deps.click();
       this.focusKind = 'extra';
-      this.focusExtra = id;
-      const row = STUDIO.find((s) => s.id === id);
-      if (!row || !this.deps.owns('power:' + id)) {
-        this.deps.toast(row && row.unlockMatches > 0 ? `Habilidade ainda não desbloqueada. Depois de ${row.unlockMatches} partida${row.unlockMatches === 1 ? '' : 's'}.` : 'Habilidade ainda não desbloqueada');
-        this.renderPowers();
-        return;
-      }
-      this.l = { ...this.l, secondary: this.l.secondary === id ? null : id };
+      this.focusExtra = current?.id ?? this.focusExtra;
       this.renderPowers();
-    };
-    slots.querySelectorAll<HTMLButtonElement>('[data-sec]').forEach((el) => {
-      el.addEventListener('click', () => equip(el.dataset.sec || ''));
-      el.addEventListener('dragstart', (ev) => {
-        if (!this.deps.owns('power:' + (el.dataset.sec || ''))) {
-          ev.preventDefault();
-          return;
-        }
-        ev.dataTransfer?.setData('text/plain', el.dataset.sec || '');
+    });
+    const filters: { id: PowerFilter; name: string }[] = [
+      { id: 'all', name: 'Todos' },
+      { id: 'attack', name: 'Dano' },
+      { id: 'control', name: 'Controle' },
+      { id: 'mobility', name: 'Mobilidade' },
+      { id: 'defense', name: 'Defesa' },
+      { id: 'support', name: 'Suporte' },
+      { id: 'area', name: 'Área' },
+    ];
+    const rows = STUDIO.filter((s) => this.passes(s));
+    const cards = rows
+      .map((s) => {
+        const owned = this.deps.owns('power:' + s.id);
+        const on = this.l.secondary === s.id ? ' on' : '';
+        const lock = owned ? '' : ' lock';
+        const focus = this.focusKind === 'extra' && this.focusExtra === s.id ? ' focus' : '';
+        const why = owned ? '' : `<em class="pw-lock">${s.unlockMatches > 0 ? `depois de ${s.unlockMatches} partida${s.unlockMatches === 1 ? '' : 's'}` : 'bloqueado'}</em>`;
+        return `<button type="button" class="pw-card${on}${lock}${focus}" data-sec="${s.id}">${this.powerFace(s, plasmaKey, -1, false, s.art)}${why}</button>`;
+      })
+      .join('');
+    const list = this.root.querySelector<HTMLElement>('.lo-list')!;
+    list.hidden = false;
+    list.innerHTML = `<div class="pw-filters">${filters.map((f) => `<button type="button" class="pw-filter${this.filter === f.id ? ' on' : ''}" data-filter="${f.id}">${f.name}</button>`).join('')}</div><div class="pw-grid">${cards}</div>`;
+    list.querySelectorAll<HTMLElement>('[data-filter]').forEach((el) => {
+      el.addEventListener('click', () => {
+        this.deps.click();
+        this.filter = (el.dataset.filter as PowerFilter) || 'all';
+        this.renderPowers();
       });
     });
-    const drop = slots.querySelector<HTMLElement>('#pw-equipped');
-    drop?.addEventListener('dragover', (ev) => ev.preventDefault());
-    drop?.addEventListener('drop', (ev) => {
-      ev.preventDefault();
-      const id = ev.dataTransfer?.getData('text/plain') || '';
-      if (id) equip(id);
+    list.querySelectorAll<HTMLElement>('[data-sec]').forEach((el) => {
+      el.addEventListener('click', () => {
+        this.deps.click();
+        this.focusKind = 'extra';
+        this.focusExtra = el.dataset.sec || this.focusExtra;
+        this.renderPowers();
+      });
     });
-    const list = this.root.querySelector<HTMLElement>('.lo-list');
-    if (list) list.hidden = true;
     const det = this.root.querySelector('.lo-detail')!;
-    det.innerHTML = this.powerDetail(kit.passiveName, kit.passiveDesc, plasmaKey, current, opened);
+    det.innerHTML = this.powerDetail(synergies, plasmaKey, current);
+    det.querySelector('[data-equip]')?.addEventListener('click', () => {
+      this.deps.click();
+      const id = this.focusExtra;
+      const next = this.l.secondary === id ? null : id;
+      const staged = stageSecondary(this.l.secondary ?? null, next, this.deps.owns);
+      if (staged.reason) {
+        this.deps.toast(staged.reason);
+        return;
+      }
+      this.l = { ...this.l, secondary: staged.secondary };
+      this.renderPowers();
+    });
+    det.querySelector('[data-train]')?.addEventListener('click', () => {
+      this.deps.click();
+      const ready = synergies.filter((s) => s.inKit);
+      const line = ready.length ? `Treino: ${ready.map((s) => `${s.name} — ${s.order}`).join(' · ')}` : 'Treino: o boneco fica parado.';
+      this.deps.train?.(this.charId, sanitizeLoadout(this.l, this.deps.owns), line);
+    });
   }
 
-  private powerCard(pw: PowerDef, key: string, cost: number, attrs: string, focus: boolean, art: string, slot = -1) {
-    return `<button type="button" class="pw-card${focus ? ' focus' : ''}" ${attrs} style="--c:${ELEMENT_COLOR[pw.element]}">${this.powerFace(pw, key, cost, art, slot)}</button>`;
+  private passes(s: StudioDef) {
+    if (this.filter === 'all') return true;
+    if (this.filter === 'area') return s.speed <= 0;
+    return (s.category ?? (s.speed <= 0 ? 'control' : 'attack')) === this.filter;
   }
 
-  private powerFace(pw: PowerDef, key: string, cost: number, art: string, slot = -1) {
-    const kind = pw.act === 'wall' ? 'wall' : pw.act === 'dash' ? 'dash' : pw.act === 'blink' ? 'blink' : pw.act === 'decoy' ? 'decoy' : pw.speed <= 0 ? 'aoe' : 'shot';
+  private powerFace(pw: PowerDef, key: string, slot: number, badge: boolean, art: string) {
     const icon = art
       ? `<img class="pw-ico" alt="" src="/${art}" />`
-      : `<svg class="pw-ico" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="${ELEMENT_COLOR[pw.element]}" opacity="0.9"/><text x="32" y="38" text-anchor="middle" font-size="18" fill="#140c22" font-family="sans-serif">${key}</text></svg>`;
-    const hit = resolvedDamage(pw, slot >= 0 ? slot : undefined);
-    const dmg = Math.round((hit / 45) * 100);
-    const range = Math.round((Math.min(pw.range, 320) / 320) * 100);
-    const cd = Math.round((1 - Math.min(pw.cd, 8) / 8) * 100);
-    const price = slot === 2 ? 'carga' : `${cost} energia`;
-    return `${icon}<span class="pw-prev" data-kind="${kind}" aria-hidden="true"><i></i></span><span class="lo-slot-k">${key}</span><b>${pw.name}</b><span class="pw-bars" title="dano, alcance, recarga curta"><i style="width:${dmg}%"></i><i style="width:${range}%"></i><i style="width:${cd}%"></i></span><small>${price}</small>`;
+      : `<span class="pw-ico pw-letter" style="background:${ELEMENT_COLOR[pw.element]}">${key}</span>`;
+    const role = powerSheet(pw, slot, slot >= 0 ? SLOT_COST[slot] ?? 0 : (pw as StudioDef).cost ?? 0).role;
+    return `${icon}<span class="lo-slot-k">${key}</span><b>${pw.name}</b><small>${role}</small>${badge ? '<em class="pw-badge">Sinergia</em>' : ''}`;
   }
 
-  private powerDetail(passiveName: string, passiveDesc: string, plasmaKey: string, current: StudioDef | null, opened: StudioDef | null) {
+  private powerDetail(synergies: ReturnType<typeof kitSynergies>, plasmaKey: string, current: StudioDef | null) {
     const slotOf = ['ability', 'skill', 'ult', 'bonus'] as const;
-    if (this.focusKind === 'extra') {
-      const s = STUDIO.find((x) => x.id === this.focusExtra) ?? STUDIO[0];
-      const owned = this.deps.owns('power:' + s.id);
-      const chosen = current?.name ?? 'vazio';
-      const before = opened?.name ?? 'vazio';
-      const lock = owned ? '' : ` Bloqueado até jogar ${s.unlockMatches} partida${s.unlockMatches === 1 ? '' : 's'}.`;
-      return `<div class="lo-dhead"><span class="lo-state ${this.l.secondary === s.id ? 'on' : ''}">${this.l.secondary === s.id ? 'Equipado' : owned ? 'Toque para equipar' : 'Bloqueado'}</span></div><p class="lo-cmp">Na conta: ${before}. Escolhido agora: ${chosen}.</p><p class="lo-desc">${describePower(s, plasmaKey, s.cost)} ${ELEMENT_FX[s.element]}.${lock} Arraste o card até o extra ou toque nele. Trancado não entra. O servidor confere de novo ao salvar.</p><p class="lo-cmp">${passiveName}: ${passiveDesc}</p>`;
-    }
-    const pw = kitOf(this.charId).powers[this.focusIndex];
-    const key = this.deps.keyOf(slotOf[this.focusIndex] ?? 'ability');
-    const cost = SLOT_COST[this.focusIndex] ?? SLOT_COST[0];
-    return `<div class="lo-dhead"><span class="lo-state on">${pw.name}</span></div><p class="lo-desc">${describePower(pw, key, cost, this.focusIndex)} ${ELEMENT_FX[pw.element]}. ${passiveDesc}</p><p class="lo-cmp">O kit do personagem não troca. Só o extra ${plasmaKey} troca, entre os que já liberaram. WASD anda. Q, E e F são os poderes. R é a ultimate e pede carga. Z é o extra. O direito cancela a mira.</p>`;
+    const extra = this.focusKind === 'extra';
+    const pw = extra ? (STUDIO.find((x) => x.id === this.focusExtra) ?? STUDIO[0]) : kitOf(this.charId).powers[this.focusIndex];
+    const slot = extra ? -1 : this.focusIndex;
+    const cost = extra ? (pw as StudioDef).cost : SLOT_COST[this.focusIndex] ?? SLOT_COST[0];
+    const key = extra ? plasmaKey : this.deps.keyOf(slotOf[this.focusIndex] ?? 'ability');
+    const sheet = powerSheet(pw, slot, cost);
+    const owned = extra ? this.deps.owns('power:' + (pw as StudioDef).id) : true;
+    const lock = extra && !owned ? ((pw as StudioDef).unlockMatches > 0 ? `Depois de ${(pw as StudioDef).unlockMatches} partidas.` : 'Ainda não liberado.') : '';
+    const equipped = extra && current?.id === (pw as StudioDef).id;
+    const saved = studioOf(this.openedSecondary);
+    const facts = [
+      ['Dano', String(sheet.damage)],
+      ['Alcance', String(sheet.range)],
+      ['Área', String(sheet.area)],
+      ['Energia', sheet.energy],
+      ['Recarga', `${sheet.cooldown}s`],
+      ['Duração', sheet.duration],
+    ];
+    const syn = synergies
+      .map((s) => `<li class="${s.inKit ? 'in' : ''}"><b>${s.name}</b> ${s.order}. ${s.result}. ${s.need}. ${s.inKit ? 'Neste kit.' : 'Este kit não fecha.'}</li>`)
+      .join('');
+    const equip = extra
+      ? owned
+        ? `<button type="button" class="btn small primary" data-equip>${equipped ? 'Tirar do Z' : 'Colocar no Z'}</button>`
+        : `<p class="pw-why">${lock}</p>`
+      : `<p class="pw-why">${slot === 2 ? 'Suprema do personagem.' : 'Poder do personagem.'} O Z é o único que troca.</p>`;
+    return `<div class="pw-sheet"><p class="pw-kicker">${key} · ${sheet.cast} · ${ELEMENT_NAME[pw.element]}</p><h3>${pw.name}</h3><p class="pw-role">${sheet.role}</p><ul class="pw-facts">${facts.map(([k, v]) => `<li><span>${k}</span><b>${v}</b></li>`).join('')}</ul>${equip}<p class="pw-saved">Salvo: ${saved?.name ?? 'vazio'}. Agora: ${current?.name ?? 'vazio'}. Voltar mantém o salvo.</p><h4>Sinergias</h4><ul class="pw-syn">${syn}</ul><button type="button" class="btn small" data-train>Treinar sinergia</button></div>`;
   }
 
   get value() {

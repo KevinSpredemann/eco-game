@@ -3,6 +3,7 @@ import { GUN_Y, isPrimary } from './weapons';
 import { BOSS } from './balance';
 import type { Difficulty, Game, Input, Player } from './sim';
 import { BASIC, SLOT_COST, WALL_REACH, botPower, kitOf, studioOf, wallSlam } from './elements';
+import { officialSlot } from './combos';
 import * as C from './constants';
 
 const CELL = 20;
@@ -443,6 +444,7 @@ function chooseTarget(game: Game, p: Player): { x: number; y: number } | null {
 export function botCombat(game: Game, p: Player, dt: number): Input {
   const b = p.brain!;
   const out: Input = { mx: 0, my: 0, dash: false, ability: false, fire: false, item: false, aim: null };
+  if (game.cfg.dummy) return out;
   b.thinkT -= dt;
   b.jitter -= dt;
 
@@ -641,13 +643,17 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
         out.aim = ang + b.aimOff * 0.25;
         out.ca = out.aim;
         out.cr = d;
-        let slot = botPower(
-          kitOf(p.char.id),
-          p.powerCd,
-          { burn: foe.burnT, frozen: foe.frozenT, gust: foe.gustT, shock: foe.shockT, root: foe.rootT },
-          d,
-          wallSlam(p.x, p.y, foe.x, foe.y, WALL_REACH, (x, y) => !game.isFree(x, y, 10)),
-        );
+        const aura = { burn: foe.burnT, frozen: foe.frozenT, gust: foe.gustT, shock: foe.shockT, root: foe.rootT, marked: foe.markedT, field: foe.fieldT, fieldEl: foe.fieldEl, stun: foe.stunT };
+        let slot = officialSlot(p.char.id, kitOf(p.char.id), p.powerCd, aura, d);
+        if (slot === null) {
+          slot = botPower(
+            kitOf(p.char.id),
+            p.powerCd,
+            aura,
+            d,
+            wallSlam(p.x, p.y, foe.x, foe.y, WALL_REACH, (x, y) => !game.isFree(x, y, 10)),
+          );
+        }
         if (slot === 2 && p.ultCharge < 100) slot = null;
         if (slot !== null && slot !== 2 && p.energy < SLOT_COST[slot]) slot = null;
         if (slot !== null && b.seenT >= b.react && b.restT <= 0) {

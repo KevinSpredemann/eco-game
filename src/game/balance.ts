@@ -196,6 +196,18 @@ export function sanitizeLoadout(l: Partial<Loadout> | undefined | null, owns: (k
   out.secondary = extra && owns('power:' + extra.id) ? extra.id : null;
   return out;
 }
+
+/** Troca o Z sem apagar o extra atual se o novo id não puder entrar. */
+export function stageSecondary(prev: string | null, next: string | null, owns: (key: string) => boolean): { secondary: string | null; reason: string | null } {
+  if (!next) return { secondary: null, reason: null };
+  const row = studioOf(next);
+  if (!row) return { secondary: prev, reason: 'Esse poder não entra no Z.' };
+  if (!owns('power:' + row.id)) {
+    const n = row.unlockMatches;
+    return { secondary: prev, reason: n > 0 ? `Depois de ${n} partida${n === 1 ? '' : 's'}.` : 'Ainda não liberado.' };
+  }
+  return { secondary: row.id, reason: null };
+}
 export function gearPrice(id: string): number | null {
   if (id in PRIMARY_PRICE) return PRIMARY_PRICE[id];
   if (id in KITS) return KITS[id as KitId].price;

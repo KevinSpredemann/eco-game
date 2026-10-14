@@ -1084,10 +1084,13 @@ export class Renderer {
         case 'stunned':
           this.text(e.x, e.y - 100, 'TONTO!', '#ffd23e', 14);
           break;
-        case 'combo':
-          this.text(e.x, e.y - 108, `${e.name} +${e.bonus}`, '#ffe14a', 18);
-          this.ring(e.x, e.y - 20, '#ffe14a', 54);
+        case 'combo': {
+          const col = e.vfx === 'ult' ? '#f0d78c' : e.vfx === 'burst' ? '#9ad7ff' : e.vfx === 'root' ? '#b7d39a' : '#ffe14a';
+          this.text(e.x, e.y - 108, e.name, col, e.vfx === 'ult' ? 20 : 16);
+          this.ring(e.x, e.y - 20, col, e.vfx === 'ult' ? 78 : 48);
+          if (e.vfx === 'ult') this.burst(e.x, e.y - 16, col, 18, 220);
           break;
+        }
         case 'mark':
           this.ring(e.x, e.y - 28, '#ff5a3c', 40);
           break;
