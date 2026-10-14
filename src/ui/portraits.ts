@@ -41,25 +41,20 @@ export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { loc
     g.lineTo(w, y);
     g.stroke();
   }
-  // chão
-  const floorY = h * 0.92;
+  // chão. A caixa vai do capuz mais alto (−90) até a barra da capa (+8),
+  // a mesma escala para o elenco antigo e o do estúdio.
+  const floorY = h * 0.9;
   g.fillStyle = hexA(c.color, 0.25);
   g.beginPath();
   g.ellipse(w / 2, floorY, w * 0.32, h * 0.035, 0, 0, Math.PI * 2);
   g.fill();
-  // personagem (altura ≈ 62 unidades)
-  const s = Math.min((h * 0.8) / 64, (w * 0.9) / 34);
+  const s = Math.min((floorY - h * 0.04) / 90, (w * 0.9) / 52);
   const acc = opts.acc ? accessoryById(opts.acc) : null;
   g.save();
   g.translate(w / 2, floorY);
   g.scale(s, s);
   if (acc && accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
-  const posed = paintStudio(g, c.art);
-  if (!posed) {
-    drawCharacter(g, c, 'down', opts.time ?? 0, false);
-    const pending = studioSprite(c.art);
-    if (pending && !pending.complete) pending.addEventListener('load', () => drawPortrait(cv, c, opts), { once: true });
-  }
+  drawCharacter(g, c, 'down', opts.time ?? 0, false);
   if (acc && !accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
   g.restore();
 }
@@ -98,11 +93,22 @@ export function paintStudio(g: CanvasRenderingContext2D, art: string, w = 34): b
 }
 
 const urlCache = new Map<string, string>();
-/** Rostinho (busto) em data URL, para placar, salas e resultados. */
+/**
+ * Cabeça e ombros, o mesmo recorte para o elenco antigo e o do estúdio.
+ * Os pés ficam fora do quadro; a escala não depende da arte.
+ */
+function drawBust(g: CanvasRenderingContext2D, c: CharacterDef, size: number) {
+  const s = size / 34;
+  g.save();
+  g.translate(size / 2, size * 0.5 + 50 * s * 0.98);
+  g.scale(s, s);
+  drawCharacter(g, c, 'down', 0, false);
+  g.restore();
+}
+
+/** Rostinho (busto) em data URL, para a faixa, o perfil, o placar e as salas. */
 export function avatarURL(c: CharacterDef, size = 64): string {
-  const img = studioSprite(c.art);
-  const studio = !!(img && img.complete && img.naturalWidth > 0);
-  const key = `${c.id}:${c.skinId ?? ''}:${size}:${studio ? 'art' : 'vec'}`;
+  const key = `${c.id}:${c.skinId ?? ''}:${size}:${dpr()}`;
   const hit = urlCache.get(key);
   if (hit) return hit;
   const cv = document.createElement('canvas');
@@ -117,34 +123,9 @@ export function avatarURL(c: CharacterDef, size = 64): string {
   bg.addColorStop(1, '#0d0a20');
   g.fillStyle = bg;
   g.fillRect(0, 0, size, size);
-  if (studio && img) {
-    const dh = Math.min(size * 0.92, img.naturalHeight / k);
-    const dw = dh * (img.naturalWidth / img.naturalHeight);
-    g.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
-  } else {
-    const s = size / 34;
-    g.save();
-    g.translate(size / 2, size * 0.5 + 50 * s * 0.98);
-    g.scale(s, s);
-    drawCharacter(g, c, 'down', 0, false);
-    g.restore();
-  }
+  drawBust(g, c, size);
   const url = cv.toDataURL('image/png');
   urlCache.set(key, url);
-  if (img && !studio) {
-    img.addEventListener(
-      'load',
-      () => {
-        urlCache.delete(key);
-        const next = avatarURL(c, size);
-        if (typeof document === 'undefined') return;
-        document.querySelectorAll('img').forEach((el) => {
-          if (el.src === url) el.src = next;
-        });
-      },
-      { once: true },
-    );
-  }
   return url;
 }
 

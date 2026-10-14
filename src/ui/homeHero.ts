@@ -186,13 +186,10 @@ export function drawEquippedPreview(cv: HTMLCanvasElement, c: CharacterDef, accI
   g.save();
   g.translate(w / 2 + Math.sin(phase * 0.5) * 6, floor);
   g.scale(s, s);
-  const posed = paintStudio(g, c.art, 36);
-  if (!posed) {
-    if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
-    drawCharacter(g, c, facing, phase, false);
-    if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
-    paintWeapon(g, c.id, weapon);
-  }
+  if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+  drawCharacter(g, c, facing, phase, false);
+  if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
+  paintWeapon(g, c.id, weapon);
   g.restore();
 }
 
