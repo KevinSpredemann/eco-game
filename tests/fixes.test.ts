@@ -12,7 +12,7 @@ import { confirmTouchCast } from '../src/ui/input';
 const STEP = 1 / 60;
 const idle: Input = { mx: 0, my: 0, dash: false, ability: false };
 
-function started(arena = 'lab', mode: 'combate' | 'duelo' = 'combate') {
+function started(arena = 'lab', mode: 'dupla' | 'duelo' = 'dupla') {
   const g = new Game({
     arena: getArena(arena),
     humanChar: 'kael',

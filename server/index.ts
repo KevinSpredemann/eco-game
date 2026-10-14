@@ -137,7 +137,7 @@ const http = createServer(async (req, res) => {
       if (!u) return send(res, 401, { error: 'Entre na sua conta.' });
       const r = await readJson(req);
       if (Date.now() - u.lastRewardAt < 50_000) return send(res, 200, { coins: 0, profile: publicProfile(u) });
-      const mode = ([...Object.keys(MODE_RULES), 'treino'].includes(r.mode) ? r.mode : 'treino') as MatchMode;
+      const mode = (r.mode in MODE_RULES ? r.mode : 'duelo') as MatchMode;
       const coins = matchReward({ mode, placement: Number(r.placement) || 9, players: Math.min(4, Number(r.players) || 1), score: Math.min(200, Number(r.score) || 0), kills: Math.min(20, Number(r.kills) || 0), online: false });
       u.profile.coins += coins;
       u.profile.xp += coins;
@@ -366,16 +366,6 @@ function startGame(r: Room, fill = false) {
     roster.push({ id: 'bot' + i, char: ch, skin: 'padrao', trail: 'nenhum', name: CHARACTERS.find((c) => c.id === ch)!.name + ' (bot)', isBot: true, loadout: botLoadout(ch) });
   }
   if (roster.length < 2) roster.push({ id: 'bot9', char: pool[0], skin: 'padrao', trail: 'nenhum', name: 'Bot', isBot: true });
-  if (r.mode === 'chefe') {
-    // rodízio justo: quem foi Chefe menos vezes; empate = sorteio
-    const least = Math.min(...humans.map((h) => h.bossTimes));
-    const cands = humans.filter((h) => h.bossTimes === least);
-    const pick = cands[Math.floor(Math.random() * cands.length)];
-    if (pick) {
-      pick.bossTimes++;
-      roster.find((x) => x.id === pick.id)!.boss = true;
-    }
-  }
   for (const m of r.members) m.ready = false;
   r.autoAt = 0;
   const game = new Game({
@@ -605,7 +595,7 @@ wss.on('connection', (ws) => {
       case 'create': {
         if (!canEnter()) return;
         leaveRoom(c);
-        const mode: GameMode = validMode(m.mode) ? m.mode : 'combate';
+        const mode: GameMode = validMode(m.mode) ? m.mode : 'duelo';
         const arena = ARENAS.some((a) => a.id === m.arena) ? m.arena : 'lab';
         const r: Room = { code: newCode(), host: c.id, mode, arena, bots: Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [], rematchVotes: new Map(), rematchAt: 0 };
         rooms.set(r.code, r);
@@ -688,7 +678,7 @@ wss.on('connection', (ws) => {
       case 'quick': {
         // busca automática: entra numa sala aberta do modo ou abre uma nova
         if (!canEnter()) return;
-        const mode: GameMode = validMode(m.mode) ? m.mode : 'chefe';
+        const mode: GameMode = validMode(m.mode) ? m.mode : 'duelo';
         leaveRoom(c);
         let r = [...rooms.values()].find((x) => x.public && !x.game && x.mode === mode && x.members.length < maxPlayers(mode));
         if (!r) {

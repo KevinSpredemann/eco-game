@@ -253,7 +253,7 @@ export function normalizeProfile(p: Profile): boolean {
   return changed;
 }
 
-export type MatchMode = 'nucleo' | 'duelo' | 'combate' | 'bandeira' | 'rei' | 'ondas' | 'royale' | 'chefe' | 'treino';
+export type MatchMode = 'duelo' | 'dupla';
 
 export interface MatchResult {
   mode: MatchMode;
@@ -266,13 +266,7 @@ export interface MatchResult {
 
 /** Moedas ganhas numa partida (limitado para não haver abuso). */
 export function matchReward(r: MatchResult): number {
-  if (r.mode === 'treino') return 10;
-  let c = 10;
-  if (r.mode === 'nucleo' || r.mode === 'rei' || r.mode === 'bandeira') c += Math.min(40, Math.floor(r.score / 3));
-  else if (r.mode === 'ondas') c += Math.min(50, r.kills * 2 + r.score);
-  // Caça ao Chefe: pontos vêm de dano, geradores, curas e vitória (não só de quem mata)
-  else if (r.mode === 'chefe') c += Math.min(50, Math.round(r.score * 1.2));
-  else c += Math.min(40, r.kills * 6);
+  let c = 10 + Math.min(40, r.kills * 6);
   if (r.placement === 1 && r.players > 1) c += r.mode === 'duelo' ? 30 : 25;
   else if (r.placement === 2 && r.players > 2) c += 10;
   if (r.online) c = Math.round(c * 1.5);

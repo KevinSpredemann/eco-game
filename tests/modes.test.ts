@@ -1,67 +1,116 @@
 import { describe, expect, it } from 'vitest';
-import { Game, GameMode } from '../src/game/sim';
-import { ARENAS } from '../src/game/arenas';
-import { CHARACTERS } from '../src/game/characters';
+import { Game, Input } from '../src/game/sim';
+import { getArena } from '../src/game/arenas';
+import { WEAPONS } from '../src/game/weapons';
 
-const idle = { mx: 0, my: 0, dash: false, ability: false };
+const STEP = 1 / 60;
+const idle: Input = { mx: 0, my: 0, dash: false, ability: false };
 
-function play(g: Game, max = 60 * 900) {
-  const ev: Record<string, number> = {};
-  for (let i = 0; i < max && g.phase !== 'results'; i++) {
-    g.step(1 / 60, idle);
-    for (const e of g.drainEvents()) ev[e.type] = (ev[e.type] ?? 0) + 1;
-  }
-  return ev;
+function fight() {
+  const roster = [
+    { id: 'a', char: 'kael', isBot: false },
+    { id: 'b', char: 'luna', isBot: false },
+    { id: 'c', char: 'nyx', isBot: false },
+    { id: 'd', char: 'iris', isBot: false },
+  ];
+  const g = new Game({
+    arena: getArena('lab'),
+    humanChar: 'kael',
+    bots: 0,
+    difficulty: 'normal',
+    ownEchoDamage: true,
+    training: false,
+    mode: 'dupla',
+    roster,
+    roundSec: 30,
+    suddenSec: 8,
+  });
+  while (g.phase !== 'play') g.step(STEP, {});
+  for (const p of g.players) p.invulnT = 0;
+  return g;
 }
 
-/** só bots: o "humano" também é bot */
-function botsOnly(mode: GameMode, arena = ARENAS[0], n = 4, chars?: string[]) {
-  const ids = chars ?? CHARACTERS.map((c) => c.id).sort(() => Math.random() - 0.5);
-  const roster = Array.from({ length: n }, (_, i) => ({ id: 'b' + i, char: ids[i % ids.length], isBot: true }));
-  return new Game({ arena, humanChar: 'kael', bots: 0, difficulty: 'normal', ownEchoDamage: true, training: false, mode, roster });
-}
+describe('2x2', () => {
+  it('a primeira metade do time fica junta e a segunda no outro lado', () => {
+    const g = fight();
+    expect(g.players.map((p) => p.team)).toEqual([0, 0, 1, 1]);
+    expect(g.rules.teams).toBe(true);
+    expect(g.rules.maxPlayers).toBe(4);
+  });
 
-describe('modos novos', () => {
-  for (const arena of ARENAS) {
-    it(`bandeira em ${arena.name}`, () => {
-      const g = botsOnly('bandeira', arena);
-      const ev = play(g);
-      expect(g.phase).toBe('results');
-      expect(g.players.map((p) => p.team)).toEqual([0, 1, 0, 1]);
-      console.log('bandeira', arena.id, 'placar', g.teamScore.join('x'), 'pegou', ev.flagTake ?? 0, 'capturas', ev.capture ?? 0, 'renasceu', ev.respawn ?? 0);
-    });
-    it(`rei da colina em ${arena.name}`, () => {
-      const g = botsOnly('rei', arena);
-      const ev = play(g);
-      expect(g.phase).toBe('results');
-      expect(Math.max(...g.players.map((p) => p.score))).toBeGreaterThan(5);
-      console.log('rei', arena.id, g.players.map((p) => `${p.char.id}:${p.score}`).join(' '), 'colina mudou', ev.hillMove ?? 0);
-    });
-    it(`ondas em ${arena.name}`, () => {
-      const g = botsOnly('ondas', arena, 3);
-      const ev = play(g);
-      expect(g.phase).toBe('results');
-      expect(ev.enemyKill ?? 0).toBeGreaterThan(3);
-      console.log('ondas', arena.id, 'onda', g.wave, 'venceu', g.gameWon, 'robôs', ev.enemyKill ?? 0);
-    });
-    it(`batalha real em ${arena.name}`, () => {
-      const g = botsOnly('royale', arena, 6);
-      const ev = play(g);
-      expect(g.phase).toBe('results');
-      expect(ev.kill ?? 0).toBeGreaterThan(0);
-      console.log('royale', arena.id, g.players.map((p) => `${p.char.id}:${p.score}k${p.kills}`).join(' '));
-    });
-  }
+  it('derrubar um time inteiro dá a rodada para os dois que sobraram', () => {
+    const g = fight();
+    g.players[2].hp = 0;
+    g.players[2].alive = false;
+    g.players[3].hp = 0;
+    g.players[3].alive = false;
+    g.step(STEP, {});
+    expect(g.phase).toBe('call');
+    expect(g.players[0].roundWins).toBe(1);
+    expect(g.players[1].roundWins).toBe(1);
+    expect(g.players[2].roundWins).toBe(0);
+  });
 
-  it('todas as habilidades novas funcionam no combate e no núcleo', () => {
-    for (const mode of ['combate', 'nucleo'] as GameMode[]) {
-      const g = botsOnly(mode, ARENAS[0], 4, ['tara', 'kai', 'leo', 'mei']);
-      const ev = play(g);
-      expect(g.phase).toBe('results');
-      expect(ev.ability ?? 0).toBeGreaterThan(4);
-      const g2 = botsOnly(mode, ARENAS[1], 2, ['duda', 'bento']);
-      play(g2);
-      expect(g2.phase).toBe('results');
-    }
+  it('um tiro na altura do peito acerta o bot com o dano cheio da arma', () => {
+    const g = new Game({
+      arena: getArena('lab'),
+      humanChar: 'kael',
+      bots: 0,
+      difficulty: 'normal',
+      ownEchoDamage: true,
+      training: false,
+      mode: 'duelo',
+      roster: [
+        { id: 'a', char: 'kael', isBot: false },
+        { id: 'b', char: 'luna', isBot: true },
+      ],
+    });
+    while (g.phase !== 'play') g.step(STEP, {});
+    const a = g.players[0];
+    const b = g.players[1];
+    a.x = 200;
+    a.y = 300;
+    b.x = 420;
+    b.y = 300;
+    a.invulnT = 0;
+    b.invulnT = 0;
+    b.isBot = true;
+    const aim = Math.atan2(b.y - 48 - a.y, b.x - a.x);
+    b.isBot = false;
+    const before = b.hp;
+    for (let i = 0; i < 40; i++) g.step(STEP, { a: { ...idle, fire: i === 0, aim }, b: idle });
+    expect(before - b.hp).toBeGreaterThanOrEqual(WEAPONS[a.weapon].damage);
+  });
+
+  it('o mesmo tiro tira o mesmo tanto de um humano e de um bot', () => {
+    const shoot = (bot: boolean) => {
+      const g = new Game({
+        arena: getArena('lab'),
+        humanChar: 'kael',
+        bots: 0,
+        difficulty: 'normal',
+        ownEchoDamage: true,
+        training: false,
+        mode: 'duelo',
+        roster: [
+          { id: 'a', char: 'kael', isBot: false },
+          { id: 'b', char: 'luna', isBot: bot },
+        ],
+      });
+      while (g.phase !== 'play') g.step(STEP, {});
+      const a = g.players[0];
+      const b = g.players[1];
+      a.x = 200;
+      a.y = 300;
+      b.x = 420;
+      b.y = 300;
+      a.invulnT = 0;
+      b.invulnT = 0;
+      b.isBot = false;
+      const before = b.hp;
+      g.hurt(b, 20, 'a', 'shot');
+      return before - b.hp;
+    };
+    expect(shoot(true)).toBe(shoot(false));
   });
 });

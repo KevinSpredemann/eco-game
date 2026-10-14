@@ -30,7 +30,7 @@ describe('níveis de habilidade', () => {
     expect(lv5.ability.duration).toBe(base.ability.duration);
     const pve = withLevel(base, 5, true);
     expect(pve.ability.duration).toBeGreaterThan(base.ability.duration);
-    const g = new Game({ arena: ARENAS[0], humanChar: 'kael', bots: 0, difficulty: 'normal', ownEchoDamage: true, training: false, mode: 'combate', roster: [{ id: 'p0', char: 'kael', isBot: false, lv: 5 }, { id: 'b', char: 'luna', isBot: true }] });
+    const g = new Game({ arena: ARENAS[0], humanChar: 'kael', bots: 0, difficulty: 'normal', ownEchoDamage: true, training: false, mode: 'dupla', roster: [{ id: 'p0', char: 'kael', isBot: false, lv: 5 }, { id: 'b', char: 'luna', isBot: true }] });
     expect(g.players[0].char.ability.cooldown).toBe(lv5.ability.cooldown);
     expect(g.players[0].char.name).toBe('Zephyr');
   });

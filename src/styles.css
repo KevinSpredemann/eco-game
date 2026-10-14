@@ -5100,7 +5100,7 @@ body.rewinding #hud-status {
 }
 #screen-title .home-modes .mode-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 #screen-title .home-bar {
@@ -5129,8 +5129,12 @@ body.rewinding #hud-status {
   padding: 10px 12px;
   min-height: 84px;
 }
-.mode-pick:hover,
-.mode-pick:focus-visible {
+.mode-pick:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+.mode-pick:hover:not(:disabled),
+.mode-pick:focus-visible:not(:disabled) {
   border-color: var(--c, #3ee8ff);
   box-shadow: 0 0 18px color-mix(in srgb, var(--c, #3ee8ff) 40%, transparent);
 }

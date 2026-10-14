@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
-import { ARENAS, getArena } from '../src/game/arenas';
-import { BOSS, COMBAT, ULTS, sanitizeLoadout } from '../src/game/balance';
+import { getArena } from '../src/game/arenas';
+import { COMBAT, ULTS, sanitizeLoadout } from '../src/game/balance';
 import { WEAPONS, isPrimary, weaponDps } from '../src/game/weapons';
 import { getCharacter, withLevel } from '../src/game/characters';
 
@@ -9,7 +9,7 @@ const idle: Input = { mx: 0, my: 0, dash: false, ability: false };
 const STEP = 1 / 60;
 
 /** dois jogadores parados frente a frente, já na fase de combate */
-function duel(a = 'kael', b = 'luna', mode: 'combate' | 'duelo' = 'duelo', loadA?: object) {
+function duel(a = 'kael', b = 'luna', mode: 'dupla' | 'duelo' = 'duelo', loadA?: object) {
   const g = new Game({
     arena: getArena('lab'),
     humanChar: a,
@@ -18,6 +18,8 @@ function duel(a = 'kael', b = 'luna', mode: 'combate' | 'duelo' = 'duelo', loadA
     ownEchoDamage: true,
     training: false,
     mode,
+    roundSec: 20,
+    suddenSec: 6,
     roster: [
       { id: 'a', char: a, isBot: false, loadout: loadA },
       { id: 'b', char: b, isBot: false },
@@ -193,7 +195,7 @@ describe('balanceamento central', () => {
   });
 
   it('troca de equipamento no meio da rodada só vale na próxima e não zera recargas', () => {
-    const { g, pa } = duel('kael', 'luna', 'combate', { skill: 'rolamento' });
+    const { g, pa } = duel('kael', 'luna', 'dupla', { skill: 'rolamento' });
     g.step(STEP, { a: { ...idle, skill: true, ca: 0 }, b: idle });
     const cd = pa.skillCd;
     expect(cd).toBeGreaterThan(0);
@@ -207,91 +209,5 @@ describe('balanceamento central', () => {
     for (let i = 0; i < 60 * 80 && g.round === r; i++) g.step(STEP, { a: idle, b: idle });
     expect(pa.loadout.skill).toBe('armadilha');
     expect(pa.weapon).toBe('fuzil');
-  });
-});
-
-describe('Caça ao Chefe', () => {
-  const roster = [
-    { id: 'h1', char: 'kael', isBot: true },
-    { id: 'h2', char: 'iris', isBot: true },
-    { id: 'h3', char: 'zoe', isBot: true },
-    { id: 'boss', char: 'bruno', isBot: true, boss: true },
-  ];
-  const mk = (arena = getArena('lab')) => new Game({ arena, humanChar: 'kael', bots: 0, difficulty: 'normal', ownEchoDamage: true, training: false, mode: 'chefe', roster });
-
-  it('monta 3 caçadores contra 1 Chefe com vida proporcional', () => {
-    const g = mk();
-    const b = g.boss!;
-    expect(b.id).toBe('boss');
-    expect(b.team).toBe(1);
-    expect(g.players.filter((p) => p.team === 0)).toHaveLength(3);
-    expect(b.maxHp).toBe(BOSS.hpPerHunter * 3);
-    expect(b.weapon).toBe('colosso');
-    expect(b.item).toBeNull();
-    expect(g.teamLives).toBe(3);
-  });
-
-  it('ponto fraco: tiro nas costas dá mais dano', () => {
-    const g = mk();
-    while (g.phase !== 'play') g.step(STEP, {});
-    for (let i = 0; i < 90; i++) g.step(STEP, {});
-    const b = g.boss!;
-    b.aim = 0;
-    const h = b.hp;
-    g.hurt(b, 10, 'h1', 'shot', Math.PI); // de frente
-    const front = h - b.hp;
-    const h2 = b.hp;
-    g.hurt(b, 10, 'h1', 'shot', 0); // pelas costas
-    const back = h2 - b.hp;
-    expect(back).toBeGreaterThan(front * 1.4);
-  });
-
-  it('fase 2 cria geradores que protegem o Chefe', () => {
-    const g = mk();
-    while (g.phase !== 'play') g.step(STEP, {});
-    for (let i = 0; i < 90; i++) g.step(STEP, {});
-    const b = g.boss!;
-    b.hp = b.maxHp * 0.6;
-    g.step(STEP, {});
-    expect(g.bossPhase).toBe(2);
-    expect(g.enemies.filter((e) => e.kind === 'pylon').length).toBe(2);
-    b.aim = 0; // tiro de frente (sem ponto fraco)
-    b.markT = 0;
-    const h = b.hp;
-    g.hurt(b, 100, 'h1', 'shot', Math.PI);
-    expect(h - b.hp).toBeLessThan(60);
-  });
-
-  for (const arena of ARENAS.slice(0, 4)) {
-    it(`partida inteira termina com vencedor claro em ${arena.name}`, () => {
-      const g = mk(arena);
-      const ev: Record<string, number> = {};
-      for (let i = 0; i < 60 * 260 && g.phase !== 'results'; i++) {
-        g.step(STEP, {});
-        for (const e of g.drainEvents()) ev[e.type] = (ev[e.type] ?? 0) + 1;
-      }
-      expect(g.phase).toBe('results');
-      expect(g.gameWon === true || g.gameWon === false).toBe(true);
-      expect(g.winners.length).toBeGreaterThan(0);
-      const bossWon = g.winners.includes('boss');
-      expect(bossWon).toBe(!g.gameWon);
-      expect(ev.cast ?? 0).toBeGreaterThan(3);
-      // eslint-disable-next-line no-console
-      console.log(arena.id, g.gameWon ? 'caçadores' : 'chefe', 'tempo', Math.round(g.roundT), 'fase', g.bossPhase, 'vida chefe', Math.round(g.boss!.hp), g.players.map((p) => `${p.id}:${p.score}`).join(' '));
-    });
-  }
-
-  it('tempo esgotado = vitória do Chefe (sem empate)', () => {
-    const g = mk();
-    // caçadores parados e invulneráveis não derrubam o Chefe
-    const still: Record<string, Input> = {};
-    for (const p of g.players) p.isBot = false;
-    for (let i = 0; i < 60 * 200 && g.phase !== 'results'; i++) {
-      for (const p of g.players) if (!p.boss) p.invulnT = 5;
-      g.step(STEP, still);
-    }
-    expect(g.phase).toBe('results');
-    expect(g.gameWon).toBe(false);
-    expect(g.winners).toEqual(['boss']);
   });
 });

@@ -41,7 +41,7 @@ describe('conteúdo e feedback do playtest', () => {
       expect(weaponDps(WEAPONS[id])).toBeGreaterThan(24);
       expect(weaponDps(WEAPONS[id])).toBeLessThan(55);
     }
-    expect(PROTO).toBe(6);
+    expect(PROTO).toBe(7);
   });
 
   it('o pulso atordoa e a onda de choque causa dano', () => {

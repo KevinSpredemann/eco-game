@@ -247,7 +247,7 @@ describe('X1 com morte súbita', () => {
       difficulty: 'normal',
       ownEchoDamage: true,
       training: false,
-      mode: 'combate',
+      mode: 'dupla',
       roster: [
         { id: 'a', char: 'kael', isBot: false },
         { id: 'b', char: 'luna', isBot: false },
@@ -256,7 +256,8 @@ describe('X1 com morte súbita', () => {
     while (g.phase !== 'play') g.step(STEP, both);
     g.roundT = g.roundDur;
     g.step(0.05, both);
-    expect(g.phase).toBe('rewind');
+    expect(g.sudden).toBe(true);
+    expect(g.phase).toBe('play');
   });
 });
 

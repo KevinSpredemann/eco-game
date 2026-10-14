@@ -222,13 +222,7 @@
           <h3 class="section-label">Escolha o modo e chame os amigos</h3>
           <div class="mode-pills" id="online-modes">
             <button class="pill on" data-omode="duelo">Duelo x1</button>
-            <button class="pill" data-omode="combate">Combate</button>
-            <button class="pill" data-omode="nucleo">Núcleo</button>
-            <button class="pill" data-omode="bandeira">Bandeira 2x2</button>
-            <button class="pill" data-omode="rei">Rei da Colina</button>
-            <button class="pill" data-omode="ondas">Ondas (juntos)</button>
-            <button class="pill" data-omode="royale">Batalha Real</button>
-            <button class="pill" data-omode="chefe">Caça ao Chefe</button>
+            <button class="pill" data-omode="dupla">2x2</button>
           </div>
           <button class="btn primary" data-action="create-room">Criar sala e chamar amigos</button>
           </div>
@@ -242,7 +236,8 @@
           <div class="pane" data-pane-of="onl" data-pane="buscar" hidden>
           <h3 class="section-label">Jogar com desconhecidos</h3>
           <p class="form-note">Entra numa sala aberta. Começa quando lotar ou todos estiverem prontos; bots completam as vagas.</p>
-          <button class="btn quick-btn" data-action="quick-chefe">Buscar partida · Caça ao Chefe</button>
+          <button class="btn quick-btn" data-action="quick-duelo">Buscar partida · X1</button>
+          <button class="btn quick-btn" data-action="quick-dupla">Buscar partida · 2x2</button>
           </div>
           <p class="form-error" id="online-error" role="alert" hidden></p>
           <button class="btn small" data-action="online-retry" id="online-retry" hidden>Tentar de novo</button>
@@ -264,7 +259,7 @@
         <ul class="lobby-list" id="lobby-list"></ul>
         <div class="lobby-config" id="lobby-config">
           <label class="opt">Modo
-            <select id="lobby-mode"><option value="duelo">Duelo x1</option><option value="combate">Combate</option><option value="nucleo">Núcleo de Energia</option><option value="bandeira">Captura a Bandeira 2x2</option><option value="rei">Rei da Colina</option><option value="ondas">Sobrevivência (juntos)</option><option value="royale">Batalha Real</option><option value="chefe">Caça ao Chefe (3 contra 1)</option></select>
+            <select id="lobby-mode"><option value="duelo">Duelo x1</option><option value="dupla">2x2</option></select>
           </label>
           <label class="opt">Mapa <select id="lobby-arena"></select></label>
           <label class="opt">Bots <select id="lobby-bots"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
@@ -285,7 +280,7 @@
         <header class="sheet-head">
           <button class="btn small ghost" data-action="back">‹ Voltar</button>
           <div class="head-title">
-            <span class="step-tag" id="select-mode">Núcleo de Energia · passo 1 de 2</span>
+            <span class="step-tag" id="select-mode">2x2 · passo 1 de 3</span>
             <h2>Escolha seu personagem</h2>
           </div>
           <button class="btn small primary" data-action="to-map">Próximo ›</button>
@@ -318,9 +313,6 @@
         <div class="hero-panel map-panel">
           <div class="hp-info" id="map-info"></div>
           <div class="match-opts" id="match-opts">
-            <label class="opt" id="role-opt" hidden>Seu papel
-              <select id="sel-role"><option value="cacador">Caçador</option><option value="chefe">Chefe</option><option value="sorteio">Sorteio justo</option></select>
-            </label>
             <label class="opt"><span id="bots-label">Adversários</span>
               <select id="sel-bots"></select>
             </label>
@@ -407,32 +399,20 @@
           <button class="car-arrow left" id="howto-prev" aria-label="Anterior"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg></button>
           <div class="howto-grid" id="howto-grid">
           <div class="card">
-            <h4>Núcleo de Energia</h4>
-            <p>Pegue os cristais verdes (até 3) e entregue no núcleo: 3 pontos cada. A cada rodada, todo mundo deixa um <em>Eco</em>, um fantasma que repete o que você fez. Encostar num Eco tira 1 vida.</p>
-          </div>
-          <div class="card">
             <h4>Duelo x1</h4>
-            <p>Você contra um rival, com armas, bombas e poderes. Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Seus Ecos repetem os seus tiros também!</p>
+            <p>Online, você contra um rival, com armas, bombas e poderes. Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Seus Ecos repetem os seus tiros na rodada seguinte.</p>
           </div>
           <div class="card">
-            <h4>Combate</h4>
-            <p>Até 4 jogadores, todos contra todos. Eliminar vale 2 pontos e ser o último de pé vale 3. Pegue armas (metralhadora, escopeta, laser) e itens (bombas e minas) pela arena.</p>
+            <h4>2x2</h4>
+            <p>Dois times. Jogue com um amigo e bots, ou os quatro online. O time que sobrar vence a rodada. Melhor de 5. No fim do tempo, vale a vida e o dano do time.</p>
           </div>
           <div class="card">
             <h4>Cristais de poder</h4>
             <p>De vez em quando surge um cristal brilhante com o símbolo de um personagem. Passe por cima para pegar a habilidade dele e use uma vez com o botão PODER (ou R / botão direito do mouse).</p>
           </div>
           <div class="card">
-            <h4>Mais modos</h4>
-            <p><b>Captura a Bandeira:</b> 2 contra 2, leve a bandeira rival até a sua base.<br /><b>Rei da Colina:</b> fique sozinho na zona da coroa (+1 por segundo).<br /><b>Sobrevivência:</b> você e aliados contra 5 ondas de robôs e um chefão.<br /><b>Batalha Real:</b> a zona fecha; o último de pé vence.</p>
-          </div>
-          <div class="card">
             <h4>Controles</h4>
             <p><b>Computador:</b> WASD anda · mouse mira, clique atira · <b>Q</b> habilidade do personagem · <b>E</b> habilidade do equipamento · <b>R</b> ultimate · <b>Shift</b> impulso · <b>Espaço</b> item · <b>F</b> poder do cristal · <b>Esc</b> cancela a mira ou pausa. Segure Q, E ou R para ver a prévia e solte para usar. Dá para trocar as teclas em Opções.<br /><b>Celular:</b> analógico da esquerda anda. O da direita (ATIRAR) mira em qualquer direção e atira enquanto você segura; só tocar atira na mira automática. Toque numa habilidade para usar na direção da mira, ou arraste o botão para ver a área e solte. Para cancelar, solte em cima do "✕".</p>
-          </div>
-          <div class="card">
-            <h4>Caça ao Chefe</h4>
-            <p>3 caçadores contra 1 jogador que vira o Chefe (mais vida, golpes enormes). Os golpes do Chefe mostram a área antes de cair: saia dela. Acertar as <b>costas</b> dá 50% a mais de dano. Na fase 2 surgem <b>geradores</b> que protegem o Chefe: destrua-os. Na fase 3 rochas caem pela arena. O time tem vidas extras compartilhadas; se o tempo acabar, o Chefe vence.</p>
           </div>
           <div class="card">
             <h4>Equipamento</h4>

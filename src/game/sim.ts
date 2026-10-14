@@ -3,7 +3,7 @@ import { EchoRecorder, eventsBetween, sampleRecording, upcomingEvent } from '../
 import { EchoManager } from '../systems/echo/manager';
 import { assignUniqueColors, assignUniqueNames } from './colors';
 import { digestRecording, EchoDigest, nextMark, RoundEchoLine, summarizeRound } from '../systems/echo/digest';
-import { POINTS, deliveryPoints, leaders, ranking } from '../systems/scoring';
+import { POINTS, deliveryPoints, ranking } from '../systems/scoring';
 import {
   ArenaDef,
   BORDER,
@@ -24,7 +24,7 @@ import {
 import { AbilityId, CHARACTERS, CharacterDef, getCharacter, withLevel } from './characters';
 import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, KITS, Loadout, SKILLS, ULTS, botLoadout, levelMult, sanitizeLoadout } from './balance';
 import * as C from './constants';
-import { botCombat, botThink, BotBrain, NavGrid } from './bot';
+import { botCombat, BotBrain, NavGrid } from './bot';
 import { PowerId, getPower, randomPower } from './powerups';
 import { BOMB_DAMAGE, BOMB_FUSE, BOMB_RADIUS, ECHO_DAMAGE_MULT, GUN_Y, ICE_DAMAGE, ICE_RADIUS, ITEMS, ItemId, KIT_HEAL, MINE_DAMAGE, MINE_RADIUS, PULSE_DAMAGE, PULSE_FUSE, PULSE_RADIUS, WEAPONS, WeaponId, isPrimary, loadoutPrimary } from './weapons';
 import { withSkin } from './characters';
@@ -40,21 +40,15 @@ export const OBJECTIVES: Record<ObjectiveId, string> = {
   intocavel: 'Termine a rodada sem levar dano (+1)',
 };
 
-export type GameMode = 'nucleo' | 'duelo' | 'combate' | 'bandeira' | 'rei' | 'ondas' | 'royale' | 'chefe';
+export type GameMode = 'duelo' | 'dupla';
 
-/** regras de cada modo */
+/** X1 online e 2x2 (online ou com bots). Os dois fecham a rodada como um duelo. */
 export const MODE_RULES: Record<GameMode, { rounds: number; dur: number; respawn: boolean; teams: boolean; maxPlayers: number }> = {
-  nucleo: { rounds: C.TOTAL_ROUNDS, dur: C.ROUND_TIME, respawn: false, teams: false, maxPlayers: 4 },
   duelo: { rounds: 5, dur: DUEL.roundSec, respawn: false, teams: false, maxPlayers: 2 },
-  combate: { rounds: 4, dur: 45, respawn: false, teams: false, maxPlayers: 4 },
-  bandeira: { rounds: 3, dur: 70, respawn: true, teams: true, maxPlayers: 4 },
-  rei: { rounds: 3, dur: 50, respawn: true, teams: false, maxPlayers: 4 },
-  ondas: { rounds: 5, dur: 55, respawn: false, teams: true, maxPlayers: 4 },
-  royale: { rounds: 3, dur: 60, respawn: false, teams: false, maxPlayers: 6 },
-  chefe: { rounds: 1, dur: 180, respawn: true, teams: true, maxPlayers: 5 },
+  dupla: { rounds: 5, dur: DUEL.roundSec, respawn: false, teams: true, maxPlayers: 4 },
 };
 /** mínimo de participantes (pessoas + bots) para começar */
-export const MIN_PLAYERS: Partial<Record<GameMode, number>> = { chefe: 4 };
+export const MIN_PLAYERS: Partial<Record<GameMode, number>> = { duelo: 2, dupla: 2 };
 export const TEAM_COLORS = ['#3ea8ff', '#ff4a5a'];
 export const TEAM_NAMES = ['Azul', 'Vermelho'];
 export const RESPAWN_TIME = 3;
@@ -646,34 +640,25 @@ export class Game {
   constructor(cfg: MatchConfig) {
     this.cfg = cfg;
     this.arena = cfg.arena;
-    this.mode = cfg.training ? 'nucleo' : cfg.mode ?? 'nucleo';
+    this.mode = cfg.mode === 'dupla' ? 'dupla' : 'duelo';
     this.rules = MODE_RULES[this.mode];
     this.nav = new NavGrid(this.arena);
     this.suddenLimit = cfg.suddenSec ?? DUEL.suddenSec;
     this.totalRounds = this.rules.rounds;
-    const pve = this.mode === 'ondas';
     if (cfg.roster) {
-      for (const r of cfg.roster) this.addPlayer(r.id, withLevel(getCharacter(r.char), r.lv, pve), r.isBot, r.name, r.skin, r.trail, r.loadout);
+      for (const r of cfg.roster) this.addPlayer(r.id, withLevel(getCharacter(r.char), r.lv, false), r.isBot, r.name, r.skin, r.trail, r.loadout);
     } else {
       const human = getCharacter(cfg.humanChar);
       this.addPlayer('p0', human, false);
-      if (!cfg.training) {
-        const others = shuffle(CHARACTERS.map((c) => c.id).filter((c) => c !== human.id));
-        const n = this.mode === 'duelo' ? 1 : Math.min(cfg.bots, this.rules.maxPlayers - 1);
-        for (let i = 0; i < n; i++) this.addPlayer('b' + i, getCharacter(others[i % others.length]), true);
-      }
+      const others = shuffle(CHARACTERS.map((c) => c.id).filter((c) => c !== human.id));
+      const n = this.mode === 'duelo' ? 1 : Math.min(Math.max(1, cfg.bots), this.rules.maxPlayers - 1);
+      for (let i = 0; i < n; i++) this.addPlayer('b' + i, getCharacter(others[i % others.length]), true);
     }
-    // mesmo personagem (ou cor quase igual) = cor diferente para cada jogador (anel, nome e Eco)
     assignUniqueColors(this.players);
     assignUniqueNames(this.players);
-    // times: bandeira = alternado; ondas = todos juntos; chefe = caçadores (0) contra o Chefe (1)
-    this.players.forEach((p, i) => (p.team = this.mode === 'bandeira' ? i % 2 : this.mode === 'ondas' || this.mode === 'chefe' ? 0 : -1));
-    if (this.mode === 'chefe') this.setupBoss(cfg.roster?.find((r) => r.boss)?.id);
-    if (this.mode === 'bandeira') {
-      const s0 = this.arena.spawns[0];
-      const s1 = this.arena.spawns[1];
-      this.flags = [s0, s1].map((h, team) => ({ team, x: h.x, y: h.y, home: { ...h }, carrier: null, atHome: true, dropT: 0 }));
-    }
+    // 2x2: primeira metade no time azul, segunda no vermelho (amigos entram antes dos bots)
+    const half = Math.ceil(this.players.length / 2);
+    this.players.forEach((p, i) => (p.team = this.mode === 'dupla' ? (i < half ? 0 : 1) : -1));
     this.nextRound();
   }
 
@@ -682,7 +667,7 @@ export class Game {
   }
 
   get combat(): boolean {
-    return this.mode !== 'nucleo';
+    return true;
   }
 
   private addPlayer(id: string, base: CharacterDef, isBot: boolean, name?: string, skin = 'padrao', trail = 'nenhum', loadout?: Partial<Loadout>) {
@@ -779,28 +764,6 @@ export class Game {
     p.pendingLoadout = sanitizeLoadout({ ...p.loadout, ...l });
   }
 
-  /** Caça ao Chefe: escolhe o Chefe e ajusta vida, times e vidas do time */
-  private setupBoss(want?: string) {
-    const humans = this.players.filter((p) => !p.isBot);
-    const pick = this.players.find((p) => p.id === want) ?? (humans.length ? humans[Math.floor(Math.random() * humans.length)] : this.players[0]);
-    for (const p of this.players) p.team = p === pick ? 1 : 0;
-    pick.boss = true;
-    this.bossId = pick.id;
-    const hunters = this.players.length - 1;
-    pick.maxHp = BOSS.hpPerHunter * Math.max(1, hunters);
-    pick.hp = pick.maxHp;
-    pick.name = pick.isBot ? `${pick.char.name} (Chefe)` : pick.name;
-    this.teamLives = hunters * BOSS.livesPerHunter;
-  }
-
-  keepBossInside(p: Player) {
-    const top = BORDER + 130;
-    if (p.y < top) {
-      p.y = top;
-      if (p.vy < 0) p.vy = 0;
-    }
-  }
-
   get boss(): Player | null {
     return this.bossId ? this.players.find((p) => p.id === this.bossId) ?? null : null;
   }
@@ -826,7 +789,7 @@ export class Game {
     this.phaseT = 0;
     this.roundT = 0;
     this.lastTick = -1;
-    this.roundDur = this.tiebreak ? C.TIEBREAK_TIME : this.mode === 'duelo' ? (this.cfg.roundSec ?? this.rules.dur) : this.rules.dur;
+    this.roundDur = this.cfg.roundSec ?? this.rules.dur;
     this.sudden = false;
     this.suddenT = 0;
     this.callWinner = null;
@@ -919,23 +882,14 @@ export class Game {
         p.pendingLoadout = null;
       }
       this.equip(p);
-      if (this.mode === 'duelo') {
-        // lados opostos
+      if (this.mode === 'dupla') {
+        const sp = this.teamSpawn(p.team, i % 2);
+        p.x = sp.x;
+        p.y = sp.y;
+      } else {
         const sp = [spawns[0], spawns[1]][i % 2];
         p.x = sp.x;
         p.y = sp.y;
-      }
-      if (p.team >= 0 && this.mode === 'bandeira') {
-        const sp = this.teamSpawn(p.team, Math.floor(i / 2));
-        p.x = sp.x;
-        p.y = sp.y;
-      }
-      if (this.mode === 'chefe') {
-        // Chefe no centro do lado oposto; caçadores espalhados do outro lado
-        const sp = p.boss ? this.teamSpawn(1, 0) : this.teamSpawn(0, i % 3);
-        p.x = sp.x;
-        p.y = sp.y;
-        if (p.boss) this.keepBossInside(p);
       }
       p.dir = Math.atan2(360 - p.y, 640 - p.x);
       p.aim = p.dir;
@@ -951,7 +905,6 @@ export class Game {
     } else {
       this.powerTimer = 2;
     }
-    this.setupModeRound();
     this.buildZoneSchedule();
     this.refreshEchoViews();
     this.events.push({ type: 'phase', phase: 'prep' });
@@ -991,7 +944,7 @@ export class Game {
   private sealEchoes() {
     const recs: EchoRecording[] = [];
     for (const p of this.players) {
-      if (!p.playing || !p.recorder || this.mode === 'chefe') continue;
+      if (!p.playing || !p.recorder) continue;
       recs.push(p.recorder.finish(this.roundDur * 1000, p.x, p.y, p.dir));
     }
     this.lastRecordings = recs;
@@ -1002,111 +955,21 @@ export class Game {
     if (this.expiredRound !== null) this.events.push({ type: 'echoExpired', round: this.expiredRound });
   }
 
-  private endRound() {
-    let anyAlive = false;
-    if (this.mode === 'duelo' || this.mode === 'combate' || this.mode === 'royale') {
-      // vence a rodada quem sobrou (ou quem tem mais vida no fim do tempo)
-      const alive = this.players.filter((p) => p.playing && p.alive).sort((a, b) => b.hp - a.hp);
-      const w = alive.length && (alive.length === 1 || alive[0].hp > alive[1].hp) ? alive[0] : null;
-      if (w) {
-        w.roundWins++;
-        this.award(w, this.mode === 'duelo' ? 1 : 3);
-      }
-      this.events.push({ type: 'roundWin', pid: w ? w.id : null });
-    }
-    if (this.mode === 'chefe') {
-      // caçadores vencem só se derrubarem o Chefe; tempo esgotado = o Chefe resistiu
-      const b = this.boss;
-      this.gameWon = !!b && !b.alive;
-      for (const p of this.players) {
-        if (p.boss && !this.gameWon) this.award(p, 15);
-        if (!p.boss && this.gameWon) this.award(p, 10);
-      }
-      this.events.push({ type: 'gameOver', won: this.gameWon });
-    }
-    if (this.mode === 'ondas') {
-      const alive = this.players.filter((p) => p.playing && p.alive);
-      if (!alive.length) {
-        this.gameWon = false;
-        this.events.push({ type: 'gameOver', won: false });
-      } else {
-        for (const p of alive) this.award(p, 3);
-        if (this.round >= this.totalRounds) {
-          this.gameWon = true;
-          this.events.push({ type: 'gameOver', won: true });
-        }
-      }
-      this.enemies = [];
-    }
-    for (const p of this.players) {
-      if (!p.playing || this.combat) continue;
-      if (p.alive) {
-        anyAlive = true;
-        this.award(p, POINTS.survive);
-        p.stats.survived++;
-        if (this.objective === 'intocavel' && !p.tookDamage) {
-          this.award(p, POINTS.objective);
-          this.events.push({ type: 'objective', pid: p.id, text: 'Intocável +1' });
-        }
-      }
-    }
-    void anyAlive;
-    this.sealEchoes();
-    this.phase = 'rewind';
-    this.phaseT = 0;
-    this.events.push({ type: 'phase', phase: 'rewind' });
-  }
-
   /** pular a animação do Rebobinando (contra bots: na hora; online: quando todos pedem) */
   skipRewind() {
     if (this.phase === 'rewind' && this.phaseT > 0.25) this.phaseT = C.REWIND_TIME;
   }
 
   private afterRewind() {
-    if (this.mode === 'duelo') {
-      const best = Math.max(0, ...this.players.map((p) => p.roundWins));
-      const done = best >= DUEL.wins || this.round >= this.totalRounds;
-      if (done) {
-        this.winners = this.players.filter((p) => p.roundWins === best && best > 0).map((p) => p.id);
-        if (!this.winners.length) this.winners = this.players.map((p) => p.id);
-        this.finishMatch();
-        return;
-      }
-      this.nextRound();
-      return;
-    }
-    const lines = this.players.map((p) => ({ id: p.id, score: p.score }));
-    const wavesDone = this.mode === 'ondas' && this.gameWon !== null;
-    if (this.round < this.totalRounds && !this.tiebreak && !wavesDone) {
-      this.nextRound();
-      return;
-    }
-    if (this.mode === 'chefe') {
-      this.winners = this.players.filter((p) => (this.gameWon ? !p.boss : p.boss)).map((p) => p.id);
+    const best = Math.max(0, ...this.players.map((p) => p.roundWins));
+    const done = best >= DUEL.wins || this.round >= this.totalRounds;
+    if (done) {
+      this.winners = this.players.filter((p) => p.roundWins === best && best > 0).map((p) => p.id);
+      if (!this.winners.length) this.winners = this.players.map((p) => p.id);
       this.finishMatch();
       return;
     }
-    if (this.mode === 'ondas') {
-      this.winners = this.gameWon ? this.players.filter((p) => p.playing).map((p) => p.id) : [];
-      this.finishMatch();
-      return;
-    }
-    if (this.mode === 'bandeira') {
-      const [a, b] = this.teamScore;
-      this.winners = a === b ? leaders(lines) : this.players.filter((p) => p.team === (a > b ? 0 : 1)).map((p) => p.id);
-      this.finishMatch();
-      return;
-    }
-    const top = leaders(lines);
-    const canTiebreak = this.mode === 'nucleo' || this.mode === 'combate';
-    if (top.length > 1 && !this.tiebreak && !this.cfg.training && canTiebreak) {
-      this.tiebreak = true;
-      this.winners = top;
-      this.nextRound();
-      return;
-    }
-    this.winners = top;
-    this.finishMatch();
+    this.nextRound();
   }
 
   private finishMatch() {
@@ -1119,26 +982,11 @@ export class Game {
     if (best && best.stats.bestDelivery > 0) parts.push(`Maior entrega: ${best.char.name} com ${best.stats.bestDelivery} pontos de uma vez.`);
     if (clumsy && clumsy.stats.ownEchoHits > 0)
       parts.push(`${clumsy.char.name} foi pego pelo próprio Eco ${clumsy.stats.ownEchoHits}×.`);
-    if (this.combat) {
-      parts.length = 0;
-      const killer = [...this.players].sort((a, b) => b.kills - a.kills)[0];
-      if (this.mode === 'chefe') {
-        const b = this.boss;
-        const t = Math.round(this.roundT);
-        const mmss = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
-        parts.push(this.gameWon ? `Os caçadores derrubaram ${b?.char.name ?? 'o Chefe'} em ${mmss}.` : `${b?.char.name ?? 'O Chefe'} resistiu (${Math.round(((b?.hp ?? 0) / (b?.maxHp || 1)) * 100)}% de vida).`);
-        const weak = [...this.players].sort((a, c) => c.stats.weak - a.stats.weak)[0];
-        if (weak && weak.stats.weak > 0) parts.push(`Mais acertos no ponto fraco: ${weak.char.name} (${weak.stats.weak}).`);
-        const healer = [...this.players].sort((a, c) => c.stats.heal - a.stats.heal)[0];
-        if (healer && healer.stats.heal >= 20) parts.push(`Quem mais curou: ${healer.char.name} (${Math.round(healer.stats.heal)}).`);
-      } else if (this.mode === 'ondas') {
-        parts.push(this.gameWon ? `Vocês sobreviveram às ${this.totalRounds} ondas!` : `Vocês caíram na onda ${this.wave}.`);
-        if (killer && killer.kills > 0) parts.push(`Mais robôs destruídos: ${killer.char.name} (${killer.kills}).`);
-      } else if (this.mode === 'bandeira') {
-        parts.push(`Placar: Azul ${this.teamScore[0]} × ${this.teamScore[1]} Vermelho.`);
-      } else if (killer && killer.kills > 0) parts.push(`Mais eliminações: ${killer.char.name} (${killer.kills}).`);
-      if (clumsy && clumsy.stats.ownEchoHits > 0) parts.push(`${clumsy.char.name} levou ${clumsy.stats.ownEchoHits} golpe(s) do próprio Eco.`);
-    }
+    parts.length = 0;
+    const killer = [...this.players].sort((a, b) => b.kills - a.kills)[0];
+    if (this.mode === 'dupla') parts.push(`Placar de rodadas: Azul ${this.teamRoundWins(0)} × ${this.teamRoundWins(1)} Vermelho.`);
+    if (killer && killer.kills > 0) parts.push(`Mais eliminações: ${killer.char.name} (${killer.kills}).`);
+    if (clumsy && clumsy.stats.ownEchoHits > 0) parts.push(`${clumsy.char.name} levou ${clumsy.stats.ownEchoHits} golpe(s) do próprio Eco.`);
     const breaker = [...this.players].sort((a, b) => b.stats.disrupted - a.stats.disrupted)[0];
     if (breaker && breaker.stats.disrupted > 0) parts.push(`${breaker.char.name} desfez ${breaker.stats.disrupted} Eco(s).`);
     this.highlight = parts.join(' ');
@@ -1196,9 +1044,9 @@ export class Game {
 
     // ---- rodada ativa
     this.roundT += dt;
-    if (this.mode === 'duelo' && this.sudden) this.suddenT += dt;
+    if (this.sudden) this.suddenT += dt;
     const tms = this.roundT * 1000;
-    const left = this.mode === 'duelo' && this.sudden ? Math.ceil(this.suddenLimit - this.suddenT) : Math.ceil(this.roundDur - this.roundT);
+    const left = this.sudden ? Math.ceil(this.suddenLimit - this.suddenT) : Math.ceil(this.roundDur - this.roundT);
     if (left <= 5 && left !== this.lastTick && left > 0) {
       this.lastTick = left;
       this.events.push({ type: 'tick', n: left });
@@ -1216,7 +1064,7 @@ export class Game {
         }
         continue;
       }
-      const input = p.isBot ? (this.combat ? botCombat(this, p, dt) : botThink(this, p, dt)) : inputFor(p);
+      const input = p.isBot ? botCombat(this, p, dt) : inputFor(p);
       this.updatePlayer(p, input, dt);
     }
     this.separatePlayers();
@@ -1246,43 +1094,39 @@ export class Game {
       this.updateCasts(dt);
       this.updateTraps(dt);
     }
-    if (this.mode === 'chefe') this.updateBoss(dt);
     if (this.combat) this.updateCombat(dt);
     else this.updateFragments(dt);
-    this.updateMode(dt);
     this.prevTms = tms;
 
-    const playing = this.players.filter((p) => p.playing).length;
-    const alive = this.players.filter((p) => p.playing && (p.alive || p.respawnT > 0)).length;
-    const elim = this.mode === 'duelo' || this.mode === 'combate' || this.mode === 'royale';
-    const lastStanding = elim && playing > 1 && alive <= 1;
-    const waveCleared = this.mode === 'ondas' && !this.waveQueue.length && !this.enemies.length && this.roundT > 2;
-    let bossDone = false;
-    if (this.mode === 'chefe') {
-      const b = this.boss;
-      const hunters = this.players.some((p) => !p.boss && p.playing && (p.alive || p.respawnT > 0));
-      bossDone = !b || !b.alive || !hunters;
-    }
-    this.maybeEndRound(alive, lastStanding, waveCleared, bossDone);
+    this.maybeEndRound();
   }
 
-  /** X1 não usa o relógio do cliente: só este passo, no servidor ou na partida local, muda de fase. */
-  private maybeEndRound(alive: number, lastStanding: boolean, waveCleared: boolean, bossDone: boolean) {
-    if (this.mode === 'duelo') {
-      if (alive === 0 || lastStanding) {
-        const living = this.players.filter((p) => p.playing && p.alive);
-        if (living.length === 1) this.closeDuel(living[0], 'kill');
+  /** X1 e 2x2 não usam o relógio do cliente: só este passo muda de fase. */
+  private maybeEndRound() {
+    const playing = this.players.filter((p) => p.playing);
+    const living = playing.filter((p) => p.alive);
+    if (this.mode === 'dupla') {
+      const sides = new Set(playing.map((p) => p.team));
+      const live = new Set(living.map((p) => p.team));
+      if (sides.size > 1 && live.size < sides.size) {
+        if (living.length) this.closeDuel(living[0], 'kill');
         else this.closeDuelTie();
         return;
       }
-      if (!this.sudden && this.roundT >= this.roundDur) {
-        this.enterSudden();
-        return;
-      }
-      if (this.sudden && this.suddenT >= this.suddenLimit) this.closeDuelTie();
+    } else if (playing.length > 1 && living.length <= 1) {
+      if (living.length === 1) this.closeDuel(living[0], 'kill');
+      else this.closeDuelTie();
       return;
     }
-    if (this.roundT >= this.roundDur || alive === 0 || lastStanding || waveCleared || bossDone) this.endRound();
+    if (!this.sudden && this.roundT >= this.roundDur) {
+      this.enterSudden();
+      return;
+    }
+    if (this.sudden && this.suddenT >= this.suddenLimit) this.closeDuelTie();
+  }
+
+  private teamRoundWins(team: number) {
+    return this.players.find((p) => p.playing && p.team === team)?.roundWins ?? 0;
   }
 
   private enterSudden() {
@@ -1294,7 +1138,27 @@ export class Game {
   }
 
   private closeDuelTie() {
-    const rows = this.players.filter((p) => p.playing).map((p) => ({ id: p.id, hp: p.hp, dmg: p.stats.dmg }));
+    if (this.mode === 'dupla') {
+      const sum = (team: number, key: 'hp' | 'dmg') =>
+        this.players.filter((p) => p.playing && p.team === team).reduce((n, p) => n + (key === 'hp' ? (p.alive ? p.hp : 0) : p.stats.dmg), 0);
+      const hp0 = sum(0, 'hp');
+      const hp1 = sum(1, 'hp');
+      const d0 = sum(0, 'dmg');
+      const d1 = sum(1, 'dmg');
+      let team = -1;
+      let reason: DuelReason = 'draw';
+      if (hp0 !== hp1) {
+        team = hp0 > hp1 ? 0 : 1;
+        reason = 'hp';
+      } else if (d0 !== d1) {
+        team = d0 > d1 ? 0 : 1;
+        reason = 'damage';
+      }
+      const winner = team < 0 ? null : (this.players.find((p) => p.playing && p.team === team) ?? null);
+      this.closeDuel(winner, reason);
+      return;
+    }
+    const rows = this.players.filter((p) => p.playing).map((p) => ({ id: p.id, hp: p.alive ? p.hp : 0, dmg: p.stats.dmg }));
     const r = duelTiebreak(rows);
     this.closeDuel(r.winner ? (this.players.find((p) => p.id === r.winner) ?? null) : null, r.reason);
   }
@@ -1304,8 +1168,11 @@ export class Game {
     if (this.duelClosedRound === this.round || this.phase !== 'play') return;
     this.duelClosedRound = this.round;
     if (winner) {
-      winner.roundWins++;
-      this.award(winner, 1);
+      const mates = this.mode === 'dupla' ? this.players.filter((p) => p.playing && p.team === winner.team) : [winner];
+      for (const m of mates) {
+        m.roundWins++;
+        this.award(m, 1);
+      }
     }
     this.sealEchoes();
     this.callWinner = winner?.id ?? null;
@@ -1447,10 +1314,7 @@ export class Game {
     const castAng = typeof inp.ca === 'number' && isFinite(inp.ca) ? inp.ca : moving ? Math.atan2(my, mx) : this.combat ? p.aim : p.dir;
     const free = p.stunT <= 0 && p.castT <= 0;
 
-    if (p.boss) {
-      this.updateBossInput(p, inp, castAng, dt);
-    } else {
-      if (inp.dash && p.dashCd <= 0 && free && p.stasisT <= 0) {
+    if (inp.dash && p.dashCd <= 0 && free && p.stasisT <= 0) {
         p.dashT = C.DASH_TIME;
         p.dashCd = C.DASH_CD;
         p.recorder?.event(tms, 'dash');
@@ -1464,7 +1328,6 @@ export class Game {
       }
       if (this.combat && inp.skill && p.skillCd <= 0 && free) this.useSkill(p, castAng, inp);
       if (this.combat && inp.ult && p.ultCharge >= 100 && free) this.useUlt(p, castAng, inp);
-    }
     if (this.combat) {
       p.fireCd = Math.max(0, p.fireCd - dt);
       if (!isPrimary(p.weapon) && WEAPONS[p.weapon].time > 0) {
@@ -1556,7 +1419,6 @@ export class Game {
     }
     this.collideWorld(p);
     // o Chefe é alto: não encosta na parede de cima (o corpo ficaria fora da arena)
-    if (p.boss) this.keepBossInside(p);
     p.moving = moving || p.dashT > 0;
     if (p.moving) p.walkPhase += dt * (p.turboT > 0 ? 16 : 11);
 
@@ -1654,7 +1516,7 @@ export class Game {
 
   /** volta ao jogo depois de cair (modos com renascer) */
   private revive(p: Player) {
-    const sp = this.mode === 'chefe' ? this.teamSpawn(p.team, Math.floor(Math.random() * 3)) : p.team >= 0 ? this.teamSpawn(p.team, Math.floor(Math.random() * 3)) : this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)];
+    const sp = p.team >= 0 ? this.teamSpawn(p.team, Math.floor(Math.random() * 3)) : this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)];
     p.recorder?.markJump();
     Object.assign(p, { x: sp.x, y: sp.y, vx: 0, vy: 0, alive: true, hp: p.maxHp, shieldHp: 0, invulnT: 1 + COMBAT.spawnProtect, stunT: 0, slowT: 0, pullT: 0, chargeT: 0, castT: 0, markT: 0, dodgeT: 0 });
     // arma volta para a do equipamento; itens NÃO recarregam ao renascer (evita abuso)
@@ -2078,7 +1940,7 @@ export class Game {
 
   /** força da habilidade conforme o nível */
   private pow(p: Player) {
-    return levelMult(p.char.abilityLv ?? 1, this.mode === 'ondas').power;
+    return levelMult(p.char.abilityLv ?? 1, false).power;
   }
 
   /** raio do corpo para acertos */
@@ -2086,9 +1948,18 @@ export class Game {
     return p.boss ? BOSS.hitR : C.PLAYER_R;
   }
 
-  /** inimigos do mapa (robôs, geradores) são alvos deste jogador? */
-  enemyHostileTo(p: { team: number }) {
-    return !(this.mode === 'chefe' && p.team === 1);
+  /** cápsula dos pés até a cabeça: o tiro acerta o desenho, não só a cintura */
+  bodyHit(o: Player, x: number, y: number, pad = 6): boolean {
+    const r = this.hitR(o) + pad;
+    const foot = o.y - 4;
+    const head = o.y - (o.boss ? 86 : 72);
+    const cy = Math.max(head, Math.min(foot, y));
+    return dist(o.x, cy, x, y) <= r;
+  }
+
+  /** inimigos do mapa (robôs) são alvos deste jogador? */
+  enemyHostileTo(_p: { team: number }) {
+    return true;
   }
 
   /** escudo do Bronzar: devolve o tiro que vem da frente (nunca mais forte e só uma vez) */
@@ -2513,7 +2384,7 @@ export class Game {
       if (this.powerups.length < (this.combat ? 4 : 2) && this.roundT < this.roundDur - 3) {
         const s = this.randomFreeSpot(90);
         if (s) {
-          const kind = randomPower(this.combat ? 'combate' : 'nucleo');
+          const kind = randomPower();
           this.powerups.push({ id: this.fragId++, kind, x: s.x, y: s.y, age: 0 });
           this.events.push({ type: 'powerSpawn', x: s.x, y: s.y, power: kind });
         }
@@ -2834,28 +2705,14 @@ export class Game {
     if (!p.alive || dmg <= 0) return;
     if (p.phaseT > 0 || p.invulnT > 1) return;
     // morte súbita: o dano base dobra uma vez. Não acumula a cada passo.
-    if (this.mode === 'duelo' && this.sudden) dmg *= DUEL.mult;
+    if (this.sudden) dmg *= DUEL.mult;
     if (p.dodgeT > 0) {
       this.events.push({ type: 'dmg', pid: p.id, x: p.x, y: p.y, n: 0, k: 'dodge' });
       return;
     }
     const src = by ? this.players.find((o) => o.id === by) ?? null : null;
     if (p.markT > 0) dmg *= COMBAT.markMult;
-    let weak = false;
-    if (p.boss) {
-      // ponto fraco nas costas: tiro que chega na mesma direção em que o Chefe olha
-      if (dir !== undefined) {
-        let diff = Math.abs(dir - p.aim) % (Math.PI * 2);
-        if (diff > Math.PI) diff = Math.PI * 2 - diff;
-        if (diff < 0.9) {
-          dmg *= BOSS.weakMult;
-          weak = true;
-          if (src) src.stats.weak++;
-        }
-      }
-      // geradores de pé: o Chefe fica protegido
-      if (this.enemies.some((e) => e.kind === 'pylon' && e.hp > 0)) dmg *= BOSS.pylonShield;
-    }
+    const weak = false;
     if (p.exhaustT > 0) dmg *= BOSS.exhaustMult;
     if (p.shieldT > 0) dmg *= COMBAT.shieldSideDamage;
     if (p.shieldHp > 0) {
@@ -2890,7 +2747,6 @@ export class Game {
       src.stats.dmg += dmg;
       if (!src.boss) src.ultCharge = Math.min(100, src.ultCharge + dmg * COMBAT.ult.perDamageDealt);
       if (src.vampT > 0) this.heal(src, src, dmg * COMBAT.vampFrac);
-      if (this.mode === 'chefe') this.chefePoints(src, dmg);
     }
     if (p.hp <= 0) {
       p.hp = 0;
@@ -2898,38 +2754,18 @@ export class Game {
       p.deaths++;
       p.castT = 0;
       p.chargeT = 0;
-      if (this.mode === 'chefe') {
-        // caçadores usam as vidas do time; o Chefe não volta
-        if (!p.boss && this.teamLives > 0) {
-          this.teamLives--;
-          p.respawnT = BOSS.hunterRespawn;
-          this.events.push({ type: 'lives', n: this.teamLives });
-        } else p.respawnT = 0;
-      } else if (this.rules.respawn) p.respawnT = RESPAWN_TIME;
+      if (this.rules.respawn) p.respawnT = RESPAWN_TIME;
       else p.recorder?.finish(this.roundT * 1000, p.x, p.y, p.dir);
       const killer = src;
       if (killer && killer !== p) {
         killer.kills++;
         if (!killer.boss) killer.ultCharge = Math.min(100, killer.ultCharge + COMBAT.ult.perKill);
-        if (this.mode === 'combate' || this.mode === 'royale') this.award(killer, 2);
-        if (this.mode === 'bandeira' || this.mode === 'rei') this.award(killer, 1);
-        if (this.mode === 'chefe' && killer.boss) this.award(killer, 4);
       }
       this.events.push({ type: 'kill', pid: p.id, by: killer && killer !== p ? killer.id : null, x: p.x, y: p.y });
       this.events.push({ type: 'eliminated', x: p.x, y: p.y, pid: p.id });
       // deixa uma cura no lugar
       if (this.powerups.length < 6 && !this.rules.respawn) this.powerups.push({ id: this.fragId++, kind: 'cura', x: p.x, y: p.y, age: 0 });
     }
-  }
-
-  /** Caça ao Chefe: pontos por contribuição (não só dano) */
-  private dmgAcc = new Map<string, number>();
-  private chefePoints(src: Player, dmg: number) {
-    const acc = (this.dmgAcc.get(src.id) ?? 0) + dmg;
-    const step = src.boss ? 50 : 60;
-    const n = Math.floor(acc / step);
-    this.dmgAcc.set(src.id, acc - n * step);
-    if (n > 0) this.award(src, n);
   }
 
   private updateCombat(dt: number) {
@@ -2949,13 +2785,12 @@ export class Game {
         }
         for (const o of this.players) {
           if (!o.alive || !o.playing || b.hit.includes(o.id)) continue;
-          if (enemyShot && this.mode === 'chefe' && o.team === 1) continue;
           if (!enemyShot) {
             if (o.id === b.owner && !b.fromEcho) continue;
             if (o.id === b.owner && this.rules.teams) continue;
             if (o.id !== b.owner && ownerTeam >= 0 && ownerTeam === o.team) continue;
           }
-          if (dist(o.x, o.y - (o.boss ? BOSS.hitY : GUN_Y), b.x, b.y) > this.hitR(o) + 7) continue;
+          if (!this.bodyHit(o, b.x, b.y)) continue;
           // esquiva e fase: o tiro atravessa
           if (o.dodgeT > 0 || o.phaseT > 0) continue;
           if (o.shieldT > 0 && this.combat && !enemyShot && this.reflect(o, b)) break;
@@ -3308,7 +3143,6 @@ export class Game {
           this.slow(o, 0.6);
         }
         // fase final: o impacto solta um anel de projéteis junto (padrão combinado)
-        if (owner && this.bossPhase >= 3) for (let i = 0; i < 12; i++) this.bossShot(owner, (i / 12) * Math.PI * 2, 300, 8);
         this.events.push({ type: 'castHit', kind: 'impacto', x: cx, y: cy, r: c.r, ang: 0, len: 0 });
         return;
       }
@@ -3355,142 +3189,6 @@ export class Game {
     this.traps = this.traps.filter((t) => t.t > 0);
   }
 
-  // ------------------------------------------------------------------ Chefe
-  private updateBossInput(p: Player, inp: Input, ang: number, _dt: number) {
-    const free = p.stunT <= 0 && p.castT <= 0 && p.chargeT <= 0 && p.exhaustT <= 0;
-    const rage = this.bossPhase >= 3 ? BOSS.rageCooldown : 1;
-    const S = BOSS.skills;
-    const ready = (k: BossSkill) => free && p.bossCd[k] <= 0 && this.bossPhase >= S[k].phase;
-    const start = (k: BossSkill) => {
-      p.bossCd[k] = S[k].cooldown * rage;
-      p.castT = S[k].windup;
-      this.use(p, S[k].name);
-    };
-    if (inp.ability && ready('impacto')) {
-      start('impacto');
-      this.addCast('impacto', p, p.x, p.y, 0, { r: S.impacto.radius, windup: S.impacto.windup });
-    } else if (inp.skill && ready('barragem')) {
-      start('barragem');
-      this.addCast('barragem', p, p.x, p.y, ang, { windup: S.barragem.windup, life: 1 });
-    } else if (inp.ult && ready('chuva')) {
-      start('chuva');
-      p.castT = 0.3;
-      const targets = this.players.filter((o) => o.alive && o.playing && this.hostile(p, o)).slice(0, 3);
-      for (const o of targets) this.addCast('chuva', p, o.x + o.vx * 0.5, o.y + o.vy * 0.5, 0, { r: S.chuva.radius, windup: S.chuva.windup });
-      for (let i = 0; i < 2; i++) {
-        const sp = this.randomFreeSpot(0);
-        if (sp) this.addCast('chuva', p, sp.x, sp.y, 0, { r: S.chuva.radius, windup: S.chuva.windup + 0.3 });
-      }
-      // golpe enorme cansa: janela para os caçadores
-      this.exhaust(p, BOSS.exhaustTime);
-    } else if (inp.bonus && ready('obsidiana')) {
-      start('obsidiana');
-      const pt = this.castPoint(p, inp, ang, S.obsidiana.range ?? 420);
-      this.addCast('obsidiana', p, pt.x, pt.y, pt.ang, { windup: S.obsidiana.windup });
-    } else if (inp.dash && ready('avanco')) {
-      start('avanco');
-      this.addCast('avanco', p, p.x, p.y, ang, { len: S.avanco.range, w: 64, windup: S.avanco.windup });
-    }
-  }
-
-  private bossAutoT = 0;
-  /** fases: a luta muda conforme a vida do Chefe cai */
-  private updateBoss(dt: number) {
-    const b = this.boss;
-    if (!b) return;
-    this.updateHunt(dt, b);
-    if (this.enemies.some((e) => e.kind !== 'pylon')) this.updateEnemies(dt);
-    if (!b.alive) return;
-    const f = b.hp / b.maxHp;
-    const phase = f <= 1 / 3 ? 3 : f <= 2 / 3 ? 2 : 1;
-    if (phase > this.bossPhase) {
-      this.bossPhase = phase;
-      this.events.push({ type: 'bossPhase', n: phase });
-      // novos geradores protegem o Chefe (objetivo dos caçadores)
-      const n = phase === 2 ? 2 : 1;
-      const spots = [...this.arena.cores].sort((a, c) => dist(c.x, c.y, b.x, b.y) - dist(a.x, a.y, b.x, b.y));
-      const hunters = this.players.filter((p) => !p.boss).length;
-      for (let i = 0; i < n && i < spots.length; i++) {
-        const s = spots[i];
-        const hp = BOSS.pylonHp * Math.max(1, hunters) / 3;
-        this.enemies.push({ id: this.fragId++, kind: 'pylon', x: s.x, y: s.y, vx: 0, vy: 0, hp, maxHp: hp, cd: 0, cd2: 0, dir: 0, hitFlash: 0, stunT: 0, slowT: 0, chargeT: 0 });
-        this.events.push({ type: 'pylon', x: s.x, y: s.y, down: false });
-      }
-      this.bossAutoT = 4;
-      // novas criaturas a cada fase: o xamã chega na fase 2; carapaça e semeador na fase 3
-      if (phase === 2) {
-        this.spawnMinion('xama', b);
-        this.minionT = 3;
-      } else {
-        this.spawnMinion('carapaca', b);
-        this.spawnMinion('semeador', b);
-        this.minionT = BOSS.minionWaveEvery;
-      }
-    }
-    // fase final: rochas caem sozinhas pela arena (menos espaço seguro)
-    if (this.bossPhase >= 3) {
-      this.bossAutoT -= dt;
-      if (this.bossAutoT <= 0) {
-        this.bossAutoT = 6;
-        for (const o of this.players.filter((q) => q.alive && q.playing && !q.boss).slice(0, 2)) this.addCast('chuva', b, o.x, o.y, 0, { r: 60, windup: 1.4 });
-      }
-    }
-  }
-
-
-
-  // ------------------------------------------------------------------ Caça ao Chefe: arena, criaturas e objetivos
-  /** coberturas destrutíveis e pontos de recurso */
-  private setupHunt() {
-    this.pools = [];
-    this.iceWalls = this.iceWalls.filter((w) => w.kind !== 'caixa');
-    const cands = [
-      { x: 640 - 210, y: 360 - 125 },
-      { x: 640 + 210, y: 360 - 125 },
-      { x: 640 - 210, y: 360 + 125 },
-      { x: 640 + 210, y: 360 + 125 },
-      { x: 640, y: 210 },
-      { x: 640, y: 515 },
-      { x: 400, y: 360 },
-      { x: 880, y: 360 },
-      { x: 520, y: 255 },
-      { x: 760, y: 465 },
-      { x: 760, y: 255 },
-      { x: 520, y: 465 },
-      { x: 330, y: 260 },
-      { x: 950, y: 460 },
-      { x: 950, y: 260 },
-      { x: 330, y: 460 },
-      { x: 470, y: 360 },
-      { x: 810, y: 360 },
-    ];
-    let n = 0;
-    const placed: Pt[] = [];
-    for (const c of cands) {
-      if (n >= 4) break;
-      if (!this.isFree(c.x, c.y, 54)) continue;
-      if (placed.some((q) => dist(q.x, q.y, c.x, c.y) < 170)) continue;
-      if (this.arena.spawns.some((s) => dist(s.x, s.y, c.x, c.y) < 110)) continue;
-      if ((this.arena.lava ?? []).some((l) => dist(l.x, l.y, c.x, c.y) < l.r + 50)) continue;
-      this.iceWalls.push({ id: this.fragId++, owner: 'arena', kind: 'caixa', x: c.x - 38, y: c.y - 12, w: 76, h: 24, t: 1e6, hp: BOSS.coverHp, maxHp: BOSS.coverHp });
-      placed.push(c);
-      n++;
-    }
-    // dois pontos de recurso longe um do outro
-    const cores = [...this.arena.cores];
-    let best: [Pt, Pt] | null = null;
-    let bd = 0;
-    for (const a of cores) for (const b of cores) if (dist(a.x, a.y, b.x, b.y) > bd) {
-      bd = dist(a.x, a.y, b.x, b.y);
-      best = [a, b];
-    }
-    this.resSpots = best ? best.map((p) => ({ x: p.x, y: p.y })) : [];
-    this.resT = 6;
-    this.minionT = 0;
-    this.fissureT = 6;
-    this.exhaustAuto = 18;
-  }
-
   /** dano em coberturas destrutíveis (tiros, explosões, golpes) */
   private damageCover(x: number, y: number, r: number, dmg: number) {
     if (dmg <= 0) return;
@@ -3511,252 +3209,6 @@ export class Game {
     this.events.push({ type: 'exhaust', x: p.x, y: p.y });
   }
 
-  private spawnMinion(kind: MinionKind, near: Pt) {
-    let pos: Pt | null = null;
-    for (let i = 0; i < 12 && !pos; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const x = near.x + Math.cos(a) * (50 + i * 6);
-      const y = near.y + Math.sin(a) * (50 + i * 6);
-      if (this.isFree(x, y, 22)) pos = { x, y };
-    }
-    if (!pos) pos = this.randomFreeSpot(0);
-    if (!pos) return;
-    const hunters = Math.max(1, this.players.filter((p) => !p.boss && p.playing).length);
-    const hp = ENEMY_STATS[kind].hp * (0.6 + hunters * 0.15);
-    this.enemies.push({ id: this.fragId++, kind, x: pos.x, y: pos.y, vx: 0, vy: 0, hp, maxHp: hp, cd: 1 + Math.random(), cd2: 2 + Math.random() * 2, dir: 0, hitFlash: 0, stunT: 0.6, slowT: 0, chargeT: 0 });
-    this.events.push({ type: 'minion', x: pos.x, y: pos.y, kind });
-  }
-
-  /** objetivos e criaturas por fase (chamado todo passo no modo Caça ao Chefe) */
-  private updateHunt(dt: number, b: Player) {
-    // pontos de recurso
-    this.resT -= dt;
-    if (this.resT <= 0) {
-      this.resT = BOSS.resourceEvery;
-      this.resSpots.forEach((s, i) => {
-        if (this.powerups.some((pw) => dist(pw.x, pw.y, s.x, s.y) < 30)) return;
-        const kind: PowerId = (i + Math.floor(this.roundT / BOSS.resourceEvery)) % 2 ? 'escudo' : 'cura';
-        this.powerups.push({ id: this.fragId++, kind, x: s.x, y: s.y, age: 0 });
-        this.events.push({ type: 'powerSpawn', x: s.x, y: s.y, power: kind });
-      });
-    }
-    // poças de ácido
-    for (const pl of this.pools) {
-      pl.t -= dt;
-      pl.armT -= dt;
-      if (pl.armT > 0) continue;
-      const tick = Math.floor((pl.t + dt) * 2) !== Math.floor(pl.t * 2);
-      for (const o of this.players) {
-        if (!o.alive || !o.playing || o.team === 1 || dist(o.x, o.y, pl.x, pl.y) > pl.r + 6) continue;
-        this.slow(o, 0.3);
-        if (tick) this.hurt(o, 4.5, null, 'hazard');
-      }
-    }
-    this.pools = this.pools.filter((pl) => pl.t > 0);
-    if (!b.alive) return;
-    // criaturas: fase 2 e 3 (com limite, nunca uma enxurrada)
-    const hunters = this.players.filter((p) => !p.boss && p.playing).length;
-    const cap = Math.min(5, 2 + hunters);
-    const alive = this.enemies.filter((e) => e.kind !== 'pylon').length;
-    if (this.bossPhase >= 2) {
-      this.minionT -= dt;
-      if (this.minionT <= 0 && alive < cap) {
-        this.minionT = BOSS.minionWaveEvery;
-        const pyl = this.enemies.filter((e) => e.kind === 'pylon');
-        const from = (k: number) => (pyl.length ? pyl[k % pyl.length] : b);
-        const wave: MinionKind[] = this.bossPhase >= 3 ? ['rastejador', Math.random() < 0.5 ? 'semeador' : 'carapaca'] : ['rastejador', 'cuspidor'];
-        if (hunters >= 3) wave.push('rastejador');
-        wave.slice(0, cap - alive).forEach((k, i) => this.spawnMinion(k, from(i)));
-      }
-    }
-    // fase 3: rachaduras de lava e cansaço periódico do Chefe
-    if (this.bossPhase >= 3) {
-      this.fissureT -= dt;
-      if (this.fissureT <= 0) {
-        this.fissureT = BOSS.fissureEvery;
-        const h = this.players.filter((p) => p.alive && p.playing && !p.boss);
-        const t = h[Math.floor(Math.random() * h.length)];
-        if (t) {
-          const vert = Math.random() < 0.5;
-          if (vert) this.addCast('fissura', b, t.x, BORDER, Math.PI / 2, { len: WORLD_H - BORDER * 2, w: 46, windup: 1.5 });
-          else this.addCast('fissura', b, BORDER, t.y, 0, { len: WORLD_W - BORDER * 2, w: 46, windup: 1.5 });
-        }
-      }
-      this.exhaustAuto -= dt;
-      if (this.exhaustAuto <= 0) {
-        this.exhaustAuto = 18;
-        this.exhaust(b, BOSS.exhaustTime * 0.8);
-      }
-    }
-  }
-
-  /** comportamento de cada criatura (time do Chefe) */
-  private updateMinion(e: Enemy, dt: number) {
-    const st = ENEMY_STATS[e.kind];
-    e.cd -= dt;
-    e.cd2 -= dt;
-    e.hitFlash = Math.max(0, e.hitFlash - dt);
-    e.stunT = Math.max(0, e.stunT - dt);
-    e.slowT = Math.max(0, e.slowT - dt);
-    const hunters = this.players.filter((p) => p.alive && p.playing && p.team === 0 && this.targetable(p));
-    const boss = this.boss;
-    let target: Player | null = null;
-    let bd = Infinity;
-    for (const p of hunters) {
-      let d = dist(p.x, p.y, e.x, e.y);
-      // o rastejador procura quem está sozinho
-      if (e.kind === 'rastejador') d -= 260 - Math.min(260, Math.min(...hunters.filter((q) => q !== p).map((q) => dist(q.x, q.y, p.x, p.y)), 260));
-      if (d < bd) {
-        bd = d;
-        target = p;
-      }
-    }
-    let speed = st.speed * (e.slowT > 0 ? 0.55 : 1);
-    let gx = e.x;
-    let gy = e.y;
-    const td = target ? dist(target.x, target.y, e.x, e.y) : Infinity;
-    const clear = target ? this.nav.lineClear(e.x, e.y, target.x, target.y, this.worldT) : false;
-    if (target && e.stunT <= 0) {
-      const ang = Math.atan2(target.y - e.y, target.x - e.x);
-      if (e.kind !== 'carapaca') e.dir = ang;
-      switch (e.kind as MinionKind) {
-        case 'rastejador':
-          if (e.chargeT > 0) {
-            // agachado (aviso), depois salta
-            e.chargeT -= dt;
-            speed = 0;
-            if (e.chargeT <= 0) {
-              e.vx = Math.cos(e.dir) * 640;
-              e.vy = Math.sin(e.dir) * 640;
-              e.cd2 = 3.5;
-            }
-          } else if (td < 150 && clear && e.cd2 <= 0) {
-            e.chargeT = 0.45;
-          } else {
-            gx = target.x;
-            gy = target.y;
-          }
-          break;
-        case 'carapaca': {
-          // guarda-costas: fica entre o Chefe e o caçador mais perto, de frente para ele
-          e.dir += Math.atan2(Math.sin(ang - e.dir), Math.cos(ang - e.dir)) * Math.min(1, dt * 3);
-          if (boss && boss.alive) {
-            const ba = Math.atan2(target.y - boss.y, target.x - boss.x);
-            gx = boss.x + Math.cos(ba) * 95;
-            gy = boss.y + Math.sin(ba) * 95;
-          } else {
-            gx = target.x;
-            gy = target.y;
-          }
-          break;
-        }
-        case 'cuspidor':
-          if (e.chargeT > 0) {
-            e.chargeT -= dt;
-            speed = 0;
-            if (e.chargeT <= 0) {
-              const lead = td / 300;
-              const a2 = Math.atan2(target.y + target.vy * lead * 0.5 - e.y, target.x + target.vx * lead * 0.5 - e.x);
-              this.bullets.push({ id: this.fragId++, x: e.x + Math.cos(a2) * 22, y: e.y - GUN_Y + Math.sin(a2) * 22, vx: Math.cos(a2) * 300, vy: Math.sin(a2) * 300, owner: 'enemy', dmg: 14, life: 1.5, weapon: 'acido', pierce: false, fromEcho: false, hit: [] });
-              e.cd = 2.4;
-            }
-          } else if (clear && td < 440 && e.cd <= 0) {
-            e.chargeT = 0.55;
-          } else if (td < 260) {
-            gx = e.x - Math.cos(ang) * 120;
-            gy = e.y - Math.sin(ang) * 120;
-          } else if (td > 380 || !clear) {
-            gx = target.x;
-            gy = target.y;
-          } else {
-            gx = e.x + Math.cos(ang + Math.PI / 2) * 80;
-            gy = e.y + Math.sin(ang + Math.PI / 2) * 80;
-          }
-          break;
-        case 'xama': {
-          // fica atrás do Chefe e cura quem estiver mais ferido
-          if (boss && boss.alive) {
-            const ba = Math.atan2(boss.y - target.y, boss.x - target.x);
-            gx = boss.x + Math.cos(ba) * 120;
-            gy = boss.y + Math.sin(ba) * 120;
-          }
-          if (e.chargeT > 0) e.chargeT -= dt;
-          if (e.cd <= 0) {
-            e.cd = 3.2;
-            const allies = this.enemies.filter((o) => o !== e && o.hp < o.maxHp && dist(o.x, o.y, e.x, e.y) < 360);
-            const hurtAlly = allies.sort((a, c) => a.hp / a.maxHp - c.hp / c.maxHp)[0];
-            if (boss && boss.alive && boss.hp < boss.maxHp && dist(boss.x, boss.y, e.x, e.y) < 360 && (!hurtAlly || boss.hp / boss.maxHp < hurtAlly.hp / hurtAlly.maxHp + 0.2)) {
-              this.heal(null, boss, 40);
-              this.events.push({ type: 'heal', x: boss.x, y: boss.y, pid: boss.id });
-              this.events.push({ type: 'zap', pid: boss.id, pts: [e.x, e.y - 30, boss.x, boss.y - 60] });
-              e.chargeT = 0.5;
-            } else if (hurtAlly) {
-              hurtAlly.hp = Math.min(hurtAlly.maxHp, hurtAlly.hp + 25);
-              this.events.push({ type: 'zap', pid: boss?.id ?? '', pts: [e.x, e.y - 30, hurtAlly.x, hurtAlly.y - 20] });
-              e.chargeT = 0.5;
-            }
-          }
-          break;
-        }
-        case 'semeador':
-          if (e.chargeT > 0) {
-            e.chargeT -= dt;
-            speed = 0;
-            if (e.chargeT <= 0) {
-              this.pools.push({ id: this.fragId++, x: e.x, y: e.y, r: 58, armT: 1, t: 7 });
-              e.cd = 5;
-            }
-          } else if (e.cd <= 0 && td < 300) {
-            e.chargeT = 0.8;
-          } else {
-            gx = target.x;
-            gy = target.y;
-          }
-          break;
-      }
-    }
-    // caminho com A* e passos
-    if (speed > 0 && (gx !== e.x || gy !== e.y)) {
-      if (!this.nav.lineClear(e.x, e.y, gx, gy, this.worldT)) {
-        const path = this.nav.path(e.x, e.y, gx, gy, this.worldT);
-        if (path.length) {
-          gx = path[0].x;
-          gy = path[0].y;
-        }
-      }
-      const d = Math.hypot(gx - e.x, gy - e.y);
-      const k = 1 - Math.exp(-8 * dt);
-      if (d > 6) {
-        e.vx += (((gx - e.x) / d) * speed - e.vx) * k;
-        e.vy += (((gy - e.y) / d) * speed - e.vy) * k;
-      } else {
-        e.vx *= 0.8;
-        e.vy *= 0.8;
-      }
-    } else {
-      e.vx *= Math.exp(-6 * dt);
-      e.vy *= Math.exp(-6 * dt);
-    }
-    e.x += e.vx * dt;
-    e.y += e.vy * dt;
-    this.collideWorld(e, st.r);
-    // encostou num caçador: dano (com intervalo)
-    for (const p of this.players) {
-      if (!p.alive || !p.playing || p.team !== 0 || p.phaseT > 0) continue;
-      const d = dist(p.x, p.y, e.x, e.y);
-      if (d > st.r + C.PLAYER_R) continue;
-      const nx = (p.x - e.x) / (d || 1);
-      const ny = (p.y - e.y) / (d || 1);
-      p.x = e.x + nx * (st.r + C.PLAYER_R);
-      p.y = e.y + ny * (st.r + C.PLAYER_R);
-      this.collideWorld(p);
-      if (p.invulnT > 0) continue;
-      this.hurt(p, st.touch * (e.kind === 'rastejador' && Math.hypot(e.vx, e.vy) > 400 ? 1.6 : 1), null, 'echo');
-      p.invulnT = Math.max(p.invulnT, 0.7);
-      this.knock(p, nx * 300, ny * 300);
-    }
-  }
-
   // ------------------------------------------------------------------ modos
   /** ponto de nascimento de um time (perto da base) */
   teamSpawn(team: number, k = 0): Pt {
@@ -3764,321 +3216,6 @@ export class Game {
     const opts = [...this.arena.spawns].sort((a, b) => dist(a.x, a.y, home.x, home.y) - dist(b.x, b.y, home.x, home.y));
     const s = opts[Math.min(k, 2)];
     return { x: s.x, y: s.y };
-  }
-
-  private setupModeRound() {
-    this.hill = null;
-    this.storm = null;
-    this.waveQueue = [];
-    if (this.mode === 'chefe') this.setupHunt();
-    if (this.mode === 'bandeira') {
-      for (const f of this.flags) Object.assign(f, { x: f.home.x, y: f.home.y, carrier: null, atHome: true, dropT: 0 });
-    }
-    if (this.mode === 'rei') {
-      const c = this.arena.cores[(this.coreIndex + this.round - 1) % this.arena.cores.length];
-      this.hill = { x: c.x, y: c.y, r: 86, owner: null, contested: false, moveAt: 15, next: null };
-      for (const p of this.players) p.hillAcc = 0;
-    }
-    if (this.mode === 'royale') {
-      const c = this.arena.cores[Math.floor(Math.random() * this.arena.cores.length)];
-      this.stormFrom = { x: 640, y: 360, r: 800 };
-      this.stormTo = { x: c.x, y: c.y, r: 105 };
-      this.storm = { ...this.stormFrom };
-    }
-    if (this.mode === 'ondas') {
-      this.wave = this.round;
-      const humans = this.players.filter((p) => p.playing).length;
-      const scale = 0.7 + humans * 0.3;
-      const w = this.wave;
-      const list: EnemyKind[] = [];
-      const drones = Math.round((2 + w * 2) * scale);
-      const brutes = w >= 2 ? Math.round((w - 1) * scale) : 0;
-      for (let i = 0; i < drones; i++) list.push('drone');
-      for (let i = 0; i < brutes; i++) list.splice(Math.floor(Math.random() * (list.length + 1)), 0, 'brute');
-      const span = this.roundDur * 0.55;
-      list.forEach((kind, i) => this.waveQueue.push({ at: 1.5 + (i / Math.max(1, list.length)) * span, kind }));
-      if (w >= this.totalRounds) this.waveQueue.push({ at: 4, kind: 'boss' });
-      this.waveQueue.sort((a, b) => a.at - b.at);
-      this.events.push({ type: 'wave', n: w, boss: w >= this.totalRounds });
-    }
-  }
-
-  private updateMode(dt: number) {
-    if (this.mode === 'bandeira') this.updateFlags(dt);
-    if (this.mode === 'rei') this.updateHill(dt);
-    if (this.mode === 'royale') this.updateStorm(dt);
-    if (this.mode === 'ondas') this.updateWaves(dt);
-  }
-
-  private updateFlags(dt: number) {
-    for (const f of this.flags) {
-      if (f.carrier) {
-        const c = this.players.find((p) => p.id === f.carrier);
-        if (!c || !c.alive) {
-          f.carrier = null;
-          f.dropT = 10;
-          this.events.push({ type: 'flagDrop', team: f.team, x: f.x, y: f.y });
-          continue;
-        }
-        f.x = c.x;
-        f.y = c.y;
-        const own = this.flags[c.team];
-        if (own && own.atHome && dist(c.x, c.y, own.home.x, own.home.y) < 56) {
-          this.teamScore[c.team]++;
-          this.award(c, 5);
-          for (const m of this.players) if (m !== c && m.team === c.team) this.award(m, 2);
-          this.events.push({ type: 'capture', pid: c.id, team: c.team });
-          Object.assign(f, { x: f.home.x, y: f.home.y, carrier: null, atHome: true, dropT: 0 });
-        }
-        continue;
-      }
-      if (!f.atHome) {
-        f.dropT -= dt;
-        if (f.dropT <= 0) {
-          Object.assign(f, { x: f.home.x, y: f.home.y, atHome: true });
-          this.events.push({ type: 'flagReturn', team: f.team, x: f.x, y: f.y });
-          continue;
-        }
-      }
-      for (const p of this.players) {
-        if (!p.alive || !p.playing || p.team < 0) continue;
-        if (dist(p.x, p.y, f.x, f.y) > C.PLAYER_R + 20) continue;
-        if (p.team === f.team) {
-          if (!f.atHome) {
-            Object.assign(f, { x: f.home.x, y: f.home.y, atHome: true });
-            this.award(p, 1);
-            this.events.push({ type: 'flagReturn', team: f.team, x: f.x, y: f.y });
-          }
-        } else if (!this.flags.some((o) => o.carrier === p.id)) {
-          f.carrier = p.id;
-          f.atHome = false;
-          this.events.push({ type: 'flagTake', pid: p.id, team: f.team });
-        }
-        break;
-      }
-    }
-  }
-
-  private updateHill(dt: number) {
-    const h = this.hill;
-    if (!h) return;
-    const t = this.roundT;
-    if (!h.next && t >= h.moveAt - 3) {
-      const cores = this.arena.cores;
-      let c = cores[Math.floor(Math.random() * cores.length)];
-      for (let i = 0; i < 8 && dist(c.x, c.y, h.x, h.y) < 60; i++) c = cores[Math.floor(Math.random() * cores.length)];
-      h.next = { ...c };
-    }
-    if (h.next && t >= h.moveAt) {
-      h.x = h.next.x;
-      h.y = h.next.y;
-      h.next = null;
-      h.moveAt = t + 15;
-      this.events.push({ type: 'hillMove', x: h.x, y: h.y });
-    }
-    const inside = this.players.filter((p) => p.alive && p.playing && dist(p.x, p.y, h.x, h.y) < h.r);
-    h.contested = inside.length > 1;
-    h.owner = inside.length === 1 ? inside[0].id : null;
-    if (h.owner) {
-      const p = inside[0];
-      p.hillAcc += dt;
-      while (p.hillAcc >= 1) {
-        p.hillAcc -= 1;
-        this.award(p, 1);
-      }
-    }
-  }
-
-  private updateStorm(dt: number) {
-    const st = this.storm;
-    if (!st) return;
-    const a = 6;
-    const b = this.roundDur - 8;
-    const k = Math.max(0, Math.min(1, (this.roundT - a) / (b - a)));
-    const e = k * k * (3 - 2 * k);
-    st.x = this.stormFrom.x + (this.stormTo.x - this.stormFrom.x) * e;
-    st.y = this.stormFrom.y + (this.stormTo.y - this.stormFrom.y) * e;
-    st.r = this.stormFrom.r + (this.stormTo.r - this.stormFrom.r) * e;
-    for (const p of this.players) {
-      if (!p.alive || !p.playing) continue;
-      if (dist(p.x, p.y, st.x, st.y) <= st.r) continue;
-      p.stormAcc += (8 + 10 * k) * dt;
-      if (p.stormAcc >= 5) {
-        p.stormAcc -= 5;
-        this.hurt(p, 5, null, 'hazard');
-      }
-    }
-  }
-
-  private updateWaves(dt: number) {
-    while (this.waveQueue.length && this.waveQueue[0].at <= this.roundT) {
-      const q = this.waveQueue.shift()!;
-      this.spawnEnemy(q.kind);
-    }
-    this.updateEnemies(dt);
-  }
-
-  private spawnEnemy(kind: EnemyKind, near?: Pt) {
-    let pos: Pt | null = null;
-    if (near) {
-      for (let i = 0; i < 10 && !pos; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const x = near.x + Math.cos(a) * 70;
-        const y = near.y + Math.sin(a) * 70;
-        if (this.isFree(x, y, 20)) pos = { x, y };
-      }
-    }
-    if (!pos) {
-      const alive = this.players.filter((p) => p.alive && p.playing);
-      const cands = [...this.arena.spawns].sort((a, b) => {
-        const da = Math.min(...alive.map((p) => dist(a.x, a.y, p.x, p.y)), 9999);
-        const db = Math.min(...alive.map((p) => dist(b.x, b.y, p.x, p.y)), 9999);
-        return db - da;
-      });
-      const s = cands[Math.floor(Math.random() * Math.min(3, cands.length))];
-      pos = { x: s.x + (Math.random() - 0.5) * 30, y: s.y + (Math.random() - 0.5) * 30 };
-    }
-    const st = ENEMY_STATS[kind];
-    const humans = this.players.filter((p) => p.playing).length;
-    const hp = kind === 'boss' ? st.hp * (0.6 + humans * 0.4) : st.hp * (1 + (this.wave - 1) * 0.12);
-    this.enemies.push({ id: this.fragId++, kind, x: pos.x, y: pos.y, vx: 0, vy: 0, hp, maxHp: hp, cd: 1 + Math.random(), cd2: 3, dir: 0, hitFlash: 0, stunT: 0.4, slowT: 0, chargeT: 0 });
-    this.events.push({ type: 'enemySpawn', x: pos.x, y: pos.y, kind });
-  }
-
-  private updateEnemies(dt: number) {
-    for (const e of this.enemies) {
-      const st = ENEMY_STATS[e.kind];
-      if ((MINION_KINDS as string[]).includes(e.kind)) {
-        this.updateMinion(e, dt);
-        continue;
-      }
-      if (e.kind === 'pylon') {
-        e.hitFlash = Math.max(0, e.hitFlash - dt);
-        continue;
-      }
-      e.cd -= dt;
-      e.cd2 -= dt;
-      e.hitFlash = Math.max(0, e.hitFlash - dt);
-      e.stunT = Math.max(0, e.stunT - dt);
-      e.slowT = Math.max(0, e.slowT - dt);
-      let target: Player | null = null;
-      let bd = Infinity;
-      for (const p of this.players) {
-        if (!this.targetable(p)) continue;
-        const d = dist(p.x, p.y, e.x, e.y);
-        if (d < bd) {
-          bd = d;
-          target = p;
-        }
-      }
-      let mx = 0;
-      let my = 0;
-      let speed = st.speed * (e.slowT > 0 ? 0.55 : 1);
-      if (target && e.stunT <= 0) {
-        const ang = Math.atan2(target.y - e.y, target.x - e.x);
-        e.dir = ang;
-        const clear = this.nav.lineClear(e.x, e.y, target.x, target.y, this.worldT);
-        let goal = { x: target.x, y: target.y };
-        if (e.kind === 'drone') {
-          const side = (e.id % 2 ? 1 : -1) * (Math.PI / 2);
-          if (bd < 170) goal = { x: e.x - Math.cos(ang) * 100, y: e.y - Math.sin(ang) * 100 };
-          else if (bd < 260) goal = { x: e.x + Math.cos(ang + side) * 100, y: e.y + Math.sin(ang + side) * 100 };
-          if (e.cd <= 0 && clear && bd < 460) {
-            e.cd = 1.3 + Math.random() * 0.6;
-            this.enemyShot(e, ang, 360, 8);
-          }
-        } else if (e.kind === 'brute') {
-          if (e.chargeT > 0) {
-            e.chargeT -= dt;
-            speed = 470;
-            mx = Math.cos(e.dir);
-            my = Math.sin(e.dir);
-          } else if (bd < 210 && clear && e.cd2 <= 0) {
-            e.chargeT = 0.55;
-            e.cd2 = 3.2;
-          }
-        } else if (e.kind === 'boss') {
-          if (e.cd <= 0) {
-            e.cd = 2.3;
-            const n = 14;
-            const off = Math.random() * Math.PI;
-            for (let i = 0; i < n; i++) this.enemyShot(e, off + (i / n) * Math.PI * 2, 300, 10);
-          }
-          if (e.cd2 <= 0) {
-            e.cd2 = 7;
-            if (this.enemies.length < 14) {
-              this.spawnEnemy('drone', e);
-              this.spawnEnemy('drone', e);
-            }
-          }
-        }
-        if (!(e.kind === 'brute' && e.chargeT > 0)) {
-          let gx = goal.x;
-          let gy = goal.y;
-          if (!this.nav.lineClear(e.x, e.y, gx, gy, this.worldT)) {
-            const path = this.nav.path(e.x, e.y, gx, gy, this.worldT);
-            if (path.length) {
-              gx = path[0].x;
-              gy = path[0].y;
-            }
-          }
-          const d = Math.hypot(gx - e.x, gy - e.y);
-          if (d > 4) {
-            mx = (gx - e.x) / d;
-            my = (gy - e.y) / d;
-          }
-        }
-      }
-      const k = 1 - Math.exp(-8 * dt);
-      e.vx += (mx * speed - e.vx) * k;
-      e.vy += (my * speed - e.vy) * k;
-      // vórtices também puxam inimigos
-      for (const v of this.vortexes) {
-        const d = dist(e.x, e.y, v.x, v.y);
-        if (d < v.r && d > 1) {
-          e.vx += ((v.x - e.x) / d) * 700 * (1 - d / v.r) * dt * (e.kind === 'boss' ? 0.2 : 1);
-          e.vy += ((v.y - e.y) / d) * 700 * (1 - d / v.r) * dt * (e.kind === 'boss' ? 0.2 : 1);
-        }
-      }
-      e.x += e.vx * dt;
-      e.y += e.vy * dt;
-      this.collideWorld(e, st.r);
-      // encostou: dano
-      for (const p of this.players) {
-        if (!p.alive || !p.playing || p.phaseT > 0) continue;
-        const d = dist(p.x, p.y, e.x, e.y);
-        if (d > st.r + C.PLAYER_R) continue;
-        const nx = (p.x - e.x) / (d || 1);
-        const ny = (p.y - e.y) / (d || 1);
-        p.x = e.x + nx * (st.r + C.PLAYER_R);
-        p.y = e.y + ny * (st.r + C.PLAYER_R);
-        this.collideWorld(p);
-        if (p.invulnT > 0 || st.touch <= 0) continue;
-        this.hurt(p, st.touch * (e.chargeT > 0 ? 1.4 : 1), null, 'echo');
-        p.vx += nx * 480;
-        p.vy += ny * 480;
-        p.invulnT = Math.max(p.invulnT, 0.7);
-      }
-    }
-    this.enemies = this.enemies.filter((e) => e.hp > 0);
-  }
-
-  private enemyShot(e: Enemy, ang: number, speed: number, dmg: number) {
-    const r = ENEMY_STATS[e.kind].r;
-    this.bullets.push({
-      id: this.fragId++,
-      x: e.x + Math.cos(ang) * (r + 6),
-      y: e.y - GUN_Y + Math.sin(ang) * (r + 6),
-      vx: Math.cos(ang) * speed,
-      vy: Math.sin(ang) * speed,
-      owner: 'enemy',
-      dmg,
-      life: 1.6,
-      weapon: 'blaster',
-      pierce: false,
-      fromEcho: false,
-      hit: [],
-    });
   }
 
   hurtEnemy(e: Enemy, dmg: number, by: string | null) {
@@ -4111,7 +3248,7 @@ export class Game {
       this.events.push({ type: 'enemyKill', x: e.x, y: e.y, kind: e.kind, by: p ? p.id : null });
       if (e.kind === 'boss') this.explode(e.x, e.y, 140, 0, 'boss', false);
       if (Math.random() < (e.kind === 'drone' ? 0.12 : 0.4) && this.powerups.length < 6)
-        this.powerups.push({ id: this.fragId++, kind: randomPower('combate'), x: e.x, y: e.y, age: 0 });
+        this.powerups.push({ id: this.fragId++, kind: randomPower(), x: e.x, y: e.y, age: 0 });
     }
   }
 
@@ -4194,7 +3331,7 @@ export class Game {
   }
 
   timeLeft(): number {
-    if (this.mode === 'duelo' && this.sudden) return Math.max(0, this.suddenLimit - this.suddenT);
+    if (this.sudden) return Math.max(0, this.suddenLimit - this.suddenT);
     return Math.max(0, this.roundDur - this.roundT);
   }
 }

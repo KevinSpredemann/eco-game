@@ -2138,7 +2138,7 @@ export class Renderer {
     ctx.beginPath();
     ctx.ellipse(p.x, p.y + 3, C.PLAYER_R + 3, (C.PLAYER_R + 3) * 0.5, 0, 0, Math.PI * 2);
     ctx.stroke();
-    if (p.team >= 0 && game.mode === 'bandeira') {
+    if (p.team >= 0 && game.mode === 'dupla') {
       // anel do time
       ctx.strokeStyle = TEAM_COLORS[p.team];
       ctx.lineWidth = 3;
@@ -2303,7 +2303,7 @@ export class Renderer {
         ctx.stroke();
       }
       const lh = this.lastHit.get(p.id) ?? -99;
-      drawStatus(ctx, game, p, time, game.mode !== 'nucleo' && !p.boss && p.hp < p.maxHp && performance.now() / 1000 - lh > 4);
+      drawStatus(ctx, game, p, time, !p.boss && p.hp < p.maxHp && performance.now() / 1000 - lh > 4);
     }
     // seta para o núcleo quando estiver carregando energia
     if (human && p.carry > 0) {
@@ -2811,7 +2811,6 @@ export class Renderer {
 
   private drawPrepHints(game: Game, time: number) {
     const ctx = this.ctx;
-    if (game.mode === 'nucleo') label(ctx, game.core.x, game.core.y - C.CORE_R - 14, 'NÚCLEO', '#5dff8a', 16);
     const p = game.human;
     if (p.playing) {
       const r = 34 + Math.sin(time * 6) * 4;

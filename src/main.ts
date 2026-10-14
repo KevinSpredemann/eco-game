@@ -41,7 +41,7 @@ input.binds = settings.keys;
 
 type AnyGame = Game | ClientGame;
 let game: AnyGame | null = null;
-let matchMode: MatchMode = 'nucleo';
+let matchMode: MatchMode = 'dupla';
 let net: NetClient | null = null;
 let onlineMode: GameMode = 'duelo';
 /** de onde a escolha de personagem foi aberta */
@@ -53,7 +53,7 @@ let hintStage = 0;
 let hintT = 0;
 let rulesThenStart = false;
 
-const training = () => matchMode === 'treino';
+const training = () => false;
 const isOnline = () => game instanceof ClientGame;
 
 // ------------------------------------------------------------------ ícones
@@ -247,11 +247,6 @@ function go(action: string, el?: HTMLElement) {
     case 'play':
       openModes();
       break;
-    case 'training':
-      matchMode = 'treino';
-      selectCtx = 'local';
-      openSelect();
-      break;
     case 'howto':
       rulesThenStart = false;
       show('screen-rules');
@@ -297,10 +292,7 @@ function go(action: string, el?: HTMLElement) {
       show('screen-select');
       break;
     case 'start':
-      if (!settings.rulesSeen && !training() && matchMode === 'nucleo') {
-        rulesThenStart = true;
-        show('screen-rules');
-      } else if (usesLoadout()) openLoadout('pre');
+      if (usesLoadout()) openLoadout('pre');
       else startMatch();
       break;
     case 'loadout-ok':
@@ -321,8 +313,11 @@ function go(action: string, el?: HTMLElement) {
       $('#lobby-ready').textContent = lobbyReady ? 'Pronto ✓' : 'Estou pronto';
       $('#lobby-ready').classList.toggle('primary', lobbyReady);
       break;
-    case 'quick-chefe':
-      quickMatch('chefe');
+    case 'quick-duelo':
+      quickMatch('duelo');
+      break;
+    case 'quick-dupla':
+      quickMatch('dupla');
       break;
     case 'rules-ok':
       settings.rulesSeen = true;
@@ -532,116 +527,52 @@ $('#acc-form').addEventListener('submit', async (e) => {
 // ------------------------------------------------------------------ modos
 const MODE_INFO: { id: MatchMode; name: string; desc: string; tag: string; color: string; icon: string }[] = [
   {
-    id: 'nucleo',
-    name: 'Núcleo de Energia',
-    desc: 'Pegue energia, leve ao núcleo e fuja dos Ecos. 4 rodadas.',
-    tag: 'Você + 1 a 3 bots',
-    color: '#5dff8a',
-    icon: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="19" fill="rgba(93,255,138,.15)" stroke="#5dff8a" stroke-width="3" stroke-dasharray="7 4"/><path d="M24 13 32 18v9l-8 5-8-5v-9z" fill="#c8ffd8" stroke="#1fbf5a" stroke-width="2"/></svg>',
-  },
-  {
     id: 'duelo',
-    name: 'Duelo x1',
-    desc: 'Um contra um com armas, bombas e poderes. Vence quem levar 3 rodadas.',
-    tag: 'Você contra 1 bot',
+    name: 'X1 Online',
+    desc: 'Um contra um. Melhor de 5. Morte súbita se ninguém cair.',
+    tag: 'Online',
     color: '#ff5a3c',
     icon: '<svg viewBox="0 0 48 48"><path d="M8 40 30 18M18 40 40 18" stroke="#ff5a3c" stroke-width="4" stroke-linecap="round"/><circle cx="34" cy="12" r="5" fill="#ffd08a"/><circle cx="14" cy="12" r="5" fill="#ffd08a"/></svg>',
   },
   {
-    id: 'combate',
-    name: 'Combate',
-    desc: 'Todos contra todos. Eliminações e vitórias de rodada valem pontos.',
-    tag: 'Você + 1 a 3 bots',
-    color: '#ffb347',
-    icon: '<svg viewBox="0 0 48 48"><circle cx="24" cy="26" r="13" fill="#1e1a2a" stroke="#ffb347" stroke-width="3"/><path d="M24 13V7" stroke="#ffb347" stroke-width="3"/><circle cx="24" cy="6" r="3" fill="#ff3a1e"/><path d="M18 26h12M24 20v12" stroke="#ffb347" stroke-width="3"/></svg>',
-  },
-  {
-    id: 'bandeira',
-    name: 'Captura a Bandeira',
-    desc: 'Times 2 contra 2. Roube a bandeira rival e leve até a sua base.',
-    tag: 'Você + 1 aliado vs 2',
+    id: 'dupla',
+    name: '2x2',
+    desc: 'Seu time contra o outro. Com bots ou online. Melhor de 5.',
+    tag: 'Online e offline',
     color: '#3ea8ff',
-    icon: '<svg viewBox="0 0 48 48"><path d="M12 42V6" stroke="#dfe6ff" stroke-width="3" stroke-linecap="round"/><path d="M12 7c8-4 12 4 22 0v16c-10 4-14-4-22 0z" fill="#3ea8ff" stroke="#0c1a3a" stroke-width="2"/><path d="M36 42V24" stroke="#dfe6ff" stroke-width="3" stroke-linecap="round"/><path d="M36 25c4-2 6 2 10 0v8c-4 2-6-2-10 0z" fill="#ff4a5a"/></svg>',
-  },
-  {
-    id: 'rei',
-    name: 'Rei da Colina',
-    desc: 'Fique sozinho na zona da coroa para somar pontos. Ela muda de lugar.',
-    tag: 'Você + 1 a 3 bots',
-    color: '#ffd23e',
-    icon: '<svg viewBox="0 0 48 48"><ellipse cx="24" cy="36" rx="19" ry="7" fill="rgba(255,210,62,.2)" stroke="#ffd23e" stroke-width="3" stroke-dasharray="6 4"/><path d="M11 28 9 12l8 7 7-11 7 11 8-7-2 16z" fill="#ffd23e" stroke="#5a3a00" stroke-width="2" stroke-linejoin="round"/></svg>',
-  },
-  {
-    id: 'ondas',
-    name: 'Sobrevivência',
-    desc: 'Você e aliados contra 5 ondas de robôs e um chefão. Seus Ecos lutam do seu lado!',
-    tag: 'Cooperativo',
-    color: '#ff3b3b',
-    icon: '<svg viewBox="0 0 48 48"><rect x="11" y="12" width="26" height="22" rx="7" fill="#c8302a" stroke="#2a0808" stroke-width="2.5"/><rect x="15" y="18" width="18" height="6" rx="3" fill="#2a2e3a"/><rect x="17" y="20" width="14" height="2" fill="#ff8a8a"/><path d="M24 12V5" stroke="#9aa4b8" stroke-width="2.5"/><circle cx="24" cy="5" r="3" fill="#ff3b3b"/><path d="M15 34v8M33 34v8" stroke="#3a4252" stroke-width="5" stroke-linecap="round"/></svg>',
-  },
-  {
-    id: 'royale',
-    name: 'Batalha Real',
-    desc: 'Até 6 jogadores. A zona fecha a cada segundo: fique dentro e seja o último de pé.',
-    tag: 'Você + até 5 bots',
-    color: '#ff4fd8',
-    icon: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="rgba(120,20,90,.45)"/><circle cx="24" cy="24" r="11" fill="#120c26" stroke="#ff4fd8" stroke-width="3" stroke-dasharray="5 3"/><circle cx="24" cy="24" r="3.5" fill="#fff"/></svg>',
-  },
-  {
-    id: 'chefe',
-    name: 'Caça ao Chefe',
-    desc: '3 caçadores contra 1 Chefe gigante. Acerte as costas, destrua os geradores e sobreviva aos golpes com aviso.',
-    tag: '3 contra 1',
-    color: '#ff4a5a',
-    icon: '<svg viewBox="0 0 48 48"><path d="M12 14 10 4l7 6 7-8 7 8 7-6-2 10z" fill="#ffd23e" stroke="#3a1a00" stroke-width="2" stroke-linejoin="round"/><circle cx="24" cy="28" r="13" fill="#5a1020" stroke="#ff4a5a" stroke-width="3"/><circle cx="19" cy="26" r="2.5" fill="#fff"/><circle cx="29" cy="26" r="2.5" fill="#fff"/><path d="M18 34h12" stroke="#ff9a9a" stroke-width="2.5" stroke-linecap="round"/></svg>',
-  },
-  {
-    id: 'treino',
-    name: 'Treino',
-    desc: 'Aprenda o básico sozinho, contra o seu próprio Eco.',
-    tag: 'Tutorial guiado',
-    color: '#3ee8ff',
-    icon: '<svg viewBox="0 0 48 48"><path d="M10 40V22a14 14 0 0 1 28 0v18l-5-3-4 3-5-3-5 3-4-3z" fill="rgba(62,232,255,.3)" stroke="#3ee8ff" stroke-width="3" stroke-linejoin="round"/><circle cx="19" cy="22" r="2.5" fill="#fff"/><circle cx="29" cy="22" r="2.5" fill="#fff"/></svg>',
+    icon: '<svg viewBox="0 0 48 48"><circle cx="16" cy="18" r="6" fill="#3ea8ff"/><circle cx="32" cy="18" r="6" fill="#ff4a5a"/><path d="M8 36c1-7 6-10 8-10s7 3 8 10M24 36c1-7 6-10 8-10s7 3 8 10" stroke="#dfe6ff" stroke-width="3" fill="none" stroke-linecap="round"/></svg>',
   },
 ];
-/** modos principais (cards grandes) e extras (linha pequena) */
-const MAIN_MODES: { id: MatchMode; name: string; line: string; tag: string; color: string }[] = [
-  { id: 'combate', name: 'Combate', line: 'Todos contra todos. O último de pé vence.', tag: 'Até 4', color: '#ffb347' },
-  { id: 'duelo', name: 'Duelo x1', line: '2 minutos por rodada. Melhor de 5. Morte súbita se ninguém cair.', tag: '1 contra 1', color: '#ff5a3c' },
-  { id: 'chefe', name: 'Caça ao Chefe', line: '3 caçadores contra 1 Chefe gigante.', tag: 'Novo · 3 contra 1', color: '#ff4a5a' },
-  { id: 'ondas', name: 'Sobrevivência', line: 'Junto com aliados contra robôs e um chefão.', tag: 'Cooperativo', color: '#ff3b5c' },
-];
-const EXTRA_MODES: MatchMode[] = ['nucleo', 'bandeira', 'rei', 'royale', 'treino'];
 
 function pickMode(id: MatchMode) {
   audio.click();
+  if (id === 'duelo') {
+    onlineMode = 'duelo';
+    openOnline();
+    return;
+  }
   matchMode = id;
   selectCtx = 'local';
   openSelect();
 }
 
-function modePickButton(id: MatchMode, name: string, line: string, tag: string, color: string, icon: string): HTMLButtonElement {
+function modePickButton(id: MatchMode | 'mundo', name: string, line: string, tag: string, color: string, icon: string, disabled = false): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'mode-pick';
   b.style.setProperty('--c', color);
+  b.disabled = disabled;
   b.innerHTML = `<span class="mode-ico">${icon}</span><span class="mbody"><span class="mtag">${tag}</span><span class="mt">${name}</span><span class="md">${line}</span></span>`;
-  b.addEventListener('click', () => pickMode(id));
+  if (!disabled) b.addEventListener('click', () => pickMode(id as MatchMode));
   return b;
 }
 
 function fillModeLists(grid: HTMLElement, more: HTMLElement) {
   grid.innerHTML = '';
-  for (const m of MAIN_MODES) {
-    const info = MODE_INFO.find((x) => x.id === m.id)!;
-    grid.appendChild(modePickButton(m.id, m.name, m.line, m.tag, m.color, info.icon));
-  }
+  for (const m of MODE_INFO) grid.appendChild(modePickButton(m.id, m.name, m.desc, m.tag, m.color, m.icon));
+  grid.appendChild(modePickButton('mundo', 'ECO Mundo', 'Um mundo para explorar. Chega na próxima atualização.', 'Em breve', '#5dff8a', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="14" fill="rgba(93,255,138,.2)" stroke="#5dff8a" stroke-width="3"/><path d="M24 10v28M12 20c6 3 18 3 24 0M12 28c6-3 18-3 24 0" stroke="#c8ffd8" stroke-width="2" fill="none"/></svg>', true));
   more.innerHTML = '';
-  for (const id of EXTRA_MODES) {
-    const info = MODE_INFO.find((x) => x.id === id)!;
-    const name = id === 'bandeira' ? 'Bandeira 2x2' : info.name;
-    more.appendChild(modePickButton(id, name, info.desc, info.tag, info.color, info.icon));
-  }
+  more.hidden = true;
 }
 
 function fillHomeModes() {
@@ -754,18 +685,11 @@ $('#cos-tabs')?.addEventListener('click', (e) => {
 });
 
 const MODE_LABEL: Record<string, string> = {
-  nucleo: 'Núcleo de Energia',
-  duelo: 'Duelo x1',
-  combate: 'Combate',
-  bandeira: 'Captura a Bandeira',
-  rei: 'Rei da Colina',
-  ondas: 'Sobrevivência',
-  royale: 'Batalha Real',
-  chefe: 'Caça ao Chefe',
-  treino: 'Treino',
+  duelo: 'X1 Online',
+  dupla: '2x2',
 };
-/** modos com armas usam a tela de equipamento (passo 3) */
-const usesLoadout = () => matchMode !== 'nucleo' && matchMode !== 'treino';
+/** os dois modos usam a tela de equipamento */
+const usesLoadout = () => true;
 
 // ------------------------------------------------------------------ seleção (personagem → mapa): carrosséis
 const heroScene = new HeroScene(document.createElement('canvas'));
@@ -989,7 +913,7 @@ canvas.addEventListener('pointerdown', () => {
 let rwSig = '';
 function rewindPanel(g: AnyGame) {
   const el = $('#rw-sum');
-  const on = g.phase === 'rewind' && g.mode !== 'chefe' && (g as any).roundEchoLines?.length > 0;
+  const on = g.phase === 'rewind' && (g as any).roundEchoLines?.length > 0;
   // durante o Rebobinando os botões de toque e a barra de status somem (não cobrem a arena)
   document.body.classList.toggle('rewinding', g.phase === 'rewind');
   el.hidden = !on;
@@ -1059,8 +983,7 @@ function mapInfo(at?: number) {
   const dl = ['', 'Fácil', 'Fácil', 'Média', 'Difícil', 'Insana'][d];
   const dc = ['', '#5dff8a', '#5dff8a', '#ffd23e', '#ff8a3c', '#ff3b5c'][d];
   const bars = Array.from({ length: 5 }, (_, i) => `<i style="${i < d ? `background:${dc}` : ''}"></i>`).join('');
-  const rules = matchMode === 'chefe' ? '<span class="chefe-line">3 caçadores × 1 Chefe · acerte as costas · destrua os geradores · saia das áreas marcadas</span>' : '';
-  $('#map-info').innerHTML = `<b class="hp-name nm" style="--c:${a.palette.accent}">${a.name.toUpperCase()}</b><span class="hp-tag">${a.desc} ${a.gimmick}</span>${rules}<span class="diff">Dificuldade: <b style="color:${dc}">${dl}</b> <span class="dbars">${bars}</span></span>`;
+  $('#map-info').innerHTML = `<b class="hp-name nm" style="--c:${a.palette.accent}">${a.name.toUpperCase()}</b><span class="hp-tag">${a.desc} ${a.gimmick}</span><span class="diff">Dificuldade: <b style="color:${dc}">${dl}</b> <span class="dbars">${bars}</span></span>`;
 }
 
 function placeMapStage() {
@@ -1093,19 +1016,16 @@ function buildMapCarousel() {
 function openMap() {
   $('#map-mode').textContent = `${MODE_LABEL[matchMode]} · ${getCharacter(settings.char).name} · passo 2 de ${usesLoadout() ? 3 : 2}`;
   $('#match-opts').hidden = training();
-  const chefe = matchMode === 'chefe';
-  $('#role-opt').hidden = !chefe;
-  $<HTMLSelectElement>('#sel-role').value = settings.chefeRole;
   const goTxt = usesLoadout() ? 'Equipamento ›' : 'Começar partida ›';
   $('#map-go').textContent = goTxt;
   $('#map-go-top').textContent = usesLoadout() ? 'Próximo ›' : 'Começar ›';
   const botSel = $<HTMLSelectElement>('#sel-bots');
-  botSel.closest('label')!.hidden = matchMode === 'duelo' || matchMode === 'bandeira' || chefe;
-  const mm = matchMode === 'treino' ? 'nucleo' : (matchMode as GameMode);
+  botSel.closest('label')!.hidden = true;
+  const mm = matchMode;
   const maxBots = MODE_RULES[mm].maxPlayers - 1;
-  const minBots = matchMode === 'ondas' ? 0 : 1;
-  const word = matchMode === 'ondas' ? ['aliado', 'aliados'] : ['bot', 'bots'];
-  $('#bots-label').textContent = matchMode === 'ondas' ? 'Aliados' : 'Adversários';
+  const minBots = 1;
+  const word = ['bot', 'bots'];
+  $('#bots-label').textContent = 'Adversários';
   botSel.innerHTML = '';
   for (let n = minBots; n <= maxBots; n++) botSel.add(new Option(n === 0 ? 'Sozinho' : `${n} ${n === 1 ? word[0] : word[1]}`, String(n)));
   settings.bots = Math.max(minBots, Math.min(maxBots, settings.bots));
@@ -1122,10 +1042,6 @@ function openMap() {
 }
 $<HTMLSelectElement>('#sel-bots').addEventListener('change', (e) => {
   settings.bots = Number((e.target as HTMLSelectElement).value);
-  saveSettings(settings);
-});
-$<HTMLSelectElement>('#sel-role').addEventListener('change', (e) => {
-  settings.chefeRole = (e.target as HTMLSelectElement).value as Settings['chefeRole'];
   saveSettings(settings);
 });
 $<HTMLSelectElement>('#sel-diff').addEventListener('change', (e) => {
@@ -1478,7 +1394,7 @@ document.querySelectorAll<HTMLElement>('#online-modes .pill').forEach((p) =>
 async function createRoom() {
   try {
     const n = await ensureNet();
-    n.send({ t: 'create', mode: onlineMode, arena: settings.arena, bots: onlineMode === 'duelo' ? 0 : onlineMode === 'bandeira' || onlineMode === 'royale' || onlineMode === 'chefe' ? 3 : 1 });
+    n.send({ t: 'create', mode: onlineMode, arena: settings.arena, bots: onlineMode === 'duelo' ? 0 : 3 });
   } catch (e) {
     showOnlineError((e as Error).message, true);
   }
@@ -1567,19 +1483,17 @@ function renderLobby(r: RoomInfo, me: string) {
   const readyN = others.filter((p) => p.ready).length;
   $('#lobby-note').textContent = r.public
     ? `Busca automática · ${MODE_LABEL[r.mode]}: começa quando lotar, quando todos estiverem prontos ou em ${r.autoIn ?? 0}s (bots completam as vagas).`
-    : r.mode === 'chefe' && total < min
-      ? `Caça ao Chefe precisa de ${min} participantes (pessoas + bots). Agora: ${total}. Aumente os bots ou chame mais gente.`
-      : host
+    : host
         ? r.players.length < 2 && r.mode === 'duelo'
           ? 'Sozinho? Pode começar: um bot entra no lugar do amigo.'
-          : others.length
+          : r.mode === 'dupla' && r.players.length < 4
+            ? '2x2: chame um amigo para o seu time ou comece — bots completam os dois lados.'
+            : others.length
             ? `${readyN} de ${others.length} ${others.length === 1 ? 'amigo pronto' : 'amigos prontos'}. Quando quiser, toque em Começar.`
-            : r.mode === 'chefe'
-              ? 'O Chefe é sorteado em rodízio: quem foi Chefe menos vezes tem a vez. Toque em Começar.'
-              : 'Mande o convite para os amigos. Quando todo mundo entrar, toque em Começar.'
+            : 'Mande o convite para os amigos. Quando todo mundo entrar, toque em Começar.'
         : `Você está na sala de ${hostP?.name ?? 'outro jogador'}. Esperando ${hostP?.name ?? 'o dono'} começar a partida.`;
   if (r.state === 'playing' || performance.now() - startPendingT > 5000) startPending = false;
-  $<HTMLButtonElement>('#lobby-start').disabled = startPending || (r.mode === 'chefe' && total < min);
+  $<HTMLButtonElement>('#lobby-start').disabled = startPending;
   if (!game && !['screen-select', 'screen-lobby', 'screen-loadout'].includes(currentScreen() ?? '')) show('screen-lobby');
   if (currentScreen() === 'screen-online') show('screen-lobby');
 }
@@ -1614,21 +1528,13 @@ function localRoster(): RosterEntry[] {
   const p = account.profile;
   const human: RosterEntry = { id: 'p0', char: settings.char, isBot: false, name: 'Você', skin: p.equipped.skin, trail: p.equipped.trail, lv: abilityLevel(p, settings.char), loadout: sanitizeLoadout(settings.loadout, (k) => owns(p, k)) };
   if (training()) return [human];
-  const n = matchMode === 'duelo' ? 1 : matchMode === 'bandeira' || matchMode === 'chefe' ? 3 : Math.min(settings.bots, MODE_RULES[matchMode as GameMode].maxPlayers - 1);
+  const n = matchMode === 'duelo' ? 1 : 3;
   const pool = CHARACTERS.map((c) => c.id).filter((id) => id !== settings.char);
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
   const bots: RosterEntry[] = pool.slice(0, n).map((c, i) => ({ id: 'b' + i, char: c, isBot: true, name: getCharacter(c).name }));
-  if (matchMode === 'chefe') {
-    // papel: escolhido ou sorteio justo (rodízio: você é o Chefe 1 a cada 4 partidas)
-    settings.bossTurns = (settings.bossTurns ?? 0) + 1;
-    saveSettings(settings);
-    const meBoss = settings.chefeRole === 'chefe' || (settings.chefeRole === 'sorteio' && settings.bossTurns % 4 === 0);
-    if (meBoss) human.boss = true;
-    else bots[0].boss = true;
-  }
   return [human, ...bots];
 }
 
@@ -1643,7 +1549,7 @@ function startMatch() {
     difficulty: settings.difficulty,
     ownEchoDamage: settings.ownEcho,
     training: training(),
-    mode: training() ? 'nucleo' : (matchMode as GameMode),
+    mode: matchMode,
     roster: localRoster(),
   });
   beginMatchView(g);
@@ -1800,30 +1706,21 @@ function duelScore(g: AnyGame) {
 }
 
 function objectiveText(g: AnyGame) {
-  if (g.mode === 'duelo') return '2 minutos. Quem elimina vence na hora. Depois o ECO rebobina e volta na rodada seguinte.';
-  if (g.mode === 'combate') return 'Elimine os rivais · eliminação = 2, rodada = 3';
-  if (g.mode === 'bandeira') return `Azul ${g.teamScore[0]} × ${g.teamScore[1]} Vermelho · leve a bandeira rival à sua base`;
-  if (g.mode === 'rei') return 'Fique sozinho na colina: +1 ponto por segundo';
-  if (g.mode === 'ondas') return g.wave >= g.totalRounds ? 'Onda final: derrubem o CHEFÃO juntos' : 'Sobreviva às ondas de robôs com seu time';
-  if (g.mode === 'royale') return 'Fique dentro da zona · o último de pé vence';
-  if (g.mode === 'chefe')
-    return g.human.boss
-      ? `Você é o Chefe: elimine os caçadores ou resista ${Math.round(g.roundDur / 60)} min · golpes têm aviso`
-      : 'Acerte as COSTAS do Chefe, destrua os geradores e saia das áreas marcadas';
-  return OBJECTIVES[g.objective as keyof typeof OBJECTIVES];
+  if (g.mode === 'dupla') return '2x2. O time que sobrar vence a rodada. Melhor de 5. Depois o ECO rebobina.';
+  return '2 minutos. Quem elimina vence na hora. Depois o ECO rebobina e volta na rodada seguinte.';
 }
 
 const OBJ_SHORT: Record<string, string> = { dourado: '★ Fragmento dourado', tripla: '★ Entrega tripla', intocavel: '★ Sem levar dano' };
 
 /** HUD de combate: só placar/objetivo curto, nunca a explicação do modo */
+function teamWins(g: AnyGame, team: number) {
+  return g.players.find((p) => p.team === team)?.roundWins ?? 0;
+}
+
 function objectiveHud(g: AnyGame) {
   if (g.phase !== 'play') return '';
-  if (g.mode === 'duelo') return duelScore(g);
-  if (g.mode === 'bandeira') return `Azul ${g.teamScore[0]} × ${g.teamScore[1]} Vermelho`;
-  if (g.mode === 'ondas') return g.wave >= g.totalRounds ? 'CHEFÃO' : `${g.enemies.length} ${g.enemies.length === 1 ? 'robô' : 'robôs'}`;
-  if (g.mode === 'nucleo') return OBJ_SHORT[g.objective as string] ?? '';
-  // Caça ao Chefe: a barra do Chefe já mostra vida, fase, geradores e vidas do time
-  return '';
+  if (g.mode === 'dupla') return `Azul ${teamWins(g, 0)} × ${teamWins(g, 1)} Vermelho`;
+  return duelScore(g);
 }
 
 /** como cada habilidade/item funciona contra o Chefe e as criaturas (só aparece no modo Caça ao Chefe) */
@@ -1851,8 +1748,8 @@ const BOSS_NOTE: Record<string, string> = {
   gelo: 'no Chefe a lentidão cai pela metade.',
   kit: 'cura igual; os pontos de recurso também trazem cura.',
 };
-function vsBoss(g: AnyGame, id: string) {
-  return g.mode === 'chefe' && BOSS_NOTE[id] ? ` Contra o Chefe: ${BOSS_NOTE[id]}` : '';
+function vsBoss(_g: AnyGame, _id: string) {
+  return '';
 }
 /** os espaços de habilidade do jogador local (usados na barra e no aviso de "não dá para usar") */
 function buildSlots(g: AnyGame): SlotView[] {
@@ -2021,27 +1918,7 @@ function updateSkills(g: AnyGame) {
     setTimeout(() => $('#hud').classList.remove('ult-flash'), 900);
   }
   ultWasReady = ready;
-  // barra do Chefe (topo)
-  const boss = g.mode === 'chefe' ? g.players.find((p) => p.boss) : null;
-  $('#boss-hud').hidden = !boss || g.phase === 'rewind';
-  if (boss) {
-    const f = Math.max(0, boss.hp / (boss.maxHp || 1));
-    ($('#bh-fill') as HTMLElement).style.width = `${Math.round(f * 1000) / 10}%`;
-    setText('#bh-name', boss.id === me.id ? 'VOCÊ É O CHEFE' : `CHEFE · ${boss.char.name.toUpperCase()}`);
-    const ph = g.bossPhase ?? 1;
-    setText('#bh-phase', ph === 1 ? 'FASE 1 · aprendendo' : ph === 2 ? 'FASE 2 · geradores' : 'FASE 3 · fúria');
-    const pyl = g.enemies.filter((e: any) => e.kind === 'pylon').length;
-    $('#boss-hud').classList.toggle('shielded', pyl > 0);
-    const crit = g.enemies.filter((e: any) => e.kind !== 'pylon' && e.kind !== 'boss').length;
-    const tired = (boss as any).exhaustT > 0;
-    $('#boss-hud').classList.toggle('tired', tired);
-    // fica transparente quando o seu personagem (ou o Chefe) passa por baixo da barra
-    $('#boss-hud').classList.toggle('under', Math.min(me.y, boss.y - 60) < 200);
-    setHTML(
-      '#bh-info',
-      `<span>${Math.ceil(boss.hp)} / ${boss.maxHp}</span>${tired ? '<span class="ex">EXAUSTO · dano extra</span>' : pyl ? `<span class="sh">⛉ Protegido por ${pyl} gerador${pyl > 1 ? 'es' : ''}</span>` : boss.id !== me.id ? '<span>Mire nas costas ✦</span>' : ''}${crit ? `<span>Criaturas: ${crit}</span>` : ''}<span>♥ Vidas do time: ${g.teamLives}</span>`,
-    );
-  }
+  $('#boss-hud').hidden = true;
 }
 
 function updateHud() {
@@ -2049,7 +1926,7 @@ function updateHud() {
   const g = game;
   rewindPanel(g);
   const suddenOn = g.mode === 'duelo' && g.sudden && g.phase === 'play';
-  const roundLabel = suddenOn ? 'MORTE SÚBITA' : g.tiebreak ? 'DESEMPATE' : training() && !isOnline() ? `TREINO ${g.round}/${g.totalRounds}` : g.mode === 'ondas' ? `ONDA ${g.round}/${g.totalRounds}` : `RODADA ${g.round}/${g.totalRounds}`;
+  const roundLabel = suddenOn ? 'MORTE SÚBITA' : g.tiebreak ? 'DESEMPATE' : training() && !isOnline() ? `TREINO ${g.round}/${g.totalRounds}` : `RODADA ${g.round}/${g.totalRounds}`;
   setText('#hud-round', roundLabel);
   $('#hud-round').classList.toggle('sudden', suddenOn);
   const t = g.phase === 'prep' ? g.roundDur : g.timeLeft();
@@ -2070,7 +1947,7 @@ function updateHud() {
   if (!me.alive && me.respawnT > 0) {
     setHTML('#hud-status', `<span class="ab-wait">Renascendo em ${Math.ceil(me.respawnT)}s…</span>`);
   } else if (!me.alive) {
-    setHTML('#hud-status', `<span class="ab-wait">${g.mode === 'ondas' ? 'Você caiu — seus aliados seguram a onda' : g.mode === 'duelo' ? 'Eliminado nesta rodada' : 'Eliminado nesta rodada — observe os Ecos'}</span>`);
+    setHTML('#hud-status', `<span class="ab-wait">${'Eliminado nesta rodada'}</span>`);
   } else if (g.combat) {
     const f = Math.max(0, me.hp / (me.maxHp || MAX_HP));
     const cls = f > 0.5 ? '' : f > 0.25 ? 'mid' : 'low';
@@ -2208,7 +2085,7 @@ function onEvents(events: GameEvent[]) {
         } else if (e.phase === 'play') {
           banner(g.combat ? 'LUTE!' : 'JÁ!', '', 0.8);
           audio.go();
-        } else if (e.phase === 'rewind' && g.mode !== 'chefe') {
+        } else if (e.phase === 'rewind') {
           // sem banner grande: o título fica na linha do tempo, embaixo, e o resumo num painel curto
           skipAsked = false;
           renderer.skipLabel = input.touchMode ? 'TOQUE · PULAR' : 'ESPAÇO · PULAR';
@@ -2302,11 +2179,7 @@ function onEvents(events: GameEvent[]) {
         if (e.kind === 'boss') audio.coreWarn();
         break;
       case 'gameOver':
-        if (g.mode === 'chefe') {
-          const meBoss = g.human.boss;
-          const iWon = meBoss ? !e.won : e.won;
-          banner(iWon ? 'VITÓRIA!' : 'DERROTA', e.won ? 'Os caçadores derrubaram o Chefe' : g.timeLeft() <= 0.5 ? 'O tempo acabou: o Chefe resistiu' : 'O Chefe eliminou o time', 2.4);
-        } else banner(e.won ? 'VOCÊS VENCERAM!' : 'FIM DE JOGO', e.won ? 'Todas as ondas superadas' : 'Os robôs venceram desta vez', 2.2);
+        banner(e.won ? 'VITÓRIA!' : 'FIM DE JOGO', '', 2.2);
         break;
       case 'bossPhase':
         audio.coreWarn();
@@ -2517,54 +2390,25 @@ async function showResults() {
   $('#screen-results .btn[data-action=restart]').textContent = 'Revanche';
   delete ($('#screen-results .btn[data-action=restart]') as HTMLButtonElement).dataset.rematch;
   $('#screen-results .btn[data-action=select]').textContent = 'Trocar personagem';
-  $('#res-title').textContent = training()
-    ? `${me.score} pontos`
-    : g.mode === 'duelo'
-      ? g.winners.length === 1
-        ? meWon
-          ? 'Vitória!'
-          : 'Derrota'
-        : 'EMPATE'
-    : g.mode === 'chefe'
+  $('#res-title').textContent = g.mode === 'dupla'
+    ? g.winners.length && g.winners.every((id) => g.players.find((p) => p.id === id)?.team === me.team)
+      ? 'Seu time venceu!'
+      : g.winners.length > 1 && new Set(g.winners.map((id) => g.players.find((p) => p.id === id)?.team)).size > 1
+        ? 'EMPATE'
+        : 'O outro time venceu'
+    : g.winners.length === 1
       ? meWon
-        ? me.boss
-          ? 'Você resistiu como Chefe!'
-          : 'O Chefe caiu!'
-        : me.boss
-          ? 'Os caçadores venceram'
-          : 'O Chefe venceu'
-    : g.mode === 'ondas'
-      ? g.gameWon
-        ? 'Vocês sobreviveram!'
-        : `Caíram na onda ${g.wave}`
-      : g.mode === 'bandeira'
-        ? meWon
-          ? 'Seu time venceu!'
-          : g.teamScore[0] === g.teamScore[1]
-            ? 'Empate!'
-            : 'O time rival venceu'
-        : meWon
-          ? shared
-            ? 'Vitória dividida!'
-            : 'Vitória!'
-          : 'Não foi dessa vez';
+        ? 'Vitória!'
+        : 'Derrota'
+      : 'EMPATE';
+  void shared;
   const list = $('#res-list');
   list.innerHTML = '';
   rank.forEach((p, i) => {
     const top = Object.entries(p.stats.uses).sort((a, b) => b[1] - a[1])[0];
-    const sub =
-      g.mode === 'chefe'
-        ? chefeLine({ boss: p.boss, dmg: p.stats.dmg, heal: p.stats.heal, obj: p.stats.obj, weak: p.stats.weak, kills: p.kills, top: top ? `${top[0]} ×${top[1]}` : '' })
-        : g.mode === 'ondas'
-        ? `${p.kills} robôs destruídos`
-        : g.mode === 'bandeira'
-          ? `Time ${p.team ? 'Vermelho' : 'Azul'} · ${p.kills} eliminações`
-          : g.mode === 'rei'
-            ? `${p.score} pontos na colina · ${p.kills} eliminações`
-            : g.combat
-              ? `${p.kills} eliminações · ${p.roundWins} rodadas`
-              : `${p.stats.delivered} energia entregue · sobreviveu ${p.stats.survived}×`;
-    const pts = g.mode === 'duelo' ? `${p.roundWins}` : String(p.score);
+    const sub = g.mode === 'dupla' ? `Time ${p.team ? 'Vermelho' : 'Azul'} · ${p.kills} eliminações · ${p.roundWins} rodadas` : `${p.kills} eliminações · ${p.roundWins} rodadas`;
+    const pts = `${p.roundWins}`;
+    void top;
     list.appendChild(resultRow(i, p.id === me.id ? `Você (${p.char.name})` : p.name, p.char.id, p.skin, sub, pts, p.id === me.id));
   });
   $('#res-highlight').textContent = g.highlight;
@@ -2585,18 +2429,6 @@ async function showResults() {
   }, 900);
 }
 
-/** linha de estatísticas da Caça ao Chefe (não só dano: objetivos, curas, habilidade mais usada) */
-function chefeLine(r: { boss?: boolean; dmg?: number; heal?: number; obj?: number; weak?: number; kills?: number; top?: string }) {
-  const parts = r.boss ? [`Chefe`, `${r.kills ?? 0} eliminações`, `${Math.round(r.dmg ?? 0)} de dano`] : [`${Math.round(r.dmg ?? 0)} de dano`];
-  if (!r.boss) {
-    if (r.weak) parts.push(`${r.weak} nas costas`);
-    if (r.obj) parts.push(`${r.obj} gerador${r.obj > 1 ? 'es' : ''}`);
-    if ((r.heal ?? 0) >= 10) parts.push(`${Math.round(r.heal ?? 0)} de cura`);
-  }
-  if (r.top) parts.push(`mais usada: ${r.top}`);
-  return parts.join(' · ');
-}
-
 function showCoins(coins: number) {
   const el = $('#res-coins');
   el.hidden = false;
@@ -2610,32 +2442,23 @@ function showOnlineResults(info: EndInfo) {
   const myId = g.human.id;
   const meWon = info.winners.includes(myId);
   $('#res-eyebrow').textContent = `Online · ${MODE_LABEL[g.mode]}`;
-  const meBoss = g.human.boss;
   $('#res-title').textContent =
-    g.mode === 'duelo'
-      ? info.winners.length === 1
+    g.mode === 'dupla'
+      ? info.winners.some((id) => id === myId)
+        ? 'Seu time venceu!'
+        : info.winners.length
+          ? 'O outro time venceu'
+          : 'EMPATE'
+      : info.winners.length === 1
         ? meWon
           ? 'Vitória!'
           : 'Derrota'
-        : 'EMPATE'
-      : g.mode === 'chefe'
-        ? meWon
-          ? meBoss
-            ? 'Você resistiu como Chefe!'
-            : 'O Chefe caiu!'
-          : meBoss
-            ? 'Os caçadores venceram'
-            : 'O Chefe venceu'
-        : meWon
-          ? info.winners.length > 1
-            ? 'Vitória dividida!'
-            : 'Vitória!'
-          : 'Não foi dessa vez';
+        : 'EMPATE';
   const list = $('#res-list');
   list.innerHTML = '';
   info.ranking.forEach((r, i) => {
-    const sub = g.mode === 'chefe' ? chefeLine(r) : g.combat ? `${r.kills} eliminações · ${r.roundWins} rodadas` : `${r.score} pontos`;
-    list.appendChild(resultRow(i, r.id === myId ? `Você (${r.name})` : r.name, r.char, r.skin, sub, g.mode === 'duelo' ? String(r.roundWins) : String(r.score), r.id === myId));
+    const sub = `${r.kills} eliminações · ${r.roundWins} rodadas`;
+    list.appendChild(resultRow(i, r.id === myId ? `Você (${r.name})` : r.name, r.char, r.skin, sub, String(r.roundWins), r.id === myId));
   });
   $('#res-highlight').textContent = info.highlight;
   const coins = info.rewards[myId] ?? 0;
@@ -2867,7 +2690,7 @@ function drawIdle(time: number) {
   if (homeHero.running) return;
   if (!idleGame) {
     const arena = ARENAS[Math.floor(Math.random() * ARENAS.length)];
-    idleGame = new Game({ arena, humanChar: 'kael', bots: 4, difficulty: 'normal', ownEchoDamage: true, training: false, spectator: true, mode: Math.random() < 0.5 ? 'combate' : 'nucleo' });
+    idleGame = new Game({ arena, humanChar: 'kael', bots: 3, difficulty: 'normal', ownEchoDamage: true, training: false, spectator: true, mode: 'dupla' });
     renderer.setArena(idleGame.arena);
   }
   const g = idleGame;
@@ -2972,7 +2795,7 @@ document.addEventListener('touchend', primeAudio, { passive: true });
 document.addEventListener('click', primeAudio);
 window.addEventListener('keydown', primeAudio);
 
-$('#rules-powers').innerHTML = POWERS.filter((p) => p.modes.includes('nucleo')).map((p) => `<li><span class="pdot" style="--c:${p.color}"></span><b style="color:${p.color}">${p.name}</b> ${p.desc}</li>`).join('');
+$('#rules-powers').innerHTML = POWERS.filter((p) => p.id !== 'ima').map((p) => `<li><span class="pdot" style="--c:${p.color}"></span><b style="color:${p.color}">${p.name}</b> ${p.desc}</li>`).join('');
 bindOptions();
 applySettings();
 renderChip();
@@ -3006,7 +2829,7 @@ requestAnimationFrame(frame);
   get net() {
     return net;
   },
-  start: (char: string, arena: string, mode: MatchMode = 'nucleo') => {
+  start: (char: string, arena: string, mode: MatchMode = 'dupla') => {
     settings.char = char;
     settings.arena = arena;
     matchMode = mode;

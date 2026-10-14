@@ -23,29 +23,11 @@ interface Spec {
 const TEAM_NAME = ['Azul', 'Vermelho'];
 
 function spec(g: AnyGame): Spec {
-  const pts = (p: Player) => p.score;
-  switch (g.mode) {
-    case 'duelo':
-      return { head: 'Rodadas vencidas (3 vencem)', val: (p) => p.roundWins, kd: false, coop: false, col: 'Rodadas' };
-    case 'combate':
-      return { head: 'Pontos · elim/quedas', val: pts, kd: true, coop: false, col: 'Pontos' };
-    case 'royale':
-      return { head: `Vivos: ${g.players.filter((p) => p.playing && p.alive).length} · elim/quedas`, val: pts, kd: true, coop: false, col: 'Pontos' };
-    case 'bandeira':
-      return { head: `${TEAM_NAME[0]} ${g.teamScore[0]} × ${g.teamScore[1]} ${TEAM_NAME[1]}`, val: pts, kd: true, coop: false, col: 'Pontos' };
-    case 'rei': {
-      const h = g.hill;
-      const owner = h?.owner ? g.players.find((p) => p.id === h.owner) : null;
-      const st = !h ? '' : h.contested ? ' · colina em disputa' : owner ? ` · colina: ${owner.id === g.human.id ? 'você' : owner.name}` : ' · colina livre';
-      return { head: `Segundos na colina${st}`, val: pts, kd: false, coop: false, col: 'Segundos' };
-    }
-    case 'ondas':
-      return { head: `Onda ${g.wave}/${g.totalRounds} · pontos do time`, val: pts, kd: false, coop: true, col: 'Pontos' };
-    case 'chefe':
-      return { head: 'Dano no Chefe', val: (p) => Math.round(p.stats.dmg), txt: (p) => (p.boss ? `${Math.max(0, Math.round((p.hp / (p.maxHp || 1)) * 100))}%` : String(Math.round(p.stats.dmg))), kd: false, coop: true, col: 'Dano' };
-    default:
-      return { head: 'Energia entregue', val: pts, kd: false, coop: false, col: 'Pontos' };
+  if (g.mode === 'dupla') {
+    const wins = (team: number) => g.players.find((p) => p.team === team)?.roundWins ?? 0;
+    return { head: `${TEAM_NAME[0]} ${wins(0)} × ${wins(1)} ${TEAM_NAME[1]} · 3 vencem`, val: (p) => p.roundWins, kd: true, coop: false, col: 'Rodadas' };
   }
+  return { head: 'Rodadas vencidas (3 vencem)', val: (p) => p.roundWins, kd: false, coop: false, col: 'Rodadas' };
 }
 
 export class Scoreboard {
@@ -143,7 +125,7 @@ export class Scoreboard {
       row.classList.toggle('tie', leader && tie);
       row.classList.toggle('sb-hide', hide);
       row.classList.toggle('out', !p.alive || !p.playing);
-      if (p.team >= 0 && g.mode === 'bandeira') row.style.setProperty('--team', p.team === 0 ? '#3ea8ff' : '#ff4a5a');
+      if (p.team >= 0) row.style.setProperty('--team', p.team === 0 ? '#3ea8ff' : '#ff4a5a');
     });
     // "assumiu a liderança": só durante a luta, sem empate, com o líder mantendo por um instante
     if (g.phase === 'play' && !S.coop && top && S.val(top) > 0 && !tie) {
@@ -169,12 +151,10 @@ export class Scoreboard {
     this.fullSig = sig;
     const esc = this.deps.esc;
     const ranked = order.filter((p) => !p.boss);
-    const cols = [S.col, ...(combat && g.mode !== 'chefe' ? ['Elim.', 'Quedas'] : []), ...(combat && g.mode !== 'chefe' ? ['Dano'] : []), ...(g.mode !== 'duelo' && g.totalRounds > 1 ? ['Rodadas'] : [])];
+    const cols = [S.col, ...(combat ? ['Elim.', 'Quedas', 'Dano'] : [])];
     const cells = (p: Player) => [
       S.txt ? S.txt(p) : String(S.val(p)),
-      ...(combat && g.mode !== 'chefe' ? [String(p.kills), String(p.deaths)] : []),
-      ...(combat && g.mode !== 'chefe' ? [String(Math.round(p.stats.dmg))] : []),
-      ...(g.mode !== 'duelo' && g.totalRounds > 1 ? [String(p.roundWins)] : []),
+      ...(combat ? [String(p.kills), String(p.deaths), String(Math.round(p.stats.dmg))] : []),
     ];
     const rows = order
       .map((p) => {

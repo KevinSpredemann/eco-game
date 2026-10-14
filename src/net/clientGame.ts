@@ -96,7 +96,7 @@ export class ClientGame {
     this.rules = MODE_RULES[this.mode];
     this.totalRounds = this.rules.rounds;
     for (const r of info.roster) {
-      const ch = withSkin(withLevel(getCharacter(r.char), r.lv, info.mode === 'ondas'), r.skin);
+      const ch = withSkin(withLevel(getCharacter(r.char), r.lv, false), r.skin);
       const p = blankPlayer(r.id, r.name, ch, r.isBot, r.skin, r.trail, sanitizeLoadout(r.loadout));
       p.boss = !!r.boss;
       if (p.boss) this.bossId = p.id;
@@ -111,7 +111,7 @@ export class ClientGame {
     return this.players.find((p) => p.id === this.localId) ?? this.players[0];
   }
   get combat() {
-    return this.mode !== 'nucleo';
+    return true;
   }
   hostile(a: { id: string; team: number }, b: { id: string; team: number }) {
     return Game.prototype.hostile.call(this, a, b);
@@ -122,8 +122,8 @@ export class ClientGame {
   hitR(p: Player) {
     return p.boss ? BOSS.hitR : C.PLAYER_R;
   }
-  enemyHostileTo(p: { team: number }) {
-    return !(this.mode === 'chefe' && p.team === 1);
+  enemyHostileTo(_p: { team: number }) {
+    return true;
   }
   zoneState(i: number): 'off' | 'warn' | 'on' {
     const c = this.zones[i];

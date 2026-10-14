@@ -16,7 +16,7 @@ describe('cristais de habilidade e armas próprias', () => {
   it('bots pegam cristais e usam a habilidade extra', () => {
     let picks = 0;
     let uses = 0;
-    for (const mode of ['combate', 'nucleo'] as const) {
+    for (const mode of ['dupla', 'duelo'] as const) {
       const roster = CHARACTERS.slice(0, 4).map((c, i) => ({ id: 'b' + i, char: c.id, isBot: true }));
       const g = new Game({ arena: ARENAS[0], humanChar: 'kael', bots: 0, difficulty: 'dificil', ownEchoDamage: true, training: false, mode, roster });
       for (const p of g.players) expect(p.weapon).toBe(PRIMARY[p.char.id]);
