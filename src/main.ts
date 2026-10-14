@@ -293,7 +293,20 @@ const SCREENS = [
 const CHIP_ON = new Set(['screen-title', 'screen-cosmetics', 'screen-shop']);
 const homeHero = new HomeHero($<HTMLCanvasElement>('#title-canvas'));
 // herói em destaque na tela inicial: começa pelo seu personagem e vai trocando
+function parkChip(id: string | null) {
+  const chip = $('#account-chip');
+  const col = document.querySelector('.home-hero-col');
+  if (id === 'screen-title' && col) {
+    if (chip.parentElement !== col) col.prepend(chip);
+    chip.classList.add('with-hero');
+  } else {
+    chip.classList.remove('with-hero');
+    if (chip.parentElement !== document.body) document.body.insertBefore(chip, document.body.firstChild);
+  }
+}
+
 function show(id: string | null) {
+  parkChip(id);
   for (const s of SCREENS) $('#' + s).hidden = s !== id;
   if (id === 'screen-title') {
     refreshHomeLook();

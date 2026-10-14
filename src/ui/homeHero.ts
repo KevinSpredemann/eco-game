@@ -4,7 +4,7 @@ import { accessoryById } from '../game/economy';
 import { WEAPONS, loadoutPrimary } from '../game/weapons';
 import { drawCharacter } from '../render/chars';
 import { accessoryBehind, drawAccessory } from '../render/accessories';
-import { hexA, paintStudio } from './portraits';
+import { dpr, hexA, paintStudio } from './portraits';
 
 export class HomeHero {
   running = false;
@@ -57,7 +57,7 @@ export class HomeHero {
     if (!rect.width || !rect.height) return;
     this.w = rect.width;
     this.h = rect.height;
-    const k = Math.min(window.devicePixelRatio || 1, 2);
+    const k = dpr();
     const pw = Math.round(this.w * k);
     const ph = Math.round(this.h * k);
     if (this.cv.width !== pw || this.cv.height !== ph) {
@@ -100,6 +100,8 @@ export class HomeHero {
     if (!g || !c) return;
     const k = this.cv.width / this.w;
     g.setTransform(k, 0, 0, k, 0, 0);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
     g.fillStyle = '#07041a';
     g.fillRect(0, 0, this.w, this.h);
     const col = c.glow ?? c.color;
@@ -151,7 +153,7 @@ export function drawEquippedPreview(cv: HTMLCanvasElement, c: CharacterDef, accI
   const w = cv.clientWidth || cv.width;
   const h = cv.clientHeight || cv.height;
   if (!w || !h) return;
-  const k = Math.min(window.devicePixelRatio || 1, 2);
+  const k = dpr();
   const pw = Math.round(w * k);
   const ph = Math.round(h * k);
   if (cv.width !== pw || cv.height !== ph) {
@@ -161,6 +163,8 @@ export function drawEquippedPreview(cv: HTMLCanvasElement, c: CharacterDef, accI
   const g = cv.getContext('2d');
   if (!g) return;
   g.setTransform(k, 0, 0, k, 0, 0);
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
   g.fillStyle = '#07041a';
   g.fillRect(0, 0, w, h);
   const col = c.glow ?? c.color;

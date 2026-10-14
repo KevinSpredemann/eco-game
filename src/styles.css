@@ -219,6 +219,7 @@ h2 {
   width: 100%;
   height: 100%;
   display: block;
+  image-rendering: auto;
 }
 .title-inner {
   position: relative;
@@ -5798,6 +5799,12 @@ body.rewinding #hud-status {
   border-radius: 16px;
   background: #07041a;
   border: 1px solid rgba(140, 120, 255, 0.28);
+  image-rendering: auto;
+}
+canvas.portrait,
+canvas.stage,
+.car-thumbs img {
+  image-rendering: auto;
 }
 .cos-card.short .car-label span,
 .cos-card.locked .car-label span,
@@ -5938,30 +5945,20 @@ body.rewinding #hud-status {
   #screen-title .home-brand .logo { margin-right: 0; flex: none; }
 }
 
-/* lobby: nome e JOGAR à esquerda, personagem grande à direita, moedas no topo */
-.account-chip {
-  top: 0;
-  left: 0;
-  right: 0;
-  width: auto;
-  border-radius: 0 0 18px 18px;
-  padding: 8px 16px;
-  z-index: 40;
-  justify-content: flex-start;
-}
+/* lobby: nome e JOGAR à esquerda, personagem à direita, perfil junto do herói */
 .account-chip .coins {
-  margin-left: auto;
-  font-size: 1.35rem;
+  margin-left: 8px;
+  font-size: 1.2rem;
   font-weight: 800;
-  padding: 6px 14px 6px 8px;
+  padding: 4px 10px 4px 6px;
   border-radius: 999px;
   border: 2px solid #ffd23e;
   background: rgba(40, 28, 0, 0.72);
   box-shadow: 0 0 0 1px rgba(255, 210, 60, 0.25);
 }
 .account-chip .coin {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
 }
 #screen-title .home-col.lobby {
   display: grid;
@@ -5971,9 +5968,9 @@ body.rewinding #hud-status {
   justify-items: stretch;
   width: 100%;
   max-width: none;
-  text-align: left;
+  text-align: center;
   gap: 8px 18px;
-  padding: calc(68px + env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
+  padding: max(16px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
 }
 #screen-title .home-left {
   grid-column: 1;
@@ -5994,20 +5991,24 @@ body.rewinding #hud-status {
   max-width: none;
   margin: 0;
   padding: 0;
-  align-items: flex-start;
-  text-align: left;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
   pointer-events: none;
 }
 #screen-title .home-col.lobby .home-brand .logo {
-  align-self: flex-start;
+  align-self: center;
   margin: 0;
   padding-left: 0;
+  text-align: center;
   font-size: clamp(4.4rem, 6.4vw, 7rem);
   line-height: 0.86;
 }
 #screen-title .home-col.lobby .home-brand .tagline {
   display: block;
+  width: 100%;
   margin: 8px 0 0;
+  text-align: center;
   font-size: clamp(1rem, 1.7vw, 1.35rem);
   letter-spacing: 0.12em;
   line-height: 1.25;
@@ -6029,7 +6030,7 @@ body.rewinding #hud-status {
   font-size: clamp(1.7rem, 2.4vw, 2.15rem);
 }
 #screen-title .home-col.lobby .title-foot {
-  text-align: left;
+  text-align: center;
 }
 #screen-title .home-col.lobby .home-side {
   grid-column: auto;
@@ -6048,13 +6049,37 @@ body.rewinding #hud-status {
   width: 100%;
   min-height: 44px;
 }
-#screen-title .home-col.lobby .home-stage {
+#screen-title .home-hero-col {
   grid-column: 2;
   grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  z-index: 4;
+}
+#screen-title .account-chip.with-hero {
+  position: relative;
+  top: auto;
+  right: auto;
+  left: auto;
+  width: auto;
+  max-width: calc(100% - 12px);
+  margin: 4px 8px 0 auto;
+  border-radius: 16px;
+  z-index: 5;
+  flex: none;
+  pointer-events: auto;
+}
+#screen-title .home-col.lobby .home-stage {
   width: 100%;
   max-width: none;
-  min-height: 280px;
-  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  height: auto;
 }
 #screen-title .home-col.lobby .title-cast {
   display: none;
@@ -6099,13 +6124,15 @@ body.rewinding #hud-status {
     width: auto;
     flex: 1 1 140px;
   }
-  #screen-title .home-col.lobby .home-stage {
+  #screen-title .home-hero-col {
     grid-column: 1;
     grid-row: 2;
     min-height: 260px;
+    align-items: flex-end;
   }
-  .account-chip .who { display: none; }
-  .account-chip .coins { font-size: 1.2rem; }
+  #screen-title .home-col.lobby .home-stage {
+    min-height: 220px;
+  }
 }
 
 #screen-loadout .lo-slots {

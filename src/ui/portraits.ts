@@ -81,8 +81,19 @@ export function studioSprite(art: string): HTMLImageElement | null {
 export function paintStudio(g: CanvasRenderingContext2D, art: string, w = 34): boolean {
   const img = studioSprite(art);
   if (!img || !img.complete || img.naturalWidth <= 0) return false;
-  const dh = w * (img.naturalHeight / img.naturalWidth);
-  g.drawImage(img, -w / 2, -dh, w, dh);
+  const m = g.getTransform();
+  const scale = Math.hypot(m.a, m.b) || 1;
+  // nunca amplia além dos pixels do arquivo
+  const destW = Math.min(w * scale, img.naturalWidth);
+  const userW = destW / scale;
+  const userH = userW * (img.naturalHeight / img.naturalWidth);
+  const smooth = g.imageSmoothingEnabled;
+  const quality = g.imageSmoothingQuality;
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(img, -userW / 2, -userH, userW, userH);
+  g.imageSmoothingEnabled = smooth;
+  g.imageSmoothingQuality = quality;
   return true;
 }
 
@@ -95,9 +106,11 @@ export function avatarURL(c: CharacterDef, size = 64): string {
   const hit = urlCache.get(key);
   if (hit) return hit;
   const cv = document.createElement('canvas');
-  const k = 2;
-  cv.width = cv.height = size * k;
+  const k = dpr();
+  cv.width = cv.height = Math.round(size * k);
   const g = cv.getContext('2d')!;
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
   g.scale(k, k);
   const bg = g.createRadialGradient(size / 2, size * 0.4, 2, size / 2, size / 2, size * 0.7);
   bg.addColorStop(0, shade(c.color, -0.35));
@@ -105,9 +118,9 @@ export function avatarURL(c: CharacterDef, size = 64): string {
   g.fillStyle = bg;
   g.fillRect(0, 0, size, size);
   if (studio && img) {
-    const dh = size * 0.92;
+    const dh = Math.min(size * 0.92, img.naturalHeight / k);
     const dw = dh * (img.naturalWidth / img.naturalHeight);
-    g.drawImage(img, (size - dw) / 2, size * 0.04, dw, dh);
+    g.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
   } else {
     const s = size / 34;
     g.save();
