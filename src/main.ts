@@ -27,10 +27,10 @@ import { Carousel, fitText } from './ui/carousel';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
-import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, comboReady, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex } from './game/elements';
+import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, comboReady, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex } from './game/elements';
 import { setAbilityTrace } from './game/abilityTrace';
 import { sweepCircle } from './game/sweep';
-import { ACTION_LABEL, Action, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
+import { ACTION_LABEL, Action, MoveScheme, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
 import { SkillBar, SlotView, drawSlotArt, slotReady } from './ui/skillbar';
@@ -102,14 +102,21 @@ function applySettings() {
   input.castMode = settings.castMode;
   input.manualSlots = new Set(settings.manualAim as Slot[]);
   input.cancelAimButtons = settings.cancelAim;
+  input.moveScheme = settings.moveScheme;
   const sensRow = document.querySelector<HTMLElement>('#opt-sens-row');
   if (sensRow) sensRow.hidden = settings.control !== 'notebook';
   const note = document.querySelector<HTMLElement>('#opt-control-note');
   if (note) {
+    const move =
+      settings.moveScheme === 'wasd'
+        ? 'WASD e as setas andam. Q, E, R e F são os poderes. Shift esquiva.'
+        : settings.moveScheme === 'esdf'
+          ? 'ESDF anda (E frente, S esquerda, D trás, F direita). Q, W e R são poderes. A é o quarto. Espaço esquiva.'
+          : 'As setas andam. Q, W, E e R são os poderes (R é a ultimate). Espaço esquiva. O clique esquerdo é o ataque básico. O direito cancela a mira.';
     note.textContent =
       settings.control === 'notebook'
-        ? 'WASD anda. O mouse mira com ajuda para o inimigo perto da mira. C trava no inimigo mais perto. No automático, Q, E, R e F saem na hora. Shift esquiva. Esc cancela a mira e não gasta o poder. No X1 e no 2x2 o botão direito também cancela, e não solta o F.'
-        : 'WASD ou setas andam. No automático, segure Q, E, R ou F para ver a mira e solte para usar. Esc cancela e não gasta energia nem recarga. No X1 e no 2x2 o botão direito cancela a mira. W continua andando.';
+        ? `${move} O mouse mira com ajuda. C trava no inimigo mais perto. No automático os poderes saem na hora. Esc cancela a mira e não gasta.`
+        : `${move} No automático, segure o poder para ver a mira e solte para usar. Esc cancela e não gasta energia nem recarga.`;
   }
   refreshMuteIcon();
   saveSettings(settings);
@@ -160,7 +167,7 @@ function bindOptions() {
   style.value = settings.control;
   style.addEventListener('change', () => {
     settings.control = style.value === 'notebook' ? 'notebook' : 'classic';
-    settings.keys = presetKeys(settings.control);
+    settings.keys = presetKeys(settings.control, settings.moveScheme);
     input.binds = settings.keys;
     input.fireLatch = false;
     applySettings();
@@ -189,6 +196,19 @@ function bindOptions() {
     applySettings();
     audio.click();
   });
+  const move = $<HTMLSelectElement>('#opt-move');
+  if (move) {
+    move.value = settings.moveScheme;
+    move.addEventListener('change', () => {
+      const v = move.value;
+      settings.moveScheme = v === 'wasd' || v === 'esdf' ? v : 'arrows';
+      settings.keys = presetKeys(settings.control, settings.moveScheme);
+      input.binds = settings.keys;
+      applySettings();
+      renderKeybinds();
+      audio.click();
+    });
+  }
   renderManualAim();
 }
 
@@ -196,7 +216,7 @@ function renderManualAim() {
   const box = document.querySelector<HTMLElement>('#opt-manual');
   if (!box) return;
   const slots: Slot[] = ['ability', 'skill', 'ult', 'bonus', 'plasma'];
-  const names = ['Q', 'E', 'R', 'F', 'X'];
+  const names = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus), keyLabel(settings.keys.plasma)];
   box.innerHTML = slots
     .map((s, i) => `<label class="row check"><input type="checkbox" data-manual="${s}" ${settings.manualAim.includes(s) ? 'checked' : ''}/> Mira manual no ${names[i]}</label>`)
     .join('');
@@ -223,7 +243,7 @@ function renderKeybinds() {
       audio.click();
       input.capture = (code) => {
         if (code === 'Escape') return renderKeybinds();
-        if (isReservedKey(code)) {
+        if (isReservedKey(code, settings.moveScheme)) {
           toast('Essa tecla já é de movimento ou pausa.');
           return renderKeybinds();
         }
@@ -240,7 +260,7 @@ function renderKeybinds() {
   );
 }
 $('#keys-reset').addEventListener('click', () => {
-  settings.keys = presetKeys(settings.control);
+  settings.keys = presetKeys(settings.control, settings.moveScheme);
   input.binds = settings.keys;
   input.fireLatch = false;
   saveSettings(settings);
@@ -1892,7 +1912,7 @@ function duelScore(g: AnyGame) {
 
 function objectiveText(g: AnyGame) {
   if (g.mode === 'dupla') return '2x2. O time que sobrar vence a rodada. Melhor de 5. Depois o ECO rebobina.';
-  return 'X1 só com poderes. Q, E, R e F. Gelo, raio, fogo e vento combinam. Quem zera a vida vence a rodada.';
+  return 'X1 só com poderes. Q, W, E e R. Os elementos combinam. Quem zera a vida vence a rodada.';
 }
 
 const OBJ_SHORT: Record<string, string> = { dourado: '★ Fragmento dourado', tripla: '★ Entrega tripla', intocavel: '★ Sem levar dano' };
@@ -1954,7 +1974,8 @@ function comboLine(g: AnyGame): string {
     .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT }));
   const plasma = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
   if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return 'COMBO DISPONÍVEL: Explosão de Plasma';
-  const hit = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes);
+  const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
+  const hit = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
   return hit ? `COMBO DISPONÍVEL ${hit.key}: ${hit.name}` : '';
 }
 
@@ -1965,11 +1986,11 @@ function buildSlots(g: AnyGame): SlotView[] {
   if (powersMatch(g)) {
     const kit = kitOf(me.char.id);
     const ids: Slot[] = ['ability', 'skill', 'ult', 'bonus'];
-    const labels = ['Q', 'E', 'R', 'F'];
+    const labels = [K('ability'), K('skill'), K('ult'), K('bonus')];
     const foes = g.players
       .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
       .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT }));
-    const ready = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes);
+    const ready = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
     const plasmaUp = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
     kit.powers.forEach((pw, i) => {
       const left = me.powerCd[i] ?? 0;
@@ -1994,7 +2015,7 @@ function buildSlots(g: AnyGame): SlotView[] {
     const plasmaLow = plasmaOn && plasmaLeft <= 0 && (me.energy ?? ENERGY_MAX) < PLASMA.cost;
     slots.push({
       id: 'plasma',
-      key: 'X',
+      key: K('plasma'),
       name: 'PLASMA',
       art: { kind: 'symbol', id: me.char.id, color: PLASMA_COLOR },
       color: PLASMA_COLOR,
@@ -2006,7 +2027,21 @@ function buildSlots(g: AnyGame): SlotView[] {
         ? `X — ${PLASMA.name}: projétil médio, marca de ${PLASMA.mark}s. O próximo poder no alvo marcado explode (teto ${PLASMA.cap}). Recarga ${PLASMA.cd}s. Custa ${PLASMA.cost} de energia.`
         : 'Rajada de Plasma libera depois da primeira partida. Não se compra com moedas.',
     });
-    slots.push({ id: 'dash', key: K('dash'), name: 'Impulso', art: { kind: 'dash', id: 'dash', color: '#9ad8ff' }, color: '#9ad8ff', cd: me.dashCd / C.DASH_CD, secs: me.dashCd, off: me.stasisT > 0, note: me.stasisT > 0 ? 'BLOQUEADO' : undefined, desc: 'Arrancada curta na direção em que você anda (recarga 2,2 s).' });
+    const basicLeft = me.basicCd ?? 0;
+    const basicLow = basicLeft <= 0 && (me.energy ?? ENERGY_MAX) < BASIC.cost;
+    slots.push({
+      id: 'fire',
+      key: 'Clique',
+      name: 'BÁSICO',
+      art: { kind: 'symbol', id: me.char.id, color: '#d7e2ff' },
+      color: '#d7e2ff',
+      cd: basicLeft / BASIC.cd,
+      secs: basicLeft,
+      off: basicLow,
+      note: basicLow ? 'SEM ENERGIA' : undefined,
+      desc: `Clique esquerdo — ${BASIC.name}: dano ${BASIC.dmg}, alcance ${BASIC.range}, recarga ${BASIC.cd}s, energia ${BASIC.cost}. Não marca elemento e não gasta a marca de plasma. Para na parede.`,
+    });
+    slots.push({ id: 'dash', key: K('dash'), name: 'Impulso', art: { kind: 'dash', id: 'dash', color: '#9ad8ff' }, color: '#9ad8ff', cd: me.dashCd / C.DASH_CD, secs: me.dashCd, off: me.stasisT > 0 || me.rootT > 0, note: me.rootT > 0 ? 'PRESO' : me.stasisT > 0 ? 'BLOQUEADO' : undefined, desc: 'Arrancada curta. Para na parede. O próximo golpe logo depois ganha um bônus pequeno.' });
     return slots;
   }
   // arma (tiro): primeiro espaço — clique do mouse. Cinza quando não dá para atirar (tonto, caído, fora da rodada)
@@ -2409,6 +2444,7 @@ function onEvents(events: GameEvent[]) {
         showTip(`${e.name} +${e.bonus}`, 2.2);
         break;
       case 'deny':
+        audio.fail(panOf(g.players.find((p) => p.id === e.pid)?.x ?? g.human.x));
         if (mine) toast(e.msg, 1800);
         break;
       case 'hit':
@@ -2531,7 +2567,7 @@ function onEvents(events: GameEvent[]) {
         audio.ability('explosao', panOf(e.x));
         break;
       case 'skill':
-        audio.dash(panOf(e.x));
+        audio.cast(panOf(e.x));
         break;
       case 'windWarn':
         audio.hazardWarn(e.dir > 0 ? 0.6 : -0.6);
@@ -2639,7 +2675,7 @@ function tutorial(dt: number) {
   const g = game;
   const me = g.human;
   hintT += dt;
-  const move = input.touchMode ? 'Arraste o polegar na metade esquerda da tela para andar.' : 'Ande com WASD ou as setas.';
+  const move = input.touchMode ? 'Arraste o polegar na metade esquerda da tela para andar.' : settings.moveScheme === 'wasd' ? 'Ande com WASD ou as setas.' : settings.moveScheme === 'esdf' ? 'Ande com ESDF ou as setas.' : 'Ande com as setas. Q, W, E e R são os poderes.';
   if (g.round === 1) {
     if (g.phase === 'prep') return hint('Treino: aprenda energia, núcleo e Ecos. ' + move);
     if (hintStage === 1) {
@@ -2656,7 +2692,7 @@ function tutorial(dt: number) {
         hintStage = 5;
         hintT = 0;
       }
-      return hint(input.touchMode ? 'Toque em IMPULSO para uma arrancada rápida. HAB usa a habilidade do personagem.' : 'Espaço = impulso. E ou Shift = habilidade do personagem.');
+      return hint(input.touchMode ? 'Toque em IMPULSO para uma arrancada rápida. HAB usa a habilidade do personagem.' : settings.moveScheme === 'wasd' ? 'Shift = impulso. Q = habilidade do personagem.' : 'Espaço = impulso. Q = habilidade do personagem.');
     }
     if (hintStage === 5) return hint('Tudo o que você faz está sendo gravado…');
   }

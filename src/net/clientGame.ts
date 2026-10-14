@@ -28,6 +28,7 @@ export class ClientGame {
   fragments: any[] = [];
   powerups: { id: number; kind: PowerId; x: number; y: number; age: number }[] = [];
   clones: any[] = [];
+  groves: { id: number; owner: string; team: number; x: number; y: number; r: number; t: number; acc: number; heal: number }[] = [];
   echoViews: any[] = [];
   bullets: any[] = [];
   bombs: any[] = [];
@@ -170,7 +171,7 @@ export class ClientGame {
     this.zones = s.Z;
 
     for (const row of s.P) {
-      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks, energy, plasmaCd, plasmaT, plasmaOn] = row as any[];
+      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks, energy, plasmaCd, plasmaT, plasmaOn, basicCd] = row as any[];
       const p = this.players.find((q) => q.id === id);
       if (!p) continue;
       const wasAlive = p.alive;
@@ -199,6 +200,10 @@ export class ClientGame {
       p.exhaustT = fl & 2097152 ? 1 : 0;
       p.burnT = burnT ?? (fl & 4194304 ? 1 : 0);
       p.frozenT = frozenT ?? (fl & 8388608 ? 1 : 0);
+      p.rootT = fl & 16777216 ? 1 : 0;
+      p.healT = fl & 33554432 ? 1 : 0;
+      p.ambushT = fl & 67108864 ? 1 : 0;
+      p.basicCd = basicCd ?? 0;
       p.powerCd = [pcd0 ?? 0, pcd1 ?? 0, pcd2 ?? 0, pcd3 ?? 0];
       p.comboStacks = stacks ?? 0;
       p.energy = energy ?? 100;
@@ -287,7 +292,8 @@ export class ClientGame {
     this.echoViews = views;
     this.fragments = s.F.map(([id, x, y, g]) => ({ id, x, y, golden: !!g, vx: 0, vy: 0, age: 1, pickDelay: 0 }));
     this.powerups = s.W.map(([id, kind, x, y, age]) => ({ id: id as number, kind: kind as PowerId, x: x as number, y: y as number, age: age as number }));
-    this.clones = s.C.map(([owner, x, y, dir]) => ({ owner, x, y, dir, t: 1 }));
+    this.clones = s.C.map(([owner, x, y, dir, decoy]) => ({ owner, x, y, dir, t: 1, decoy: !!decoy }));
+    this.groves = (s.GR ?? []).map(([id, x, y, r, t, heal]) => ({ id, owner: '', team: -1, x, y, r, t, acc: 0, heal }));
     this.bullets = s.B.map(([id, x, y, vx, vy, wi, fe, life, en]) => ({ id, x, y, vx, vy, weapon: WEAPON_IDS[wi] ?? 'blaster', fromEcho: !!fe, life, owner: en ? 'enemy' : '' }));
     this.bombs = s.BM.map(([id, x, y, tx, ty, t, pulse, ice]) => ({ id, x, y, tx, ty, t, sx: x, sy: y, pulse: !!pulse, ice: !!ice }));
     this.mines = s.M.map(([id, x, y, armed]) => ({ id, x, y, armT: armed ? 0 : 1 }));
@@ -536,6 +542,15 @@ function blankPlayer(id: string, name: string, char: ReturnType<typeof getCharac
     stasisT: 0,
     castT: 0,
     pendingCast: null,
+    basicCd: 0,
+    rootT: 0,
+    rootResistT: 0,
+    flowT: 0,
+    ambushT: 0,
+    healT: 0,
+    dashDmg: 0,
+    dashEl: null,
+    dashHit: [],
     lastHurtAt: 0,
     exhaustT: 0,
     boss: false,

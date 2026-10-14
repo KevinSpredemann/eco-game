@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { kitOf } from '../src/game/elements';
+import { BASIC, kitOf } from '../src/game/elements';
 
 const STEP = 1 / 60;
 const idle: Input = { mx: 0, my: 0, dash: false, ability: false };
@@ -29,7 +29,7 @@ function fight(mode: 'duelo' | 'dupla', a = 'kai', b = 'luna', bot = false) {
 }
 
 describe('X1 e 2x2 só com poderes', () => {
-  it('o clique não atira no X1 nem no 2x2', () => {
+  it('o clique é o ataque básico, sem arma e sem marca', () => {
     for (const mode of ['duelo', 'dupla'] as const) {
       const g = fight(mode);
       const [a, b] = g.players;
@@ -37,10 +37,23 @@ describe('X1 e 2x2 só com poderes', () => {
       a.y = 360;
       b.x = 760;
       b.y = 360;
-      g.step(STEP, { a: { ...idle, fire: true, aim: 0 }, b: idle });
-      expect(g.bullets.filter((n) => !n.el)).toHaveLength(0);
-      expect(b.hp).toBe(b.maxHp);
+      b.isBot = false;
+      const before = b.hp;
+      g.step(STEP, { a: { ...idle, fire: true, aim: 0, ca: 0 }, b: idle });
+      expect(g.bullets.some((n) => n.basic)).toBe(true);
+      expect(g.bullets.some((n) => n.el || n.plasma)).toBe(false);
       expect(a.powerCd.every((n) => n === 0)).toBe(true);
+      expect(a.basicCd).toBeGreaterThan(0);
+      expect(a.energy).toBeLessThan(100);
+      for (let i = 0; i < 30 && b.hp === before; i++) g.step(STEP, { a: idle, b: idle });
+      expect(before - b.hp).toBe(BASIC.dmg);
+      expect(b.burnT).toBe(0);
+      expect(b.frozenT).toBe(0);
+      expect(b.plasmaT).toBe(0);
+      const left = a.basicCd;
+      g.step(STEP, { a: { ...idle, fire: true, aim: 0, ca: 0 }, b: idle });
+      expect(a.basicCd).toBeLessThan(left);
+      expect(g.bullets.filter((n) => n.basic && n.owner === a.id).length).toBeLessThanOrEqual(1);
     }
   });
 
@@ -136,6 +149,6 @@ describe('X1 e 2x2 só com poderes', () => {
     for (let i = 0; i < 8; i++) g.step(STEP, { a: idle });
     const cast = b.powerCd.some((n) => n > 0) || g.bullets.some((n) => n.el);
     expect(cast).toBe(true);
-    expect(g.bullets.every((n) => n.el || n.owner !== b.id)).toBe(true);
+    expect(g.bullets.filter((n) => n.owner === b.id).every((n) => n.el || n.basic || n.plasma)).toBe(true);
   });
 });

@@ -100,7 +100,7 @@ export class LoadoutScreen {
   /** X1 e 2x2 entram com o kit do personagem e, no máximo, um poder extra. */
   private renderPowers() {
     const kit = kitOf(this.charId);
-    const keys = ['Q', 'E', 'R', 'F'];
+    const keys = ['Q', 'W', 'R', 'E'];
     const unlocked = this.deps.owns('power:plasma');
     const on = this.l.secondary === 'plasma';
     const slots = this.root.querySelector('.lo-slots')!;
@@ -126,7 +126,7 @@ export class LoadoutScreen {
     const list = this.root.querySelector<HTMLElement>('.lo-list');
     if (list) list.hidden = true;
     const det = this.root.querySelector('.lo-detail')!;
-    det.innerHTML = `<div class="lo-dhead"><span class="lo-state on">Poder principal · ${kit.passiveName}</span></div><p class="lo-desc">${kit.passiveDesc} ${kit.powers.map((pw, i) => describePower(pw, keys[i], SLOT_COST[i]) + ' ' + ELEMENT_FX[pw.element] + '.').join(' ')} Unidades do mapa. O Impulso (Shift) é mobilidade e para na parede.</p><p class="lo-cmp">Q, E, R e F já vêm com o personagem. Trocar a Rajada de Plasma só vale fora da luta, para a próxima rodada. Ela libera depois da primeira partida e não se compra. Projétil gasta energia e recarga ao sair, mesmo se errar. Área sem inimigo visível no círculo não gasta nada. Cancelar a mira não gasta.</p>`;
+    det.innerHTML = `<div class="lo-dhead"><span class="lo-state on">Poder principal · ${kit.passiveName}</span></div><p class="lo-desc">${kit.passiveDesc} ${kit.powers.map((pw, i) => describePower(pw, keys[i], SLOT_COST[i]) + ' ' + ELEMENT_FX[pw.element] + '.').join(' ')} Unidades do mapa. O Impulso (Espaço) é mobilidade e para na parede. O clique esquerdo é o ataque básico.</p><p class="lo-cmp">Q, W, E e R já vêm com o personagem. R é a ultimate. Em Opções dá para voltar ao WASD antigo. Trocar a Rajada de Plasma só vale fora da luta, para a próxima rodada. Ela libera depois da primeira partida e não se compra. Projétil gasta energia e recarga ao sair, mesmo se errar. Área sem inimigo visível no círculo não gasta nada. Cancelar a mira não gasta.</p>`;
   }
 
   get value() {

@@ -4,7 +4,7 @@ import { STANDARD_PRIMARIES, gearPrice, sanitizeLoadout, type Loadout } from './
 export const START_COINS = 150;
 
 /** Personagens livres desde a primeira partida. O resto continua na progressão. */
-export const STARTER_CHARS = ['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris'];
+export const STARTER_CHARS = ['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris', 'vortex', 'nara', 'vexa'];
 
 export const CHAR_PRICES: Record<string, number> = {
   kael: 0,
@@ -22,6 +22,9 @@ export const CHAR_PRICES: Record<string, number> = {
   mei: 900,
   duda: 600,
   bento: 700,
+  vortex: 0,
+  nara: 0,
+  vexa: 0,
 };
 
 /** Soma os iniciais que faltam. Não mexe em moedas, xp nem no que já foi comprado. */

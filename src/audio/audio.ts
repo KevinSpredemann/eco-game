@@ -210,6 +210,12 @@ export class AudioEngine {
     });
     this.noise({ dur: 0.5, gain: 0.08, type: 'highpass', freq: 5000, when: t + 0.05, pan });
   }
+  cast(pan?: number) {
+    this.tone({ type: 'square', freq: 540, freqEnd: 280, dur: 0.07, gain: 0.07, filter: 1800, pan });
+  }
+  fail(pan?: number) {
+    this.tone({ type: 'square', freq: 160, freqEnd: 90, dur: 0.12, gain: 0.09, filter: 900, pan });
+  }
   dash(pan?: number) {
     this.noise({ dur: 0.22, gain: 0.25, type: 'bandpass', freq: 600, freqEnd: 3500, q: 2, pan });
     this.tone({ type: 'sine', freq: 200, freqEnd: 500, dur: 0.15, gain: 0.08, pan });

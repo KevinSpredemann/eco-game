@@ -1046,9 +1046,9 @@ export class Renderer {
           const p = pc(e.pid);
           const big = p?.boss ? 40 : 0;
           const jx = (Math.random() - 0.5) * 26;
-          const txt = e.k === 'heal' ? `+${e.n}` : e.k === 'shield' ? `${e.n}⛉` : e.k === 'dodge' ? 'ESQUIVOU' : e.k === 'weak' ? `${e.n}!` : String(e.n);
+          const txt = e.k === 'heal' ? `+${e.n}` : e.k === 'shield' ? `${e.n} ESCUDO` : e.k === 'dodge' ? 'ESQUIVOU' : e.k === 'immune' ? 'IMUNE' : e.k === 'block' ? 'BLOQUEOU' : e.k === 'weak' ? `${e.n}!` : String(e.n);
           const SRC: Record<string, string> = { eco: '#9fdcff', perigo: '#ffb347', explosao: '#ffd23e', criatura: '#a6ff6a', golpe: '#d9a6ff' };
-          const col = e.k === 'heal' ? '#5dffb8' : e.k === 'shield' ? '#7ff0ff' : e.k === 'dodge' ? '#3ee8ff' : e.k === 'weak' ? '#ffe14a' : e.src && SRC[e.src] ? SRC[e.src] : e.pid === this.meId(game) ? '#ff6b6b' : '#ffffff';
+          const col = e.k === 'heal' ? '#5dffb8' : e.k === 'shield' ? '#7ff0ff' : e.k === 'block' ? '#9ad8ff' : e.k === 'immune' ? '#f4f4ff' : e.k === 'dodge' ? '#3ee8ff' : e.k === 'weak' ? '#ffe14a' : e.src && SRC[e.src] ? SRC[e.src] : e.pid === this.meId(game) ? '#ff6b6b' : '#ffffff';
           if (e.k === 'hp' || e.k === 'shield') this.lastHit.set(e.pid, performance.now() / 1000);
           if (e.pid === this.meId(game) && (e.k === 'hp' || e.k === 'shield') && e.sx !== undefined && e.sy !== undefined) {
             const h = game.human;
@@ -1101,8 +1101,8 @@ export class Renderer {
           const p = pc(e.pid);
           const el = e.skill as Element;
           const col = e.skill === 'plasma' ? '#c86bff' : ELEMENT_COLOR[el] ?? p?.color ?? '#fff';
-          this.ring(e.x, e.y - 10, col, 44);
-          if (ELEMENT_COLOR[el]) this.burst(e.x, e.y - 10, col, 12, 180);
+          this.ring(e.x, e.y - 10, col, e.r && e.r > 20 ? Math.min(e.r, 140) : 44);
+          if (!this.reducedEffects && ELEMENT_COLOR[el]) this.burst(e.x, e.y - 10, col, 12, 180);
           if (e.skill === 'rolamento') this.burst(e.x, e.y, '#bff4ff', 10, 160);
           if (e.skill === 'estimulo') this.ring(e.x, e.y, '#5dffb8', SKILLS.estimulo.radius ?? 160);
           break;
@@ -1366,6 +1366,16 @@ export class Renderer {
 
   private burst(x: number, y: number, color: string, n: number, sp: number) {
     if (this.reducedEffects) n = Math.ceil(n / 3);
+    if (this.particles.length > 150) {
+      let drop = this.particles.length - 90;
+      this.particles = this.particles.filter((p) => {
+        if (drop > 0 && p.kind === 'spark') {
+          drop--;
+          return false;
+        }
+        return true;
+      });
+    }
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = sp * (0.3 + Math.random() * 0.7);
@@ -2131,13 +2141,21 @@ export class Renderer {
 
   private drawClones(game: Game, time: number) {
     const ctx = this.ctx;
+    for (const g of game.groves ?? []) {
+      ctx.strokeStyle = hexA('#3dcc6a', 0.55);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2);
+      ctx.stroke();
+      if (!this.reducedEffects && Math.random() < 0.3 && this.particles.length < 120) this.burst(g.x, g.y, '#5dffb8', 2, 40);
+    }
     for (const c of game.clones) {
       const owner = game.players.find((p) => p.id === c.owner);
       if (!owner) continue;
       const { facing, flip } = facingOf(c.dir);
       const frame = Math.floor(time * 14) % WALK_FRAMES;
       const img = this.sprites.get(owner.char, facing, frame, true, '#7dffef');
-      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(time * 30);
+      ctx.globalAlpha = c.decoy ? 0.55 : 0.5 + 0.3 * Math.sin(time * 30);
       this.sprites.draw(ctx, img, c.x, c.y + 4, flip, SPRITE_SCALE * 0.85);
       ctx.globalAlpha = 1;
     }
@@ -2528,6 +2546,9 @@ export class Renderer {
         ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
         ctx.fill();
         continue;
+      }
+      if (!this.reducedEffects && this.particles.length < 120 && Math.random() < 0.4) {
+        this.particles.push({ x: b.x - (b.vx / sp) * 10, y: b.y - (b.vy / sp) * 10, vx: 0, vy: 0, life: 0, max: 0.22, color: col, size: 3, kind: 'spark' });
       }
       if (b.weapon === 'foguete') {
         ctx.save();

@@ -25,7 +25,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 9;
+export const PROTO = 10;
 
 export interface RoomInfo {
   code: string;
@@ -114,6 +114,7 @@ export interface Snapshot {
   F: number[][];
   W: (number | string)[][];
   C: (number | string)[][];
+  GR?: number[][];
   E: (number | string)[][];
   EM?: (number | string)[][];
   ED?: EchoDigest[];
@@ -175,7 +176,10 @@ function flags(p: Player): number {
     (p.castT > 0 ? 1048576 : 0) |
     (p.exhaustT > 0 ? 2097152 : 0) |
     (p.burnT > 0 ? 4194304 : 0) |
-    (p.frozenT > 0 ? 8388608 : 0)
+    (p.frozenT > 0 ? 8388608 : 0) |
+    (p.rootT > 0 ? 16777216 : 0) |
+    (p.healT > 0 ? 33554432 : 0) |
+    (p.ambushT > 0 ? 67108864 : 0)
   );
 }
 
@@ -251,10 +255,12 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
       r1(p.plasmaCd),
       r1(p.plasmaT),
       p.plasmaOn ? 1 : 0,
+      r1(p.basicCd),
     ]),
     F: g.fragments.map((f) => [f.id, r1(f.x), r1(f.y), f.golden ? 1 : 0]),
     W: g.powerups.map((w) => [w.id, w.kind, r1(w.x), r1(w.y), r1(w.age)]),
-    C: g.clones.map((c) => [c.owner, r1(c.x), r1(c.y), r2(c.dir)]),
+    C: g.clones.map((c) => [c.owner, r1(c.x), r1(c.y), r2(c.dir), c.decoy ? 1 : 0]),
+    GR: g.groves.map((gr) => [gr.id, r1(gr.x), r1(gr.y), gr.r, r1(gr.t), gr.heal]),
     E: g.echoViews.map((e) => [e.key, r1(e.x), r1(e.y), r2(e.dir), (e.moving ? 1 : 0) | (e.active ? 2 : 0) | (e.disrupted ? 4 : 0) | (e.iced ? 8 : 0) | (e.expiring ? 16 : 0), r2(e.pulse), e.age, r2(e.warn ?? 0), r2(e.warnAng ?? 0), e.warnKind ?? 0, r1(e.offLeft ?? 0)]),
     EM: withEchoMeta ? g.echoViews.map((e) => [e.key, e.rec.playerId, e.rec.characterId, e.rec.color, e.rec.round]) : undefined,
     ED: withRoutes ? [...g.echoDigests.values()] : undefined,

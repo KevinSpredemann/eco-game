@@ -144,6 +144,9 @@ export const PRIMARY: Record<string, WeaponId> = {
   mei: 'orbe',
   duda: 'pregos',
   bento: 'besta',
+  vortex: 'plasma',
+  nara: 'arco',
+  vexa: 'agulha',
 };
 export function primaryOf(charId: string): WeaponId {
   return PRIMARY[charId] ?? 'blaster';

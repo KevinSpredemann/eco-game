@@ -6,8 +6,19 @@ export type Slot = 'ability' | 'skill' | 'ult' | 'dash' | 'item' | 'bonus' | 'pl
 export type Action = Slot | 'fire';
 export type KeyBinds = Record<Action, string>;
 
-/** esquema inicial (estilo MOBA) */
-export const DEFAULT_KEYS: KeyBinds = {
+/** Q W E R com o R na ultimate, Espaço esquiva. As setas andam. */
+export const MOBA_KEYS: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'Digit1',
+  bonus: 'KeyE',
+  plasma: 'KeyX',
+  fire: 'KeyJ',
+};
+/** Restaura o movimento antigo: WASD anda, Q E R F são os poderes, Shift esquiva. */
+export const WASD_KEYS: KeyBinds = {
   ability: 'KeyQ',
   skill: 'KeyE',
   ult: 'KeyR',
@@ -17,8 +28,7 @@ export const DEFAULT_KEYS: KeyBinds = {
   plasma: 'KeyX',
   fire: 'KeyJ',
 };
-/** Notebook: o mouse mira e atira. F usa o item. O cursor não é capturado. */
-export const NOTEBOOK_KEYS: KeyBinds = {
+export const WASD_NOTEBOOK: KeyBinds = {
   ability: 'KeyQ',
   skill: 'KeyE',
   ult: 'KeyR',
@@ -28,8 +38,34 @@ export const NOTEBOOK_KEYS: KeyBinds = {
   plasma: 'KeyX',
   fire: 'KeyJ',
 };
+/** ESDF anda. O quarto poder sai do E e vai para o A. */
+export const ESDF_KEYS: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'Digit1',
+  bonus: 'KeyA',
+  plasma: 'KeyX',
+  fire: 'KeyJ',
+};
+export const DEFAULT_KEYS: KeyBinds = { ...MOBA_KEYS };
+/** Notebook: o mouse mira. Q W E R e Espaço, como no padrão. */
+export const NOTEBOOK_KEYS: KeyBinds = {
+  ability: 'KeyQ',
+  skill: 'KeyW',
+  ult: 'KeyR',
+  dash: 'Space',
+  item: 'KeyF',
+  bonus: 'KeyE',
+  plasma: 'KeyX',
+  fire: 'KeyJ',
+};
 export type ControlStyle = 'classic' | 'notebook';
-export function presetKeys(style: ControlStyle): KeyBinds {
+export type MoveScheme = 'arrows' | 'wasd' | 'esdf';
+export function presetKeys(style: ControlStyle, scheme: MoveScheme = 'arrows'): KeyBinds {
+  if (scheme === 'wasd') return { ...(style === 'notebook' ? WASD_NOTEBOOK : WASD_KEYS) };
+  if (scheme === 'esdf') return { ...ESDF_KEYS };
   return { ...(style === 'notebook' ? NOTEBOOK_KEYS : DEFAULT_KEYS) };
 }
 
@@ -94,7 +130,14 @@ export const ACTION_LABEL: Record<Action, string> = {
   plasma: 'Rajada de Plasma',
   fire: 'Atirar (além do clique)',
 };
-const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Escape', 'KeyP']);
+const PAUSE_KEYS = ['Escape', 'KeyP'];
+const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
+export function moveKeysFor(scheme: MoveScheme): string[] {
+  if (scheme === 'wasd') return [...PAUSE_KEYS, 'KeyW', 'KeyA', 'KeyS', 'KeyD', ...ARROW_KEYS];
+  if (scheme === 'esdf') return [...PAUSE_KEYS, 'KeyE', 'KeyS', 'KeyD', 'KeyF', ...ARROW_KEYS];
+  return [...PAUSE_KEYS, ...ARROW_KEYS];
+}
 
 export function keyLabel(code: string): string {
   if (!code) return '—';
@@ -120,8 +163,8 @@ export function keyLabel(code: string): string {
   };
   return map[code] ?? code.replace(/(Left|Right)$/, '');
 }
-export function isReservedKey(code: string) {
-  return MOVE_KEYS.has(code);
+export function isReservedKey(code: string, scheme: MoveScheme = 'arrows') {
+  return moveKeysFor(scheme).includes(code);
 }
 
 /** mira em andamento (segurando a tecla ou arrastando o botão) */
@@ -178,6 +221,8 @@ export class InputManager {
   lastAim: number | null = null;
   binds: KeyBinds = { ...DEFAULT_KEYS };
   control: ControlStyle = 'classic';
+  /** arrows: setas andam e W fica livre para o poder. wasd restaura o antigo. esdf usa E S D F. */
+  moveScheme: MoveScheme = 'arrows';
   /** 1 = padrão; só o modo notebook suaviza a mira */
   aimSens = 1;
   /** tiro contínuo sem segurar o botão (não usado no notebook) */
@@ -596,10 +641,23 @@ export class InputManager {
     let mx = 0;
     let my = 0;
     const k = this.keys;
-    if (k.has('KeyA') || k.has('ArrowLeft')) mx -= 1;
-    if (k.has('KeyD') || k.has('ArrowRight')) mx += 1;
-    if (k.has('KeyW') || k.has('ArrowUp')) my -= 1;
-    if (k.has('KeyS') || k.has('ArrowDown')) my += 1;
+    const bound = new Set(Object.values(this.binds));
+    const held = (code: string) => k.has(code) && !bound.has(code);
+    if (held('ArrowLeft')) mx -= 1;
+    if (held('ArrowRight')) mx += 1;
+    if (held('ArrowUp')) my -= 1;
+    if (held('ArrowDown')) my += 1;
+    if (this.moveScheme === 'wasd') {
+      if (held('KeyA')) mx -= 1;
+      if (held('KeyD')) mx += 1;
+      if (held('KeyW')) my -= 1;
+      if (held('KeyS')) my += 1;
+    } else if (this.moveScheme === 'esdf') {
+      if (held('KeyS')) mx -= 1;
+      if (held('KeyF')) mx += 1;
+      if (held('KeyE')) my -= 1;
+      if (held('KeyD')) my += 1;
+    }
     if (this.stick.active && (this.stick.x || this.stick.y)) {
       mx = this.stick.x;
       my = this.stick.y;

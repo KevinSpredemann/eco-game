@@ -1,6 +1,6 @@
 import type { Difficulty } from '../game/sim';
 import { DEFAULT_LOADOUT, type Loadout } from '../game/balance';
-import { DEFAULT_KEYS, type CastChoice, type ControlStyle, type KeyBinds } from './input';
+import { DEFAULT_KEYS, WASD_KEYS, WASD_NOTEBOOK, presetKeys, type CastChoice, type ControlStyle, type KeyBinds, type MoveScheme } from './input';
 
 export interface Settings {
   master: number;
@@ -37,6 +37,8 @@ export interface Settings {
   rangeIndicator: 'aiming' | 'always';
   /** both: Esc e botão direito. esc: só Esc. */
   cancelAim: 'both' | 'esc';
+  /** arrows libera o W para o poder. wasd restaura o andar antigo. esdf anda com E S D F. */
+  moveScheme: MoveScheme;
   /** equipamento escolhido */
   loadout: Loadout;
   /** Caça ao Chefe contra bots: papel preferido */
@@ -75,6 +77,7 @@ export const DEFAULTS: Settings = {
   manualAim: [],
   rangeIndicator: 'aiming',
   cancelAim: 'both',
+  moveScheme: 'arrows',
   loadout: { ...DEFAULT_LOADOUT },
   chefeRole: 'sorteio',
   bossTurns: 0,
@@ -88,6 +91,11 @@ export function loadSettings(): Settings {
     if (raw) {
       const v = JSON.parse(raw);
       const mode = v.castMode === 'instant' || v.castMode === 'manual' || v.castMode === 'release' || v.castMode === 'auto' ? v.castMode : DEFAULTS.castMode;
+      const scheme: MoveScheme = v.moveScheme === 'wasd' || v.moveScheme === 'esdf' ? v.moveScheme : 'arrows';
+      let keys: KeyBinds = { ...DEFAULT_KEYS, ...(v.keys ?? {}) };
+      if (v.moveScheme == null && (sameKeys(v.keys, WASD_KEYS) || sameKeys(v.keys, WASD_NOTEBOOK))) {
+        keys = presetKeys(sameKeys(v.keys, WASD_NOTEBOOK) ? 'notebook' : 'classic', 'arrows');
+      }
       return {
         ...DEFAULTS,
         ...v,
@@ -95,7 +103,8 @@ export function loadSettings(): Settings {
         manualAim: Array.isArray(v.manualAim) ? v.manualAim.filter((s: unknown) => typeof s === 'string') : [],
         rangeIndicator: v.rangeIndicator === 'always' ? 'always' : 'aiming',
         cancelAim: v.cancelAim === 'esc' ? 'esc' : 'both',
-        keys: { ...DEFAULT_KEYS, ...(v.keys ?? {}) },
+        moveScheme: scheme,
+        keys,
         loadout: { ...DEFAULT_LOADOUT, ...(v.loadout ?? {}) },
       };
     }
@@ -103,6 +112,11 @@ export function loadSettings(): Settings {
     /* armazenamento indisponível: usa padrões */
   }
   return { ...DEFAULTS, keys: { ...DEFAULT_KEYS }, loadout: { ...DEFAULT_LOADOUT } };
+}
+
+function sameKeys(a: Partial<KeyBinds> | undefined, b: KeyBinds) {
+  if (!a) return false;
+  return (Object.keys(b) as (keyof KeyBinds)[]).every((k) => a[k] === b[k]);
 }
 
 export function saveSettings(s: Settings) {

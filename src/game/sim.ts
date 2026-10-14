@@ -31,14 +31,25 @@ import { withSkin } from './characters';
 import { choosePortalExit, portalPairAt } from './portals';
 import { DUEL, duelTiebreak, type DuelReason } from './duel';
 import {
+  AMBUSH_BONUS,
+  AMBUSH_TIME,
+  BASIC,
+  BLINK_STEP,
   BURN_TICK,
   BURN_TIME,
   ENERGY_MAX,
   ENERGY_REGEN,
+  EXTRA_CAP,
+  FLOW_BONUS,
+  FLOW_TIME,
   FROZEN_TIME,
+  HEAL_ZONE_TIME,
   KNOCK,
   MARK_TIME,
   PLASMA,
+  ROOT_AOE_BONUS,
+  ROOT_RESIST,
+  ROOT_TIME,
   SLOT_COST,
   VISUAL_WEAPON,
   WALL_BONUS,
@@ -253,6 +264,22 @@ export interface Player {
   castT: number;
   /** golpe com preparo: ainda não gastou energia nem recarga */
   pendingCast: { slot: number; ang: number; ca?: number | null; cr?: number | null; at: number } | null;
+  /** recarga do ataque básico */
+  basicCd: number;
+  /** preso no chão. Não anda nem esquiva. */
+  rootT: number;
+  /** depois de uma raiz, a próxima demora a pegar */
+  rootResistT: number;
+  /** arrancada recente: o próximo golpe soma um pouco */
+  flowT: number;
+  /** piscar recente: o próximo golpe soma a emboscada */
+  ambushT: number;
+  /** brilho de cura */
+  healT: number;
+  /** dano de contato enquanto a arrancada do poder dura */
+  dashDmg: number;
+  dashEl: Element | null;
+  dashHit: string[];
   /** Chefe exausto: janela para atacar (mais dano, sem golpes) */
   exhaustT: number;
   /** último dano levado (relógio da rodada): a recuperação lenta começa depois de um tempo */
@@ -443,7 +470,9 @@ export interface Bullet {
   knock?: number;
   /** Rajada de Plasma: marca o alvo. Não usa o efeito da arma desenhada. */
   plasma?: boolean;
-  /** persegue este id. Some se o alvo cair ou sair da partida. Nenhum poder atual liga isso. */
+  /** ataque básico: só dano. Não marca elemento e não gasta a marca de plasma. */
+  basic?: boolean;
+  /** persegue este id. Some se o alvo cair ou sair da partida. */
   homeId?: string;
 }
 
@@ -501,6 +530,22 @@ export interface Clone {
   y: number;
   dir: number;
   t: number;
+  /** ilusão: segura um tiro hostil e estoura. Não coleta fragmento. */
+  decoy?: boolean;
+  absorb?: number;
+  pop?: number;
+}
+
+export interface Grove {
+  id: number;
+  owner: string;
+  team: number;
+  x: number;
+  y: number;
+  r: number;
+  t: number;
+  acc: number;
+  heal: number;
 }
 
 export interface ZoneEvent {
@@ -580,8 +625,8 @@ export type GameEvent =
   | { type: 'reflect'; x: number; y: number; pid: string }
   | { type: 'bonusSpawn'; x: number; y: number; ab: AbilityId }
   | { type: 'bonusPick'; x: number; y: number; pid: string; ab: AbilityId }
-  | { type: 'dmg'; pid: string; x: number; y: number; n: number; k: 'hp' | 'shield' | 'block' | 'weak' | 'dodge' | 'heal'; sx?: number; sy?: number; src?: DmgSrc; note?: string }
-  | { type: 'skill'; pid: string; x: number; y: number; skill: string }
+  | { type: 'dmg'; pid: string; x: number; y: number; n: number; k: 'hp' | 'shield' | 'block' | 'weak' | 'dodge' | 'heal' | 'immune'; sx?: number; sy?: number; src?: DmgSrc; note?: string }
+  | { type: 'skill'; pid: string; x: number; y: number; skill: string; r?: number }
   | { type: 'ult'; pid: string; x: number; y: number; ult: string }
   | { type: 'cast'; pid: string; kind: CastKind; x: number; y: number }
   | { type: 'castHit'; kind: CastKind; x: number; y: number; r: number; ang: number; len: number }
@@ -612,6 +657,7 @@ export class Game {
   readonly nav: NavGrid;
   fragments: Fragment[] = [];
   clones: Clone[] = [];
+  groves: Grove[] = [];
   powerups: { id: number; kind: PowerId; x: number; y: number; age: number }[] = [];
   bullets: Bullet[] = [];
   bombs: Bomb[] = [];
@@ -827,6 +873,15 @@ export class Game {
       stasisT: 0,
       castT: 0,
       pendingCast: null,
+      basicCd: 0,
+      rootT: 0,
+      rootResistT: 0,
+      flowT: 0,
+      ambushT: 0,
+      healT: 0,
+      dashDmg: 0,
+      dashEl: null,
+      dashHit: [],
       exhaustT: 0,
       lastHurtAt: 0,
       boss: false,
@@ -955,6 +1010,15 @@ export class Game {
         stasisT: 0,
         castT: 0,
         pendingCast: null,
+        basicCd: 0,
+        rootT: 0,
+        rootResistT: 0,
+        flowT: 0,
+        ambushT: 0,
+        healT: 0,
+        dashDmg: 0,
+        dashEl: null,
+        dashHit: [],
         exhaustT: 0,
         chargeDmg: 0,
         lastHurtAt: 0,
@@ -1177,6 +1241,7 @@ export class Game {
       p.recorder?.sample(tms, p.x, p.y, p.dir, p.moving);
     }
     this.updateClones(dt);
+    this.updateGroves(dt);
     this.updateTurrets(dt);
     this.replayEchoActions(tms);
     this.updatePowerups(dt);
@@ -1376,6 +1441,12 @@ export class Game {
       for (let i = 0; i < 4; i++) p.powerCd[i] = Math.max(0, p.powerCd[i] - dt);
       p.plasmaCd = Math.max(0, p.plasmaCd - dt);
       p.plasmaT = Math.max(0, p.plasmaT - dt);
+      p.basicCd = Math.max(0, p.basicCd - dt);
+      p.rootT = Math.max(0, p.rootT - dt);
+      p.rootResistT = Math.max(0, p.rootResistT - dt);
+      p.flowT = Math.max(0, p.flowT - dt);
+      p.ambushT = Math.max(0, p.ambushT - dt);
+      p.healT = Math.max(0, p.healT - dt);
       if (p.alive) p.energy = Math.min(ENERGY_MAX, p.energy + ENERGY_REGEN * dt);
       if (p.burnT > 0 && p.alive) {
         p.burnAcc += dt;
@@ -1411,7 +1482,7 @@ export class Game {
       mx /= mag;
       my /= mag;
     }
-    if (p.stunT > 0) {
+    if (p.stunT > 0 || p.rootT > 0) {
       mx = 0;
       my = 0;
     }
@@ -1433,9 +1504,11 @@ export class Game {
     }
     const free = p.stunT <= 0 && p.castT <= 0;
 
-    if (inp.dash && p.dashCd <= 0 && free && p.stasisT <= 0) {
+    if (inp.dash && p.dashCd <= 0 && free && p.stasisT <= 0 && p.rootT <= 0) {
         p.dashT = C.DASH_TIME;
         p.dashCd = C.DASH_CD;
+        p.dashHit = [];
+        if (this.mode === 'duelo' || this.mode === 'dupla') p.flowT = Math.max(p.flowT, FLOW_TIME);
         p.recorder?.event(tms, 'dash');
         this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
       }
@@ -1445,6 +1518,7 @@ export class Game {
         if (inp.ult) this.beginPower(p, 2, castAng, inp);
         if (inp.bonus || inp.item) this.beginPower(p, 3, castAng, inp);
         if (inp.plasma) this.castPlasma(p, castAng);
+        if ((this.mode === 'duelo' || this.mode === 'dupla') && inp.fire) this.castBasic(p, castAng);
       }
 
     const inBush = (this.arena.bushes ?? []).some((b) => dist(p.x, p.y, b.x, b.y) < b.r);
@@ -1479,6 +1553,11 @@ export class Game {
       p.dashT -= dt;
       p.vx = Math.cos(p.dir) * C.DASH_SPEED;
       p.vy = Math.sin(p.dir) * C.DASH_SPEED;
+      if (p.dashDmg > 0 && p.dashEl) this.dashTouch(p);
+      if (p.dashT <= 0) {
+        p.dashDmg = 0;
+        p.dashEl = null;
+      }
     } else {
       const grip = onIce ? 0.12 : this.arena.grip;
       const k = 1 - Math.exp(-12 * grip * dt);
@@ -2780,6 +2859,114 @@ export class Game {
     b.vy = Math.sin(ang) * sp;
   }
 
+  private nearestHostile(p: Player, max: number): Player | null {
+    let best: Player | null = null;
+    let bd = max;
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
+      const d = dist(p.x, p.y, o.x, o.y);
+      if (d < bd) {
+        bd = d;
+        best = o;
+      }
+    }
+    return best;
+  }
+
+  /** Soma emboscada e embalo uma vez, com teto. O número entra no mesmo dano, sem um segundo golpe. */
+  private mobilityBonus(src: Player): number {
+    let n = 0;
+    if (src.ambushT > 0) {
+      const g = Math.min(AMBUSH_BONUS, EXTRA_CAP - n);
+      src.ambushT = 0;
+      n += g;
+      if (g > 0) this.events.push({ type: 'combo', x: src.x, y: src.y, name: 'Emboscada', bonus: g, pid: src.id });
+    }
+    if (src.flowT > 0) {
+      const g = Math.min(FLOW_BONUS, EXTRA_CAP - n);
+      src.flowT = 0;
+      n += g;
+      if (g > 0) this.events.push({ type: 'combo', x: src.x, y: src.y, name: 'Embalo', bonus: g, pid: src.id });
+    }
+    return n;
+  }
+
+  private applyRoot(p: Player, t: number) {
+    if (t <= 0 || p.rootResistT > 0 || p.dodgeT > 0 || p.boss) return;
+    p.rootT = Math.max(p.rootT, t);
+    p.rootResistT = p.rootT + ROOT_RESIST;
+    this.events.push({ type: 'trap', x: p.x, y: p.y, pid: p.id });
+  }
+
+  /** Anda até a parede e para. Devolve a distância andada. */
+  private blinkTo(p: Player, ang: number, reach: number): number {
+    const step = 8;
+    let x = p.x;
+    let y = p.y;
+    const n = Math.max(1, Math.floor(reach / step));
+    for (let i = 1; i <= n; i++) {
+      const nx = p.x + Math.cos(ang) * step * i;
+      const ny = p.y + Math.sin(ang) * step * i;
+      if (!this.isFree(nx, ny, C.PLAYER_R)) break;
+      x = nx;
+      y = ny;
+    }
+    const moved = Math.hypot(x - p.x, y - p.y);
+    p.x = x;
+    p.y = y;
+    return moved;
+  }
+
+  private placeGrove(p: Player, x: number, y: number, r: number, heal: number) {
+    this.groves.push({ id: this.fragId++, owner: p.id, team: p.team, x, y, r, t: HEAL_ZONE_TIME, acc: 0, heal });
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || dist(o.x, o.y, x, y) > r) continue;
+      if (this.hostile(p, o)) continue;
+      this.heal(p, o, heal);
+      o.healT = 0.5;
+    }
+  }
+
+  private dashTouch(p: Player) {
+    if (!p.dashEl || p.dashDmg <= 0) return;
+    for (const o of this.players) {
+      if (!o.alive || !o.playing || p.dashHit.includes(o.id) || !this.hostile(p, o)) continue;
+      if (dist(p.x, p.y, o.x, o.y) > 36) continue;
+      p.dashHit.push(o.id);
+      this.deliverPower(p, o, p.dashEl, p.dashDmg, KNOCK[p.dashEl]);
+    }
+  }
+
+  /** Clique no X1 e no 2x2. Não usa a arma, não marca e não consome plasma. */
+  private castBasic(p: Player, ang: number) {
+    if (p.basicCd > 0) return;
+    if (p.energy < BASIC.cost) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      abilityTrace(p.id, 'deny', 'energy');
+      return;
+    }
+    p.energy -= BASIC.cost;
+    p.basicCd = BASIC.cd;
+    const muzzle = 16;
+    this.bullets.push({
+      id: this.fragId++,
+      x: p.x + Math.cos(ang) * muzzle,
+      y: p.y - GUN_Y + Math.sin(ang) * muzzle,
+      vx: Math.cos(ang) * BASIC.speed,
+      vy: Math.sin(ang) * BASIC.speed,
+      owner: p.id,
+      dmg: BASIC.dmg,
+      life: BASIC.range / BASIC.speed,
+      weapon: 'pulsador',
+      pierce: false,
+      fromEcho: false,
+      hit: [],
+      basic: true,
+    });
+    abilityTrace(p.id, 'launch', BASIC.name);
+    this.events.push({ type: 'shoot', x: p.x, y: p.y, pid: p.id, weapon: 'pulsador' });
+  }
+
   /** Prepara o golpe. Com windup, energia e recarga só caem quando ele sai. */
   private beginPower(p: Player, slot: number, ang: number, inp?: Input) {
     if (p.pendingCast) return;
@@ -2823,6 +3010,40 @@ export class Game {
       return;
     }
     const knock = KNOCK[def.element];
+    if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone') {
+      if ((def.act === 'dash' || def.act === 'blink') && p.rootT > 0) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Preso pelas raízes' });
+        return;
+      }
+      p.energy -= cost;
+      p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+      abilityTrace(p.id, 'launch', def.name);
+      this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: def.radius });
+      if (def.act === 'dash') {
+        p.dir = ang;
+        p.dashT = C.DASH_TIME;
+        p.dashDmg = def.dmg;
+        p.dashEl = def.element;
+        p.dashHit = [];
+        p.flowT = Math.max(p.flowT, FLOW_TIME);
+        this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
+      } else if (def.act === 'blink') {
+        const moved = this.blinkTo(p, ang, def.step ?? BLINK_STEP);
+        if (moved > 12) p.ambushT = AMBUSH_TIME;
+        const foe = this.nearestHostile(p, 36);
+        if (foe) this.deliverPower(p, foe, def.element, def.dmg, 0);
+      } else if (def.act === 'decoy') {
+        const ox = p.x + Math.cos(ang) * 48;
+        const oy = p.y + Math.sin(ang) * 48;
+        const spot = this.isFree(ox, oy, 12) ? { x: ox, y: oy } : { x: p.x, y: p.y };
+        this.clones.push({ owner: p.id, x: spot.x, y: spot.y, dir: ang, t: 3.2, decoy: true, absorb: 1, pop: def.dmg });
+      } else {
+        const pt = this.castPoint(p, inp, ang, def.range);
+        this.placeGrove(p, pt.x, pt.y, def.radius, def.dmg);
+        this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
+      }
+      return;
+    }
     if (def.speed <= 0) {
       const pt = this.castPoint(p, inp, ang, def.range);
       const los = def.los !== false;
@@ -2834,18 +3055,20 @@ export class Game {
       p.energy -= cost;
       p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
       abilityTrace(p.id, 'impact', def.name);
-      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element });
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
       for (const o of this.players) {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
         if (dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
         if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
-        this.deliverPower(p, o, def.element, def.dmg, knock);
+        this.deliverPower(p, o, def.element, def.dmg, knock, true);
       }
+      if (def.grove === 'heal') this.placeGrove(p, pt.x, pt.y, def.radius, 4);
       return;
     }
     p.energy -= cost;
     p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
     const muzzle = 18;
+    const home = def.home ? this.nearestHostile(p, def.range) : null;
     this.bullets.push({
       id: this.fragId++,
       x: p.x + Math.cos(ang) * muzzle,
@@ -2861,6 +3084,7 @@ export class Game {
       hit: [],
       el: def.element,
       knock,
+      homeId: home?.id,
     });
     abilityTrace(p.id, 'launch', def.name);
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
@@ -2909,10 +3133,17 @@ export class Game {
   }
 
   /** Lê o combo, grava o elemento novo e aplica queimadura, lentidão, tontura ou empurrão. */
-  private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number) {
+  private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number, aoe = false) {
     if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
-    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT };
+    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT };
     const extra = bonusDamage(src.char.id, aura, dst.stunT > 0);
+    const move = this.mobilityBonus(src);
+    let rootBonus = 0;
+    if (aoe && dst.rootT > 0) {
+      rootBonus = Math.min(ROOT_AOE_BONUS, Math.max(0, EXTRA_CAP - move));
+      dst.rootT = 0;
+      if (rootBonus > 0) this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Raiz e impacto', bonus: rootBonus, pid: src.id });
+    }
     const combo = tuneCombo(src.char.id, comboOf(aura, element));
     const marked = dst.plasmaT > 0;
     let burst = 0;
@@ -2920,7 +3151,7 @@ export class Game {
       dst.plasmaT = 0;
       burst = Math.min(PLASMA.burst, Math.max(0, PLASMA.cap - (damage + extra)));
     }
-    this.hurt(dst, damage + extra, src.id, 'pulse');
+    this.hurt(dst, damage + extra + move + rootBonus, src.id, 'pulse');
     if (burst > 0) {
       this.hurt(dst, burst, src.id, 'pulse');
       this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Explosão de Plasma', bonus: burst, pid: src.id });
@@ -2935,7 +3166,8 @@ export class Game {
       dst.frozenT = FROZEN_TIME;
       this.slow(dst, FROZEN_TIME);
     } else if (element === 'lightning') dst.shockT = MARK_TIME;
-    else dst.gustT = MARK_TIME;
+    else if (element === 'wind') dst.gustT = MARK_TIME;
+    else if (element === 'nature') this.applyRoot(dst, ROOT_TIME);
     if (combo) {
       if (combo.clearFrozen) {
         dst.frozenT = 0;
@@ -2956,7 +3188,10 @@ export class Game {
       }
     }
     if (element === 'lightning') this.stun(dst, stunTime(src.char.id));
-    if (element === 'wind') {
+    if (element === 'plasma') {
+      const ang = Math.atan2(dst.y - src.y, dst.x - src.x);
+      this.knock(dst, Math.cos(ang) * knock, Math.sin(ang) * knock);
+    } else if (element === 'wind') {
       const slammed = wallSlam(src.x, src.y, dst.x, dst.y, WALL_REACH, (x, y) => !this.isFree(x, y, 10));
       if (slammed) {
         this.stun(dst, wallStun(src.char.id));
@@ -3106,7 +3341,10 @@ export class Game {
   hurt(p: Player, dmg: number, by: string | null, cause: 'echo' | 'own' | 'hazard' | 'fall' | 'pulse' | 'shot' | 'blast', dir?: number) {
     // invulnT > 1 = proteção de início de rodada/renascer (o resto só evita repetir dano de Eco/perigo)
     if (!p.alive || dmg <= 0) return;
-    if (p.phaseT > 0 || p.invulnT > 1) return;
+    if (p.phaseT > 0 || p.invulnT > 1) {
+      if (cause === 'pulse' || cause === 'shot' || cause === 'blast') this.events.push({ type: 'dmg', pid: p.id, x: p.x, y: p.y, n: 0, k: 'immune' });
+      return;
+    }
     // morte súbita: o dano base dobra uma vez. Não acumula a cada passo.
     if (this.sudden) dmg *= DUEL.mult;
     if (p.dodgeT > 0) {
@@ -3209,6 +3447,10 @@ export class Game {
           b.x = nx;
           b.y = ny;
         }
+        if (this.absorbDecoy(b)) {
+          b.life = 0;
+          break;
+        }
         for (const o of this.players) {
           if (!o.alive || !o.playing || b.hit.includes(o.id)) continue;
           if (!enemyShot) {
@@ -3223,6 +3465,17 @@ export class Game {
             const src = this.players.find((q) => q.id === b.owner);
             if (src) this.deliverPlasma(src, o, b.dmg);
             else this.hurt(o, Math.min(PLASMA.dmg, b.dmg), b.owner, 'shot', Math.atan2(b.vy, b.vx));
+            if (!b.pierce) {
+              b.life = 0;
+              break;
+            }
+            continue;
+          }
+          if (b.basic) {
+            b.hit.push(o.id);
+            const src = this.players.find((q) => q.id === b.owner);
+            const move = src ? this.mobilityBonus(src) : 0;
+            this.hurt(o, b.dmg + move, b.fromEcho ? null : b.owner, 'shot', Math.atan2(b.vy, b.vx));
             if (!b.pierce) {
               b.life = 0;
               break;
@@ -3398,9 +3651,52 @@ export class Game {
     }
   }
 
+  private absorbDecoy(b: Bullet): boolean {
+    for (const c of this.clones) {
+      if (!c.decoy || (c.absorb ?? 0) <= 0 || c.t <= 0) continue;
+      if (c.owner === b.owner) continue;
+      if (dist(c.x, c.y - GUN_Y, b.x, b.y) > 22) continue;
+      const owner = this.players.find((p) => p.id === c.owner);
+      const ownerTeam = this.teamOf(b.owner);
+      if (owner && ownerTeam >= 0 && owner.team === ownerTeam) continue;
+      c.absorb = (c.absorb ?? 1) - 1;
+      this.events.push({ type: 'block', x: c.x, y: c.y });
+      if ((c.pop ?? 0) > 0 && owner) {
+        for (const o of this.players) {
+          if (!o.alive || !o.playing || !this.hostile(owner, o)) continue;
+          if (dist(o.x, o.y, c.x, c.y) > 56) continue;
+          if (!this.sight(c.x, c.y, o.x, o.y)) continue;
+          this.hurt(o, c.pop ?? 0, owner.id, 'pulse');
+        }
+      }
+      if ((c.absorb ?? 0) <= 0) c.t = 0;
+      return true;
+    }
+    return false;
+  }
+
+  private updateGroves(dt: number) {
+    for (const g of this.groves) {
+      g.t -= dt;
+      g.acc += dt;
+      if (g.acc < 0.8) continue;
+      g.acc -= 0.8;
+      const src = this.players.find((p) => p.id === g.owner);
+      if (!src) continue;
+      for (const o of this.players) {
+        if (!o.alive || !o.playing || dist(o.x, o.y, g.x, g.y) > g.r) continue;
+        if (this.hostile(src, o)) continue;
+        this.heal(src, o, g.heal);
+        o.healT = 0.5;
+      }
+    }
+    this.groves = this.groves.filter((g) => g.t > 0);
+  }
+
   private updateClones(dt: number) {
     for (const c of this.clones) {
       c.t -= dt;
+      if (c.decoy) continue;
       const owner = this.players.find((p) => p.id === c.owner);
       if (!owner || !owner.alive || owner.carry >= C.MAX_CARRY) continue;
       let best: Fragment | null = null;

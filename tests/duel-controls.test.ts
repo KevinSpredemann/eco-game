@@ -288,11 +288,16 @@ describe('controles de notebook e elenco inicial', () => {
     const keys = presetKeys('notebook');
     expect(keys).toEqual(NOTEBOOK_KEYS);
     expect(keys.item).toBe('KeyF');
-    expect(keys.bonus).toBe('Space');
-    expect(keys.dash).toBe('ShiftLeft');
+    expect(keys.bonus).toBe('KeyE');
+    expect(keys.skill).toBe('KeyW');
+    expect(keys.dash).toBe('Space');
     expect(keys.ability).toBe('KeyQ');
     expect(keys.ult).toBe('KeyR');
-    expect(presetKeys('classic').item).toBe('Space');
+    expect(presetKeys('classic').dash).toBe('Space');
+    expect(presetKeys('classic').skill).toBe('KeyW');
+    expect(presetKeys('classic', 'wasd').item).toBe('Space');
+    expect(presetKeys('classic', 'wasd').skill).toBe('KeyE');
+    expect(presetKeys('classic', 'esdf').bonus).toBe('KeyA');
     expect(assistAim(0, 0, 0, [{ x: 100, y: 8 }])).toBeGreaterThan(0);
     expect(assistAim(0, 0, 0, [{ x: -200, y: 0 }])).toBe(0);
     expect(nearestAim(0, 0, [{ id: 'far', x: 300, y: 0 }, { id: 'near', x: 40, y: 0 }])?.id).toBe('near');
@@ -300,7 +305,7 @@ describe('controles de notebook e elenco inicial', () => {
 
   it('os iniciais entram sem apagar moedas nem personagens comprados', () => {
     const fresh = newProfile();
-    expect(STARTER_CHARS).toEqual(['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris']);
+    expect(STARTER_CHARS).toEqual(['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris', 'vortex', 'nara', 'vexa']);
     for (const id of STARTER_CHARS) {
       expect(CHAR_PRICES[id]).toBe(0);
       expect(owns(fresh, 'char:' + id)).toBe(true);

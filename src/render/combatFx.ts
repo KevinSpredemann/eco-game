@@ -298,6 +298,8 @@ export function drawStatus(ctx: Ctx, game: Game, p: Player, time: number, regen 
   if (p.invulnT > 1) tags.push({ s: 'PROTEGIDO', c: '#ffffff' });
   if (p.exhaustT > 0) tags.unshift({ s: 'EXAUSTO — ATAQUEM!', c: '#5dffb8' });
   if (p.castT > 0 && !p.boss) tags.push({ s: 'CARREGANDO', c: '#ff8a3d' });
+  if (p.rootT > 0) tags.push({ s: 'RAIZ', c: '#3dcc6a' });
+  if (p.ambushT > 0) tags.push({ s: 'TOCAIA', c: '#8a7cff' });
   if (regen) tags.push({ s: '+ RECUPERANDO', c: '#5dffb8' });
   const top = p.y - (p.boss ? 150 : 98);
   tags.slice(0, 2).forEach((t, i) => txt(ctx, p.x, top - i * 14, t.s, t.c, 10));
@@ -316,6 +318,34 @@ export function drawStatus(ctx: Ctx, game: Game, p: Player, time: number, regen 
       ctx.lineTo(p.x + Math.cos(a) * (r + 6), p.y - 28 + Math.sin(a) * (r + 6));
       ctx.stroke();
     }
+  }
+  if (p.castT > 0 && !p.boss) {
+    ctx.strokeStyle = hexA('#ff8a3d', 0.85);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - 30, 26 + Math.sin(time * 16) * 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (p.rootT > 0) {
+    ctx.strokeStyle = hexA('#3dcc6a', 0.9);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - 4, 18, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (p.ambushT > 0) {
+    ctx.strokeStyle = hexA('#8a7cff', 0.8);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - 36, 16, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (p.healT > 0) {
+    ctx.strokeStyle = hexA('#5dffb8', 0.8);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - 28, 22, 0, Math.PI * 2);
+    ctx.stroke();
   }
   if (p.overT > 0) {
     ctx.strokeStyle = hexA('#ffe14a', 0.5 + 0.3 * Math.sin(time * 20));

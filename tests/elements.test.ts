@@ -23,13 +23,17 @@ describe('poderes elementais', () => {
     for (const c of CHARACTERS) {
       const k = kitOf(c.id);
       expect(k.powers, c.id).toHaveLength(4);
-      expect(new Set(k.powers.map((p) => p.element)).size, c.id).toBe(4);
+      const els = k.powers.map((p) => p.element);
+      const classic = els.every((e) => e === 'fire' || e === 'ice' || e === 'lightning' || e === 'wind');
+      if (classic) expect(new Set(els).size, c.id).toBe(4);
+      else expect(['vortex', 'nara', 'vexa'], c.id).toContain(c.id);
       expect(k.passiveName.length, c.id).toBeGreaterThan(0);
       for (const p of k.powers) {
         expect(p.cd, `${c.id} ${p.name}`).toBeGreaterThanOrEqual(2.5);
         expect(p.cd, `${c.id} ${p.name}`).toBeLessThanOrEqual(8);
         expect(p.dmg, `${c.id} ${p.name}`).toBeGreaterThanOrEqual(6);
         expect(p.dmg, `${c.id} ${p.name}`).toBeLessThanOrEqual(20);
+        expect(p.dmg >= 16 && p.range >= 260 && p.cd <= 4.5, `${c.id} ${p.name} dmg+alcance+recarga`).toBe(false);
       }
     }
   });
@@ -41,7 +45,9 @@ describe('poderes elementais', () => {
     expect(comboOf({ ...clear, gust: 1 }, 'lightning')).toMatchObject({ id: 'storm', name: 'Tempestade', bonus: 12 });
     expect(comboOf({ ...clear, shock: 1 }, 'fire')).toMatchObject({ id: 'arc', name: 'Arco-chama', bonus: 10 });
     expect(comboOf({ ...clear, burn: 1 }, 'ice')).toMatchObject({ id: 'thermal', name: 'Choque térmico', bonus: 8 });
+    expect(comboOf({ ...clear, frozen: 1 }, 'plasma')).toMatchObject({ id: 'chill', name: 'Plasma lento', bonus: 8 });
     expect(comboOf(clear, 'fire')).toBeNull();
+    expect(comboOf(clear, 'plasma')).toBeNull();
     expect(comboOf({ ...clear, frozen: 1 }, 'wind')).toBeNull();
   });
 
@@ -83,7 +89,7 @@ describe('poderes elementais', () => {
     expect(denyPowerCast('ability', [0, 1.2, 0, 0])).toBeNull();
     expect(denyPowerCast('fire', [9, 9, 9, 9])).toBeNull();
     const frozen = { ...clear, frozen: 2 };
-    expect(comboReady('kai', [0, 0, 0, 0], [frozen])).toMatchObject({ slot: 1, key: 'E', name: 'Estilhaçar' });
+    expect(comboReady('kai', [0, 0, 0, 0], [frozen])).toMatchObject({ slot: 1, key: 'W', name: 'Estilhaçar' });
     expect(comboReady('kai', [0, 2, 0, 0], [frozen])).toMatchObject({ slot: 2, key: 'R', name: 'Vapor' });
     expect(comboReady('kai', [0, 2, 2, 0], [frozen])).toBeNull();
     expect(comboReady('kai', [0, 0, 0, 0], [clear])).toBeNull();

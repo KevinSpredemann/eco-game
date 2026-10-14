@@ -1,13 +1,15 @@
 // Poderes elementais do X1 e do 2x2. Os dois modos usam só estes golpes.
 // Cada golpe deixa uma marca curta. O próximo elemento lê a marca ANTES de gravar a sua.
 
-export type Element = 'fire' | 'ice' | 'lightning' | 'wind';
+export type Element = 'fire' | 'ice' | 'lightning' | 'wind' | 'nature' | 'shadow' | 'plasma';
 
 export interface Aura {
   burn: number;
   frozen: number;
   gust: number;
   shock: number;
+  /** raiz ainda ativa. Ausente vale zero. */
+  root?: number;
 }
 
 export type PowerCategory = 'attack' | 'defense' | 'mobility' | 'control' | 'support';
@@ -28,6 +30,16 @@ export interface PowerDef {
   pass?: boolean;
   /** área instantânea ignora parede se for false. O padrão respeita a linha de visão. */
   los?: boolean;
+  /** o projétil vira na direção do inimigo. Some se ele cair. */
+  home?: boolean;
+  /** dash, blink, decoy e zone saem no lugar do projétil ou da área. */
+  act?: 'dash' | 'blink' | 'decoy' | 'zone';
+  /** zone de cura. O campo dmg é o quanto cura por pulso. */
+  zone?: 'heal';
+  /** distância do piscar, em unidades do mapa. */
+  step?: number;
+  /** depois do acerto, abre um bosque que cura quem não é inimigo. */
+  grove?: 'heal';
 }
 
 export const CATEGORY_PT: Record<PowerCategory, string> = {
@@ -44,9 +56,23 @@ export function powerCategory(pw: PowerDef): PowerCategory {
 
 /** Números reais do golpe: dano, alcance e recarga nas unidades do mapa. */
 export function describePower(pw: PowerDef, key: string, cost: number): string {
-  const kind = pw.speed <= 0 ? `área, raio ${pw.radius}` : `projétil, velocidade ${pw.speed}, primeiro inimigo`;
-  const wall = pw.pass ? 'atravessa paredes' : pw.speed <= 0 ? 'respeita paredes' : 'para na parede';
-  return `${key} ${pw.name}: dano ${pw.dmg}, alcance ${pw.range}, recarga ${pw.cd}s, energia ${cost}, ${CATEGORY_PT[powerCategory(pw)]}, ${kind}, ${wall}.`;
+  const act = pw.act ?? (pw.speed <= 0 ? 'aoe' : 'shot');
+  const kind =
+    act === 'dash'
+      ? `arrancada de até ${pw.range}, para na parede, até ${pw.dmg} se encostar`
+      : act === 'blink'
+        ? `pisca até ${pw.step ?? pw.range} e para na parede, até ${pw.dmg} se cair em cima`
+        : act === 'decoy'
+          ? `ilusão que segura um tiro e estoura ${pw.dmg}`
+          : act === 'zone' && pw.zone === 'heal'
+            ? `bosque, raio ${pw.radius}, cura ${pw.dmg} por pulso`
+            : pw.speed <= 0
+              ? `área, raio ${pw.radius}`
+              : `projétil, velocidade ${pw.speed}, primeiro inimigo${pw.home ? ', teleguiado' : ''}`;
+  const wall = pw.pass ? 'atravessa paredes' : 'para na parede';
+  const prep = pw.windup ? `, preparo ${pw.windup}s` : '';
+  const hit = act === 'zone' && pw.zone === 'heal' ? `cura ${pw.dmg}` : `dano ${pw.dmg}`;
+  return `${key} ${pw.name}: ${hit}, alcance ${pw.range}, recarga ${pw.cd}s, energia ${cost}, ${CATEGORY_PT[powerCategory(pw)]}, ${kind}, ${wall}${prep}.`;
 }
 
 export type PassiveId =
@@ -64,7 +90,10 @@ export type PassiveId =
   | 'chain'
   | 'steam'
   | 'haste'
-  | 'gustslow';
+  | 'gustslow'
+  | 'plasma'
+  | 'nature'
+  | 'shadow';
 
 export interface Kit {
   powers: [PowerDef, PowerDef, PowerDef, PowerDef];
@@ -74,7 +103,7 @@ export interface Kit {
 }
 
 export interface Combo {
-  id: 'shatter' | 'steam' | 'cinder' | 'storm' | 'arc' | 'thermal';
+  id: 'shatter' | 'steam' | 'cinder' | 'storm' | 'arc' | 'thermal' | 'chill';
   name: string;
   bonus: number;
   clearFrozen?: boolean;
@@ -116,6 +145,32 @@ export const PLASMA = {
 } as const;
 export const PLASMA_COLOR = '#c86bff';
 
+/**
+ * Ataque básico do X1 e do 2x2. Não é arma, não marca elemento e não gasta a marca de plasma.
+ * Curto, dano modesto, recarga e energia próprias.
+ */
+export const BASIC = {
+  name: 'Ataque básico',
+  dmg: 6,
+  range: 200,
+  speed: 840,
+  radius: 12,
+  cd: 0.55,
+  cost: 8,
+} as const;
+
+/** teto dos bônus novos (emboscada, embalo, raiz) num mesmo golpe. Os combos antigos ficam como estão. */
+export const EXTRA_CAP = 14;
+export const FLOW_TIME = 1.5;
+export const FLOW_BONUS = 4;
+export const AMBUSH_TIME = 2;
+export const AMBUSH_BONUS = 8;
+export const ROOT_TIME = 1.3;
+export const ROOT_RESIST = 2.4;
+export const ROOT_AOE_BONUS = 6;
+export const HEAL_ZONE_TIME = 2.4;
+export const BLINK_STEP = 100;
+
 const BASE: Omit<PowerDef, 'name' | 'element'>[] = [
   { cd: 3.2, dmg: 10, range: 280, speed: 720, radius: 16 },
   { cd: 4.8, dmg: 9, range: 160, speed: 0, radius: 88 },
@@ -149,6 +204,39 @@ export const KITS: Record<string, Kit> = {
   mei: kit(['fire', 'ice', 'wind', 'lightning'], ['Caldeira', 'Geada', 'Vapor', 'Faísca'], 'steam', 'Pressão', 'A explosão de vapor alcança mais longe.'),
   duda: kit(['lightning', 'fire', 'wind', 'ice'], ['Centelha', 'Faísca', 'Rajada', 'Geada'], 'haste', 'Oficina', 'As recargas dos poderes são mais curtas.'),
   bento: kit(['wind', 'fire', 'lightning', 'ice'], ['Rajada', 'Brasa', 'Faísca', 'Orvalho'], 'gustslow', 'Vento frio', 'O vento também deixa lento.'),
+  vortex: {
+    powers: [
+      { name: 'Disparo de Plasma', element: 'plasma', cd: 3.4, dmg: 11, range: 260, speed: 780, radius: 14, category: 'attack' },
+      { name: 'Onda de Plasma', element: 'plasma', cd: 5, dmg: 9, range: 140, speed: 0, radius: 80, category: 'control' },
+      { name: 'Colapso Vortex', element: 'plasma', cd: 8, dmg: 16, range: 180, speed: 0, radius: 110, category: 'attack', windup: 0.55 },
+      { name: 'Impulso Vetorial', element: 'plasma', cd: 4.5, dmg: 6, range: 120, speed: 0, radius: 22, category: 'mobility', act: 'dash' },
+    ],
+    passive: 'plasma',
+    passiveName: 'Núcleo instável',
+    passiveDesc: 'O plasma empurra e o colapso precisa de preparo.',
+  },
+  nara: {
+    powers: [
+      { name: 'Semente', element: 'nature', cd: 3.6, dmg: 8, range: 240, speed: 520, radius: 14, category: 'attack', home: true },
+      { name: 'Raízes', element: 'nature', cd: 5.2, dmg: 6, range: 140, speed: 0, radius: 78, category: 'control' },
+      { name: 'Broto', element: 'nature', cd: 7.5, dmg: 12, range: 180, speed: 0, radius: 64, category: 'attack', grove: 'heal' },
+      { name: 'Bosque', element: 'nature', cd: 6, dmg: 6, range: 160, speed: 0, radius: 72, category: 'support', act: 'zone', zone: 'heal' },
+    ],
+    passive: 'nature',
+    passiveName: 'Seiva',
+    passiveDesc: 'Raiz segura no lugar. O bosque cura aos poucos.',
+  },
+  vexa: {
+    powers: [
+      { name: 'Corte', element: 'shadow', cd: 3.2, dmg: 9, range: 220, speed: 740, radius: 14, category: 'attack' },
+      { name: 'Passo Sombrio', element: 'shadow', cd: 4.2, dmg: 6, range: 100, speed: 0, radius: 28, category: 'mobility', act: 'blink', step: BLINK_STEP },
+      { name: 'Emboscada', element: 'shadow', cd: 7, dmg: 12, range: 200, speed: 700, radius: 14, category: 'attack' },
+      { name: 'Ilusão', element: 'shadow', cd: 6, dmg: 6, range: 70, speed: 0, radius: 18, category: 'defense', act: 'decoy' },
+    ],
+    passive: 'shadow',
+    passiveName: 'Tocaia',
+    passiveDesc: 'O piscar prepara a emboscada. A ilusão segura um tiro.',
+  },
 };
 
 export function kitOf(id: string): Kit {
@@ -160,6 +248,9 @@ export const ELEMENT_NAME: Record<Element, string> = {
   ice: 'Gelo',
   lightning: 'Raio',
   wind: 'Vento',
+  nature: 'Natureza',
+  shadow: 'Sombra',
+  plasma: 'Plasma',
 };
 
 export const ELEMENT_COLOR: Record<Element, string> = {
@@ -167,6 +258,9 @@ export const ELEMENT_COLOR: Record<Element, string> = {
   ice: '#9fe8ff',
   lightning: '#ffe14a',
   wind: '#7dffe0',
+  nature: '#3dcc6a',
+  shadow: '#8a7cff',
+  plasma: PLASMA_COLOR,
 };
 
 export const ELEMENT_FX: Record<Element, string> = {
@@ -174,6 +268,9 @@ export const ELEMENT_FX: Record<Element, string> = {
   ice: 'deixa lento',
   lightning: 'deixa tonto',
   wind: 'empurra para trás',
+  nature: 'enraíza por um instante',
+  shadow: 'não marca o alvo; o piscar prepara a emboscada',
+  plasma: 'empurra com a onda',
 };
 
 /** arma só para a cor do projétil; o efeito real vem do elemento */
@@ -182,9 +279,12 @@ export const VISUAL_WEAPON: Record<Element, 'estelar' | 'cristal' | 'choque' | '
   ice: 'cristal',
   lightning: 'choque',
   wind: 'pulsador',
+  nature: 'cristal',
+  shadow: 'choque',
+  plasma: 'pulsador',
 };
 
-export const KNOCK: Record<Element, number> = { wind: 260, fire: 40, ice: 20, lightning: 30 };
+export const KNOCK: Record<Element, number> = { wind: 260, fire: 40, ice: 20, lightning: 30, nature: 20, shadow: 10, plasma: 150 };
 
 const EMPTY: Aura = { burn: 0, frozen: 0, gust: 0, shock: 0 };
 
@@ -196,6 +296,7 @@ export function comboOf(aura: Aura, next: Element): Combo | null {
   if (aura.gust > 0 && next === 'lightning') return { id: 'storm', name: 'Tempestade', bonus: 12 };
   if (aura.shock > 0 && next === 'fire') return { id: 'arc', name: 'Arco-chama', bonus: 10 };
   if (aura.burn > 0 && next === 'ice') return { id: 'thermal', name: 'Choque térmico', bonus: 8 };
+  if (aura.frozen > 0 && next === 'plasma') return { id: 'chill', name: 'Plasma lento', bonus: 8 };
   return null;
 }
 
@@ -284,6 +385,14 @@ export function botPower(kitDef: Kit, cds: number[], mark: Aura, dist: number, n
     if (lightning !== null) return lightning;
     const fire = slotOf(kitDef, cds, 'fire', dist);
     if (fire !== null) return fire;
+    const plasma = slotOf(kitDef, cds, 'plasma', dist);
+    if (plasma !== null) return plasma;
+  }
+  if ((aura.root ?? 0) > 0) {
+    for (let i = 0; i < 4; i++) {
+      const p = kitDef.powers[i];
+      if (cds[i] <= 0 && p.speed <= 0 && p.act !== 'zone' && inRange(p, dist)) return i;
+    }
   }
   if (nearWall) {
     const wind = slotOf(kitDef, cds, 'wind', dist);
@@ -314,7 +423,8 @@ export function botPower(kitDef: Kit, cds: number[], mark: Aura, dist: number, n
   return best;
 }
 
-const POWER_KEY = ['Q', 'E', 'R', 'F'] as const;
+/** Q W R E: o R é a ultimate (espaço 3 da lista é o E). */
+export const SLOT_LABEL = ['Q', 'W', 'R', 'E'] as const;
 
 /** Q E R F, e o F do notebook (item) cai no mesmo poder. */
 export function powerSlotIndex(slot: string): number | null {
@@ -347,13 +457,13 @@ export function denyPlasma(on: boolean, cd: number, energy: number): string | nu
 }
 
 /** Combo que já está armado num rival e cabe num poder pronto. */
-export function comboReady(charId: string, cds: readonly number[], foes: readonly Aura[]): { slot: number; key: string; name: string } | null {
+export function comboReady(charId: string, cds: readonly number[], foes: readonly Aura[], labels: readonly string[] = SLOT_LABEL): { slot: number; key: string; name: string } | null {
   const kitDef = kitOf(charId);
   for (const aura of foes) {
     for (let i = 0; i < 4; i++) {
       if ((cds[i] ?? 0) > 0) continue;
       const combo = tuneCombo(charId, comboOf(aura, kitDef.powers[i].element));
-      if (combo) return { slot: i, key: POWER_KEY[i], name: combo.name };
+      if (combo) return { slot: i, key: labels[i] ?? SLOT_LABEL[i], name: combo.name };
     }
   }
   return null;
