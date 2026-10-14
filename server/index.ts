@@ -411,7 +411,7 @@ function tick(r: Room, dt: number) {
   for (const m of r.members) {
     inputs[m.id] = m.input;
     // botões de toque único são consumidos no passo
-    m.input = { ...m.input, dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, plasma: false, ca: null, cr: null };
+    m.input = { ...m.input, dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, plasma: false, ca: null, cr: null, ch: null };
   }
   g.step(dt, inputs);
   if (g.phase !== 'rewind' && r.skipVotes.size) r.skipVotes.clear();
@@ -696,7 +696,7 @@ wss.on('connection', (ws) => {
       }
       case 'input': {
         if (!c.room?.game || !Array.isArray(m.i)) return;
-        const [mx, my, bits, aim, ca, cr] = m.i;
+        const [mx, my, bits, aim, ca, cr, ch] = m.i;
         const prev = c.input;
         const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? v : null);
         const press = !!(bits & (BTN.dash | BTN.ability | BTN.item | BTN.bonus | BTN.skill | BTN.ult | BTN.plasma));
@@ -715,6 +715,7 @@ wss.on('connection', (ws) => {
           aim: num(aim),
           ca: press ? num(ca) : prev.ca ?? null,
           cr: press ? (num(cr) === null ? null : Math.max(0, Math.min(2000, num(cr)!))) : prev.cr ?? null,
+          ch: press && num(ch) !== null ? Math.max(0, Math.min(1, num(ch)!)) : null,
         };
         break;
       }

@@ -26,6 +26,8 @@ export interface PowerDef {
   category?: PowerCategory;
   /** segundos de preparo. 0 ou ausente: sai na hora. */
   windup?: number;
+  /** segurar cresce dano, alcance e raio. Soltar usa a carga real. Ausente = golpe cheio. */
+  charge?: boolean;
   /** só atravessa parede se estiver marcado. O padrão para na parede. */
   pass?: boolean;
   /** área instantânea ignora parede se for false. O padrão respeita a linha de visão. */
@@ -107,7 +109,7 @@ export function describePower(pw: PowerDef, key: string, cost: number, slot?: nu
               ? `área, raio ${pw.radius}`
               : `projétil, velocidade ${pw.speed}, primeiro inimigo${pw.home ? ', teleguiado' : ''}`;
   const wall = pw.pass ? 'atravessa paredes' : 'para na parede';
-  const prep = pw.windup ? `, preparo ${pw.windup}s` : '';
+  const prep = pw.charge || pw.windup ? `, segura para carregar${pw.windup ? ` (até ${pw.windup}s)` : ''}` : '';
   const hit = act === 'zone' && pw.zone === 'heal' ? `cura ${dmg}` : `dano ${dmg}`;
   const yank = pw.yank ? `, puxa ${pw.yank}` : '';
   const price = slot === 2 ? 'carga da ultimate' : `energia ${cost}`;
@@ -285,7 +287,7 @@ export const KITS: Record<string, Kit> = {
     powers: [
       { name: 'Semente', element: 'nature', cd: 3.6, dmg: 8, range: 240, speed: 520, radius: 14, category: 'attack', home: true },
       { name: 'Raízes', element: 'nature', cd: 5.2, dmg: 6, range: 140, speed: 0, radius: 78, category: 'control' },
-      { name: 'Broto', element: 'nature', cd: 7.5, dmg: 12, range: 180, speed: 0, radius: 64, category: 'attack', grove: 'heal' },
+      { name: 'Broto', element: 'nature', cd: 7.5, dmg: 12, range: 180, speed: 0, radius: 64, category: 'attack', grove: 'heal', charge: true },
       { name: 'Bosque', element: 'nature', cd: 6, dmg: 6, range: 160, speed: 0, radius: 72, category: 'support', act: 'zone', zone: 'heal' },
     ],
     passive: 'nature',

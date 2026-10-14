@@ -353,7 +353,7 @@ describe('colisão e ciclo do golpe', () => {
 describe('mira', () => {
   it('automático, soltar, manual e cancelar seguem a escolha', () => {
     expect(resolveCastStyle({ castMode: 'auto', control: 'classic', touch: false, manual: false, kind: 'direction' })).toBe('release');
-    expect(resolveCastStyle({ castMode: 'auto', control: 'notebook', touch: false, manual: false, kind: 'direction' })).toBe('instant');
+    expect(resolveCastStyle({ castMode: 'auto', control: 'notebook', touch: false, manual: false, kind: 'direction' })).toBe('release');
     expect(resolveCastStyle({ castMode: 'manual', control: 'notebook', touch: false, manual: false, kind: 'instant' })).toBe('manual');
     expect(resolveCastStyle({ castMode: 'release', control: 'classic', touch: false, manual: false, kind: 'direction' })).toBe('release');
     expect(queuesOnPress('manual')).toBe(false);

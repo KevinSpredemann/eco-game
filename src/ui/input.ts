@@ -157,10 +157,45 @@ export function nearestAim(ox: number, oy: number, foes: { id: string; x: number
  * Mira pelo teclado. As setas escolhem a direção do tiro.
  * Sem seta, a mira acompanha o passo. WASD continua só o movimento.
  */
-export function keyboardAimAngle(prev: number, arrows: { x: number; y: number }, move: { x: number; y: number }): number {
-  if (arrows.x || arrows.y) return Math.atan2(arrows.y, arrows.x);
+export function keyboardAimAngle(prev: number, arrows: { x: number; y: number }, move: { x: number; y: number }, precision = false): number {
+  if (arrows.x || arrows.y) {
+    const target = Math.atan2(arrows.y, arrows.x);
+    if (!precision) return target;
+    return stepAim(prev, target, 0.55);
+  }
   if (move.x || move.y) return Math.atan2(move.y, move.x);
   return prev;
+}
+
+/**
+ * WASD e ESDF andam. As setas miram e não empurram o corpo.
+ * No layout de setas, as setas continuam andando. Shift fino gira a mira devagar.
+ */
+export function stickIntent(o: {
+  moveScheme: MoveScheme;
+  keyboardAim: boolean;
+  aiming: boolean;
+  precision: boolean;
+  arrows: { x: number; y: number };
+  keys: { x: number; y: number };
+  stick: { x: number; y: number };
+  prevAim: number;
+}): { mx: number; my: number; aim: number; arrows: boolean } {
+  let mx = o.keys.x;
+  let my = o.keys.y;
+  const schemeAims = o.moveScheme === 'wasd' || o.moveScheme === 'esdf';
+  if (!schemeAims && !o.keyboardAim) {
+    mx += o.arrows.x;
+    my += o.arrows.y;
+  }
+  if (o.stick.x || o.stick.y) {
+    mx = o.stick.x;
+    my = o.stick.y;
+  }
+  const arrows = o.arrows.x !== 0 || o.arrows.y !== 0;
+  const steer = schemeAims || o.keyboardAim || o.aiming;
+  const aim = steer ? keyboardAimAngle(o.prevAim, schemeAims || o.keyboardAim ? o.arrows : { x: 0, y: 0 }, { x: mx, y: my }, o.precision) : o.prevAim;
+  return { mx, my, aim, arrows };
 }
 
 const PREPARE: Record<string, Slot> = { Digit1: 'ability', Digit2: 'skill', Digit3: 'bonus' };
@@ -244,9 +279,9 @@ export function resolveCastStyle(o: {
   kind: AimKind;
 }): CastStyle {
   if (o.manual || o.castMode === 'manual') return 'manual';
+  if (o.kind === 'instant') return 'instant';
   if (o.castMode === 'instant') return 'instant';
-  if (o.castMode === 'release') return o.kind === 'instant' ? 'instant' : 'release';
-  if (o.touch || o.control === 'notebook' || o.kind === 'instant') return 'instant';
+  // auto e release: segurar mira, soltar lança. O rápido fica na opção "na hora".
   return 'release';
 }
 
@@ -292,9 +327,15 @@ export class InputManager {
   powers = false;
   /** auto segue o estilo. manual espera o clique. release solta ao erguer a tecla. */
   castMode: CastChoice = 'auto';
-  /** setas miram e WASD anda. Shift liga e desliga, se o Shift não for a esquiva. */
+  /** setas miram e WASD anda. A opção liga a mira mesmo sem seta. Shift, se não for a esquiva, afina o giro. */
   keyboardAim = false;
   kbAim = 0;
+  /** 0–1 da habilidade carregada que acabou de soltar. null = golpe cheio. */
+  private pendingCharge: number | null = null;
+  private holdAt = 0;
+  /** este espaço cresce enquanto segura */
+  charged: (slot: Slot) => boolean = () => false;
+  chargeSeconds: (slot: Slot) => number = () => 0.7;
   onAimMode: ((on: boolean) => void) | null = null;
   manualSlots = new Set<Slot>();
   /** both: Esc e botão direito. esc: só Esc. */
@@ -343,9 +384,7 @@ export class InputManager {
         return;
       }
       if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && !this.shiftIsBound()) {
-        this.keyboardAim = !this.keyboardAim;
-        this.onAimMode?.(this.keyboardAim);
-        return;
+        e.preventDefault();
       }
       const prep = PREPARE[e.code];
       if (prep && !this.codeBound(e.code)) {
@@ -676,20 +715,40 @@ export class InputManager {
       return;
     }
     const style = this.styleOf(slot, kind);
-    if (queuesOnPress(style) || (this.touchMode && confirmTouchCast(slot, kind, 0))) {
+    if (queuesOnPress(style)) {
       this.queued.add(slot);
+      this.pendingCharge = this.charged(slot) ? 1 : null;
       return;
     }
+    this.holdAt = performance.now();
+    this.pendingCharge = null;
     this.aiming = { slot, kind, touch: null };
     this.onAimChange?.(this.aiming);
   }
   /** soltou a tecla (ou clicou): dispara na direção do mouse */
   private release() {
     if (!this.aiming) return;
+    if (this.charged(this.aiming.slot)) {
+      const max = Math.max(0.2, this.chargeSeconds(this.aiming.slot)) * 1000;
+      this.pendingCharge = Math.max(0, Math.min(1, (performance.now() - this.holdAt) / max));
+    } else this.pendingCharge = null;
     this.queued.add(this.aiming.slot);
     this.touchCast = null;
     this.aiming = null;
     this.onAimChange?.(null);
+  }
+  /** carga atual enquanto segura um poder que cresce. null se não está carregando. */
+  aimCharge(): number | null {
+    if (!this.aiming || !this.charged(this.aiming.slot)) return null;
+    const max = Math.max(0.2, this.chargeSeconds(this.aiming.slot)) * 1000;
+    return Math.max(0, Math.min(1, (performance.now() - this.holdAt) / max));
+  }
+  get precision() {
+    if (this.shiftIsBound()) return false;
+    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+  }
+  get arrowsDown() {
+    return this.keys.has('ArrowLeft') || this.keys.has('ArrowRight') || this.keys.has('ArrowUp') || this.keys.has('ArrowDown');
   }
   private styleOf(slot: Slot, kind: AimKind): CastStyle {
     return resolveCastStyle({
@@ -704,13 +763,25 @@ export class InputManager {
     if (!this.aiming) return;
     this.aiming = null;
     this.touchCast = null;
+    this.pendingCharge = null;
     this.onAimChange?.(null);
+  }
+
+  private stickIntentNow(ax: number, ay: number, kx: number, ky: number) {
+    return stickIntent({
+      moveScheme: this.moveScheme,
+      keyboardAim: this.keyboardAim,
+      aiming: !!this.aiming,
+      precision: this.precision,
+      arrows: { x: ax, y: ay },
+      keys: { x: kx, y: ky },
+      stick: this.stick.active ? { x: this.stick.x, y: this.stick.y } : { x: 0, y: 0 },
+      prevAim: this.kbAim,
+    });
   }
 
   /** Lê o estado do passo atual (habilidades são "um toque" e se consomem). */
   read(): Input & { touchCast?: { ang: number; ratio: number } | null } {
-    let mx = 0;
-    let my = 0;
     const k = this.keys;
     const bound = new Set(Object.values(this.binds));
     const held = (code: string) => k.has(code) && !bound.has(code);
@@ -720,26 +791,23 @@ export class InputManager {
     if (k.has('ArrowRight')) ax += 1;
     if (k.has('ArrowUp')) ay -= 1;
     if (k.has('ArrowDown')) ay += 1;
-    if (!this.keyboardAim) {
-      mx += ax;
-      my += ay;
-    }
+    let kx = 0;
+    let ky = 0;
     if (this.moveScheme === 'wasd') {
-      if (held('KeyA')) mx -= 1;
-      if (held('KeyD')) mx += 1;
-      if (held('KeyW')) my -= 1;
-      if (held('KeyS')) my += 1;
+      if (held('KeyA')) kx -= 1;
+      if (held('KeyD')) kx += 1;
+      if (held('KeyW')) ky -= 1;
+      if (held('KeyS')) ky += 1;
     } else if (this.moveScheme === 'esdf') {
-      if (held('KeyS')) mx -= 1;
-      if (held('KeyF')) mx += 1;
-      if (held('KeyE')) my -= 1;
-      if (held('KeyD')) my += 1;
+      if (held('KeyS')) kx -= 1;
+      if (held('KeyF')) kx += 1;
+      if (held('KeyE')) ky -= 1;
+      if (held('KeyD')) ky += 1;
     }
-    if (this.stick.active && (this.stick.x || this.stick.y)) {
-      mx = this.stick.x;
-      my = this.stick.y;
-    }
-    if (this.keyboardAim) this.kbAim = keyboardAimAngle(this.kbAim, { x: ax, y: ay }, { x: mx, y: my });
+    const stick = this.stickIntentNow(ax, ay, kx, ky);
+    const mx = stick.mx;
+    const my = stick.my;
+    this.kbAim = stick.aim;
     const fire = (this.fireTouch || this.fireMouse || this.fireLatch || k.has(this.binds.fire)) && !this.rmbAim;
     const q = this.queued;
     const out = {
@@ -754,9 +822,13 @@ export class InputManager {
       plasma: q.has('plasma'),
       fire: fire && !this.aiming,
       aim: null as number | null,
+      ch: q.size ? this.pendingCharge : null,
       touchCast: q.size ? this.touchCast : null,
     };
-    if (q.size) this.touchCast = null;
+    if (q.size) {
+      this.touchCast = null;
+      this.pendingCharge = null;
+    }
     q.clear();
     return out;
   }
@@ -766,6 +838,7 @@ export class InputManager {
     this.queued.clear();
     this.aiming = null;
     this.touchCast = null;
+    this.pendingCharge = null;
     this.lastAim = null;
     this.fireLatch = false;
     this.lockOn = false;

@@ -195,6 +195,12 @@ export interface AimPreview {
   w: number;
   color: string;
   label: string;
+  /** o traço bateu numa parede antes do alcance */
+  blocked?: boolean;
+  /** 0–1 enquanto o poder cresce */
+  charge?: number;
+  /** inimigos que a área pegaria (ok) ou que a parede esconde */
+  hits?: { x: number; y: number; ok: boolean }[];
 }
 export function drawAimPreview(ctx: Ctx, a: AimPreview, time: number) {
   const col = a.color;
@@ -209,15 +215,25 @@ export function drawAimPreview(ctx: Ctx, a: AimPreview, time: number) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
+  const end = a.blocked ? '#ff5a6a' : col;
   if (a.shape === 'line') {
+    const len = Math.max(8, Math.min(a.range, a.dist || a.range));
     ctx.save();
     ctx.translate(a.x, a.y);
     ctx.rotate(a.ang);
-    ctx.fillStyle = hexA(col, 0.22);
-    ctx.fillRect(0, -a.w / 2, a.range, a.w);
-    ctx.strokeStyle = hexA(col, 0.9);
+    ctx.fillStyle = hexA(end, 0.22);
+    ctx.fillRect(0, -a.w / 2, len, a.w);
+    ctx.strokeStyle = hexA(end, 0.9);
     ctx.lineWidth = 2;
-    ctx.strokeRect(0, -a.w / 2, a.range, a.w);
+    ctx.strokeRect(0, -a.w / 2, len, a.w);
+    if (a.blocked) {
+      ctx.strokeStyle = '#ff5a6a';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(len, -a.w);
+      ctx.lineTo(len, a.w);
+      ctx.stroke();
+    }
     ctx.restore();
   } else if (a.shape === 'arrow' || a.shape === 'wall') {
     const d = a.shape === 'wall' ? a.dist : Math.min(a.range, a.dist || a.range);
@@ -241,7 +257,7 @@ export function drawAimPreview(ctx: Ctx, a: AimPreview, time: number) {
       ctx.lineWidth = 2;
       ctx.strokeRect(ex - w / 2, ey - h / 2, w, h);
     } else {
-      ctx.fillStyle = col;
+      ctx.fillStyle = end;
       ctx.beginPath();
       ctx.moveTo(ex + Math.cos(a.ang) * 14, ey + Math.sin(a.ang) * 14);
       ctx.lineTo(ex + Math.cos(a.ang + 2.4) * 14, ey + Math.sin(a.ang + 2.4) * 14);
@@ -283,7 +299,18 @@ export function drawAimPreview(ctx: Ctx, a: AimPreview, time: number) {
     ctx.lineWidth = 2;
     ctx.stroke();
   }
-  txt(ctx, a.x, a.y - 96, a.label, col, 12);
+  for (const h of a.hits ?? []) {
+    ctx.strokeStyle = h.ok ? '#b6ff9a' : '#ff5a6a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, h.ok ? 22 : 16, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (a.charge !== undefined) {
+    const full = a.charge >= 0.98;
+    txt(ctx, a.x, a.y - 118, full ? 'CARGA CHEIA' : `CARGA ${Math.round(a.charge * 100)}%`, full ? '#ffe14a' : col, 14);
+  }
+  txt(ctx, a.x, a.y - 96, a.blocked ? `${a.label} · parede` : a.label, a.blocked ? '#ff5a6a' : col, 12);
 }
 
 /** ícones de estado sobre a cabeça (cor + forma + texto curto: nunca só cor) */

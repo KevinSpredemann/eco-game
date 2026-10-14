@@ -29,6 +29,10 @@ export interface SlotView {
   desc: string;
   /** combo pronto neste poder */
   hot?: boolean;
+  /** energia que o golpe pede */
+  cost?: number;
+  /** este espaço está sendo mirado */
+  aiming?: boolean;
 }
 
 export function drawSlotArt(cv: HTMLCanvasElement, a: SlotArt) {
@@ -122,11 +126,21 @@ export class SkillBar {
   private wasReady = new Map<string, boolean>();
   private els = new Map<string, HTMLElement>();
   private tip: HTMLElement;
+  private bannerEl: HTMLElement;
   constructor(private root: HTMLElement) {
     this.tip = document.createElement('div');
     this.tip.className = 'sk-tip';
     this.tip.hidden = true;
     root.parentElement!.appendChild(this.tip);
+    this.bannerEl = document.createElement('div');
+    this.bannerEl.className = 'sk-banner';
+    this.bannerEl.hidden = true;
+    root.parentElement!.appendChild(this.bannerEl);
+  }
+
+  banner(text: string) {
+    this.bannerEl.hidden = !text;
+    if (this.bannerEl.textContent !== text) this.bannerEl.textContent = text;
   }
 
   render(slots: SlotView[]) {
@@ -136,7 +150,7 @@ export class SkillBar {
       this.root.innerHTML = slots
         .map(
           (s) =>
-            `<div class="sk" data-sk="${s.id}" style="--c:${s.color}"><canvas class="sk-art"></canvas><span class="sk-key">${s.key}</span><span class="sk-name">${s.name}</span><span class="sk-num"></span><i class="sk-cd"></i><span class="sk-why"></span></div>`,
+            `<div class="sk" data-sk="${s.id}" style="--c:${s.color}"><canvas class="sk-art"></canvas><span class="sk-key">${s.key}</span><span class="sk-name">${s.name}</span><span class="sk-cost"></span><span class="sk-num"></span><i class="sk-cd"></i><span class="sk-why"></span></div>`,
         )
         .join('');
       this.els.clear();
@@ -166,6 +180,10 @@ export class SkillBar {
       e.classList.toggle('cool', !ready);
       e.classList.toggle('off', !!s.off);
       e.classList.toggle('combo', !!s.hot);
+      e.classList.toggle('aiming', !!s.aiming);
+      const cost = e.querySelector('.sk-cost')!;
+      const costText = s.cost && !s.off ? String(s.cost) : '';
+      if (cost.textContent !== costText) cost.textContent = costText;
       e.style.setProperty('--p', String(charge ? 1 - Math.min(100, s.charge ?? 0) / 100 : Math.max(0, Math.min(1, s.cd))));
       const num = e.querySelector('.sk-num')!;
       const t = s.note ?? (s.secs > 0 ? `${Math.ceil(s.secs)}s` : charge ? (ready ? 'PRONTA' : `${Math.floor(s.charge ?? 0)}%`) : '');
@@ -197,5 +215,6 @@ export class SkillBar {
     this.root.innerHTML = '';
     this.els.clear();
     this.tip.hidden = true;
+    this.banner('');
   }
 }

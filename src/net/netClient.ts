@@ -150,7 +150,8 @@ export class NetClient {
     const press = (P.dash ? BTN.dash : 0) | (P.ability ? BTN.ability : 0) | (P.item ? BTN.item : 0) | (P.bonus ? BTN.bonus : 0) | (P.skill ? BTN.skill : 0) | (P.ult ? BTN.ult : 0) | (P.plasma ? BTN.plasma : 0);
     const bits = press | (i.fire ? BTN.fire : 0);
     const aim = typeof i.aim === 'number' ? Math.round(i.aim * 100) / 100 : null;
-    const payload: [number, number, number, number | null, number | null, number | null] = [Math.round(i.mx * 100) / 100, Math.round(i.my * 100) / 100, bits, aim, press ? this.pendCast[0] : null, press ? this.pendCast[1] : null];
+    const ch = press && typeof i.ch === 'number' ? Math.max(0, Math.min(1, Math.round(i.ch * 100) / 100)) : null;
+    const payload: [number, number, number, number | null, number | null, number | null, number | null] = [Math.round(i.mx * 100) / 100, Math.round(i.my * 100) / 100, bits, aim, press ? this.pendCast[0] : null, press ? this.pendCast[1] : null, ch];
     const key = JSON.stringify(payload);
     const now = performance.now();
     if (key === this.lastSent && now - this.lastSentAt < 200) return;

@@ -2846,6 +2846,36 @@ input[type='checkbox'] {
   border-color: var(--c);
   box-shadow: 0 0 10px color-mix(in srgb, var(--c) 55%, transparent);
 }
+.sk.aiming {
+  outline: 2px solid #ffe14a;
+  box-shadow: 0 0 0 2px #ffe14a, 0 0 16px rgba(255, 225, 74, 0.45);
+}
+.sk-cost {
+  position: absolute;
+  right: 4px;
+  bottom: 16px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: #c9d4ff;
+  z-index: 2;
+}
+.sk-banner {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 78px);
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: rgba(8, 6, 22, 0.88);
+  border: 1px solid #ffe14a;
+  color: #fff8d0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 6;
+}
 .sk.off {
   opacity: 0.45;
 }

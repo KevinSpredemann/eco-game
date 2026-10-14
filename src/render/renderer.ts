@@ -1155,6 +1155,9 @@ export class Renderer {
         case 'block':
           this.burst(e.x, e.y, '#d9cbb0', 5, 140);
           break;
+        case 'deny':
+          if (e.x !== undefined && e.y !== undefined) this.text(e.x, e.y - 36, e.msg, e.msg === 'Obstáculo' || e.msg === 'Fora de alcance' ? '#ffb4a8' : '#ffe14a', 13);
+          break;
         case 'bossPhase': {
           const b = game.players.find((q) => q.boss);
           if (b) this.animOf(b.id).roar = 1;

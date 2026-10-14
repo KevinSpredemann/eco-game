@@ -29,7 +29,7 @@ import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
 import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, comboReady, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex, studioOf } from './game/elements';
 import { setAbilityTrace } from './game/abilityTrace';
-import { sweepCircle } from './game/sweep';
+import { aimStop, castFamily, losOpen } from './game/aimMath';
 import { ACTION_LABEL, Action, MoveScheme, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
@@ -2038,6 +2038,7 @@ function buildSlots(g: AnyGame): SlotView[] {
       const charge = me.ultCharge ?? 0;
       const low = !ult && left <= 0 && (me.energy ?? ENERGY_MAX) < SLOT_COST[i];
       const charging = ult && left <= 0 && charge < 100;
+      const ultReady = ult && left <= 0 && charge >= 100;
       slots.push({
         id: ids[i],
         key: labels[i],
@@ -2048,7 +2049,9 @@ function buildSlots(g: AnyGame): SlotView[] {
         secs: left,
         charge: ult ? charge : undefined,
         off: left <= 0 && (low || charging),
-        note: low ? 'SEM ENERGIA' : charging ? `${Math.floor(charge)}%` : undefined,
+        note: low ? 'SEM ENERGIA' : ultReady ? 'SUPREMA PRONTA' : charging ? `${Math.floor(charge)}%` : undefined,
+        cost: ult ? undefined : SLOT_COST[i],
+        aiming: input.aiming?.slot === ids[i],
         desc: `${describePower({ ...pw, cd }, labels[i], SLOT_COST[i], i)} ${ELEMENT_FX[pw.element]}.`,
         hot: ready?.slot === i || (!ready && plasmaUp && left <= 0 && !ult),
       });
@@ -2070,6 +2073,8 @@ function buildSlots(g: AnyGame): SlotView[] {
       secs: plasmaOn ? plasmaLeft : 0,
       off: !plasmaOn || plasmaLow,
       note: !plasmaOn ? 'VAZIO' : plasmaLow ? 'SEM ENERGIA' : undefined,
+      cost: plasmaOn ? extraCost : undefined,
+      aiming: input.aiming?.slot === 'plasma',
       desc: extra
         ? `${describePower(extra, K('plasma'), extra.cost)} ${ELEMENT_FX[extra.element]}.`
         : 'Escolha um poder extra na tela de poderes. Trancado não entra.',
@@ -2265,14 +2270,16 @@ function updateSkills(g: AnyGame) {
     }
     if (me.boss) $('#btn-ult').classList.toggle('ready', me.bossCd.chuva <= 0 && (g.bossPhase ?? 1) >= 2);
   }
-  // aviso único quando a ultimate fica pronta (no X1 o R é só mais um poder)
-  const ready = false;
+  const ultSlot = slots.find((s) => s.id === 'ult');
+  const ready = !!ultSlot && ultSlot.charge !== undefined && ultSlot.charge >= 100 && !ultSlot.off && (g.mode === 'duelo' || g.mode === 'dupla');
   if (ready && !ultWasReady && g.phase === 'play') {
     audio.power('dobro');
     $('#hud').classList.add('ult-flash');
     setTimeout(() => $('#hud').classList.remove('ult-flash'), 900);
   }
   ultWasReady = ready;
+  const aimText = input.aiming ? 'MIRANDO — SOLTE PARA LANÇAR' : ready && g.phase === 'play' ? 'SUPREMA PRONTA' : '';
+  skillBar.banner(aimText);
   $('#boss-hud').hidden = true;
 }
 
@@ -2888,7 +2895,9 @@ function aimFoes(g: AnyGame) {
 function readInput(): Input {
   const i = input.read();
   const notebook = input.control === 'notebook' && !input.touchMode;
-  const mouseOk = !input.touchMode && (notebook || performance.now() - input.mouse.at < 4000);
+  const mouseFresh = !input.touchMode && performance.now() - input.mouse.at < 4000;
+  const mouseOk = mouseFresh && !input.arrowsDown && !input.keyboardAim;
+  if (game && game.combat && (input.arrowsDown || input.keyboardAim || (input.aiming && !mouseFresh))) i.aim = input.kbAim;
   if (game && game.combat && mouseOk) {
     const w = renderer.toWorld(input.mouse.x, input.mouse.y);
     const me = game.human;
@@ -2903,7 +2912,6 @@ function readInput(): Input {
     }
     i.aim = ang;
   }
-  if (game && game.combat && input.keyboardAim) i.aim = input.kbAim;
   // celular: o analógico direito mira (independente do movimento); solto, a última direção continua
   const stickAim = input.manualAim();
   if (game && game.combat && stickAim !== null) i.aim = stickAim;
@@ -2925,9 +2933,9 @@ function readInput(): Input {
         i.ca = Math.atan2(w.y - me.y, w.x - me.x);
         i.cr = Math.hypot(w.x - me.x, w.y - me.y);
       }
-    } else if (input.keyboardAim && game.combat) {
+    } else if ((input.arrowsDown || input.keyboardAim || !mouseFresh) && game.combat) {
       i.ca = input.kbAim;
-      i.cr = slotRange(pressed) * 0.85;
+      i.cr = slotRange(pressed) * (input.precision ? 0.55 : 0.85);
     } else if (mouseOk && game.combat) {
       const w = renderer.toWorld(input.mouse.x, input.mouse.y);
       const oy = castOriginY(pressed, me.y);
@@ -2962,13 +2970,14 @@ function slotInfo(slot: Slot): { kind: 'instant' | 'direction' | 'point'; range:
   if ((game.mode === 'duelo' || game.mode === 'dupla') && powerSlotIndex(slot) !== null) {
     const i = powerSlotIndex(slot)!;
     const pw = kitOf(me.char.id).powers[i];
-    const instant = pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink' && pw.act !== 'wall';
-    const shape = pw.act === 'wall' ? 'wall' : pw.act === 'dash' || pw.act === 'blink' ? 'line' : instant ? 'circle' : 'arrow';
+    const point = pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink' && pw.act !== 'wall';
+    const family = castFamily(pw);
+    const shape = pw.act === 'wall' ? 'wall' : pw.act === 'dash' || pw.act === 'blink' ? 'line' : point ? (family === 'instant' ? 'self' : 'circle') : 'arrow';
     return {
-      kind: instant ? 'instant' : 'direction',
+      kind: family === 'instant' ? 'instant' : point ? 'point' : 'direction',
       range: Math.max(pw.range, pw.step ?? 0),
-      r: pw.radius,
-      w: pw.act === 'wall' ? 92 : 0,
+      r: pw.act === 'dash' || pw.act === 'blink' ? Math.max(18, pw.radius) : pw.radius,
+      w: pw.act === 'wall' ? 92 : pw.act === 'dash' || pw.act === 'blink' ? 28 : 0,
       shape,
       name: pw.name,
       color: ELEMENT_COLOR[pw.element],
@@ -3000,19 +3009,34 @@ function slotRange(slot: Slot) {
 function castOriginY(slot: Slot, feetY: number) {
   return slotInfo(slot).kind === 'direction' ? feetY - GUN_Y : feetY;
 }
+function solidsOf(g: AnyGame) {
+  return {
+    rects: g.iceWalls.length ? [...g.arena.walls, ...g.iceWalls] : g.arena.walls,
+    discs: g.arena.pillars,
+    bounds: { minX: BORDER + 3, minY: BORDER + 3, maxX: WORLD_W - BORDER - 3, maxY: WORLD_H - BORDER - 3 },
+  };
+}
 function clipAim(x: number, feetY: number, ang: number, range: number, g: AnyGame) {
-  const x1 = x + Math.cos(ang) * range;
-  const y1 = feetY + Math.sin(ang) * range;
-  const rects = g.iceWalls.length ? [...g.arena.walls, ...g.iceWalls] : g.arena.walls;
-  const t = sweepCircle(x, feetY, x1, y1, 3, rects, g.arena.pillars, {
-    minX: BORDER + 3,
-    minY: BORDER + 3,
-    maxX: WORLD_W - BORDER - 3,
-    maxY: WORLD_H - BORDER - 3,
-  });
-  return t === null ? range : Math.max(0, t * range);
+  const s = solidsOf(g);
+  return aimStop(x, feetY, ang, range, 3, s.rects, s.discs, s.bounds);
 }
 input.aimKind = (slot) => slotInfo(slot).kind;
+input.charged = (slot) => {
+  if (!game || (game.mode !== 'duelo' && game.mode !== 'dupla')) return false;
+  const i = powerSlotIndex(slot);
+  if (i === null) {
+    if (slot !== 'plasma') return false;
+    const extra = studioOf(game.human.loadout.secondary);
+    return !!extra && castFamily(extra) === 'charged';
+  }
+  return castFamily(kitOf(game.human.char.id).powers[i]) === 'charged';
+};
+input.chargeSeconds = (slot) => {
+  if (!game) return 0.7;
+  const i = powerSlotIndex(slot);
+  const pw = i === null ? studioOf(game.human.loadout.secondary) : kitOf(game.human.char.id).powers[i];
+  return pw?.windup && pw.windup > 0 ? pw.windup : 0.7;
+};
 input.canUse = (slot) => {
   if (!game) return true;
   if (game.phase !== 'play' || !game.human.alive) return false;
@@ -3060,7 +3084,7 @@ function updateAimPreview() {
       const me = game.human;
       const info = slotInfo('ability');
       const reach = clipAim(me.x, me.y, me.aim, info.range, game);
-      renderer.aimPreview = { shape: 'arrow', x: me.x, y: me.y - GUN_Y, ang: me.aim, dist: reach, range: info.range, r: info.r, w: 0, color: info.color, label: info.name };
+      renderer.aimPreview = { shape: 'arrow', x: me.x, y: me.y - GUN_Y, ang: me.aim, dist: reach.dist, range: info.range, r: info.r, w: 0, color: info.color, label: info.name, blocked: reach.blocked };
     } else renderer.aimPreview = null;
     return;
   }
@@ -3081,9 +3105,38 @@ function updateAimPreview() {
     dist = Math.hypot(w.x - me.x, w.y - oy);
   }
   const capped = info.shape === 'wall' && info.kind === 'direction' ? Math.max(50, Math.min(info.range, 70)) : Math.min(dist, info.range || dist);
-  const reach = info.kind === 'direction' ? clipAim(me.x, oy + GUN_Y, ang, capped, game) : capped;
+  const along = info.kind === 'instant' ? null : clipAim(me.x, info.kind === 'direction' ? oy + GUN_Y : me.y, ang, capped, game);
+  const reach = along ? along.dist : capped;
   const how = input.castMode === 'manual' || input.manualSlots.has(a.slot) ? 'clique para usar' : 'solte para usar';
-  renderer.aimPreview = { shape: info.shape, x: me.x, y: oy, ang, dist: reach, range: info.range, r: info.r, w: info.w, color: info.color, label: `${info.name} · ${how}` };
+  const solids = solidsOf(game);
+  const ex = me.x + Math.cos(ang) * reach;
+  const ey = (info.kind === 'direction' ? oy + GUN_Y : me.y) + Math.sin(ang) * reach;
+  const hits =
+    info.shape === 'circle' || info.shape === 'self'
+      ? game.players
+          .filter((o) => o.alive && o.id !== me.id && game!.hostile(me, o))
+          .map((o) => {
+            const inside = Math.hypot(o.x - ex, o.y - ey) <= (info.r || 60);
+            const seen = losOpen(me.x, me.y, o.x, o.y, solids.rects, solids.discs, solids.bounds);
+            return { x: o.x, y: o.y - 28, ok: inside && seen };
+          })
+      : [];
+  const charge = input.aimCharge();
+  renderer.aimPreview = {
+    shape: info.shape,
+    x: me.x,
+    y: oy,
+    ang,
+    dist: reach,
+    range: info.range,
+    r: charge === null ? info.r : info.r * (0.7 + 0.3 * charge),
+    w: info.w,
+    color: info.color,
+    label: `${info.name} · ${how}`,
+    blocked: !!along?.blocked,
+    charge: charge === null ? undefined : charge,
+    hits,
+  };
 }
 
 let laidW = 0;

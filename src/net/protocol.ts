@@ -65,7 +65,7 @@ export type ClientMsg =
   | { t: 'set'; char: string; skin: string; trail: string }
   | { t: 'config'; mode: GameMode; arena: string; bots: number }
   | { t: 'start' }
-  | { t: 'input'; i: [number, number, number, number | null, (number | null)?, (number | null)?] } // mx, my, botões (bits), mira, mira da habilidade (ângulo, distância)
+  | { t: 'input'; i: [number, number, number, number | null, (number | null)?, (number | null)?, (number | null)?] } // mx, my, botões, mira, ângulo, distância, carga 0–1
   | { t: 'loadout'; l: Loadout }
   | { t: 'quick'; mode: GameMode }
   | { t: 'ready'; on: boolean }
