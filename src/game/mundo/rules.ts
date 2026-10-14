@@ -66,6 +66,7 @@ export function freshSave(charId: string): MundoSave {
     tomb: null,
     party: [],
     session: { mode: 'solo', pvpZones: [] },
+    quest: { step: 0 },
   };
 }
 

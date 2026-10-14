@@ -36,6 +36,7 @@ export interface PathRect {
 const house = (kind: PropKind, x: number, y: number, w: number, h: number): Prop => ({ kind, x, y, w, h, solid: true });
 
 export const PATHS: Record<MundoRegionId, PathRect[]> = {
+  clareira: [{ x: 180, y: 450, w: 700, h: 60, kind: 'dirt' }],
   vila: [
     { x: 280, y: 600, w: 1560, h: 80, kind: 'dirt' },
     { x: 640, y: 400, w: 320, h: 200, kind: 'stone' },
@@ -53,6 +54,13 @@ export const PATHS: Record<MundoRegionId, PathRect[]> = {
 };
 
 export const PROPS: Record<MundoRegionId, Prop[]> = {
+  clareira: [
+    { kind: 'tree', x: 900, y: 240, r: 30, solid: true },
+    { kind: 'bush', x: 520, y: 420, r: 16 },
+    { kind: 'flower', x: 460, y: 560, variant: 0 },
+    { kind: 'bench', x: 640, y: 560 },
+    { kind: 'rock', x: 1100, y: 700, r: 18, solid: true },
+  ],
   vila: [
     house('shop', 560, 760, 150, 78),
     house('bank', 900, 760, 150, 78),

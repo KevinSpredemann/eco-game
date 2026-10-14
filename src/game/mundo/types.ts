@@ -2,7 +2,7 @@
 // O formato já cabe num futuro co-op de 2 (party) e num mundo compartilhado
 // em que PvP só existe nas regiões listadas em session.pvpZones.
 
-export type MundoRegionId = 'vila' | 'floresta';
+export type MundoRegionId = 'vila' | 'floresta' | 'clareira';
 export type MundoSlot = 'weapon' | 'armor' | 'relic';
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 export type MonsterKind = 'chaser' | 'ranged' | 'caller' | 'boss';
@@ -40,6 +40,11 @@ export interface MundoSession {
   pvpZones: string[];
 }
 
+/** 0 nada, 1 falou com Lina, 2 entrou na floresta, 3 pegou o fragmento, 4 recompensa paga */
+export interface MundoQuest {
+  step: number;
+}
+
 export interface MundoSave {
   v: 1;
   charId: string;
@@ -60,6 +65,7 @@ export interface MundoSave {
   /** ids do grupo. Vazio no solo. No máximo você e mais um, para o co-op. */
   party: string[];
   session: MundoSession;
+  quest: MundoQuest;
 }
 
 export interface MundoInput {

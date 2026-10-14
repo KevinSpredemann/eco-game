@@ -3,6 +3,7 @@ import { getCharacter } from '../game/characters';
 import { MUNDO_KEY, parseMundo } from '../game/mundo/blob';
 import { REGIONS } from '../game/mundo/regions';
 import { NPCS, PATHS, PROPS, type NpcDef } from '../game/mundo/scenery';
+import { ANOMALY, linaLines } from '../game/mundo/quest';
 import { drawNpcMarker, drawProp, drawStream } from '../render/mundoArt';
 import { GEAR_COST, MAT_PRICE, POTION_COST, derived, xpForLevel } from '../game/mundo/rules';
 import { MundoWorld, type Actor } from '../game/mundo/sim';
@@ -203,6 +204,8 @@ export class MundoController {
     this.talk = npc;
     this.talkAt = 0;
     this.panel = 'talk';
+    const said = this.world.talkNpc(npc.id);
+    if (said) this.flash(said);
     this.paintTalk();
   }
 
@@ -211,8 +214,9 @@ export class MundoController {
     const box = this.root.querySelector('#mundo-panel') as HTMLElement | null;
     if (!npc || !box) return;
     box.hidden = false;
-    const last = this.talkAt >= npc.lines.length - 1;
-    const line = npc.lines[this.talkAt] ?? '';
+    const lines = npc.id === 'pesquisadora' ? linaLines(this.world.save.quest.step) : npc.lines;
+    const last = this.talkAt >= lines.length - 1;
+    const line = lines[this.talkAt] ?? '';
     box.innerHTML = `<header><b>${npc.name}</b><button type="button" class="btn small ghost" data-x>Fechar</button></header><p>${npc.role}</p><p>${line}</p><button type="button" class="btn" data-next>${last ? 'Fechar' : 'Continuar'}</button>`;
     box.querySelector('[data-x]')?.addEventListener('click', () => this.closePanel());
     box.querySelector('[data-next]')?.addEventListener('click', () => {
@@ -421,7 +425,9 @@ export class MundoController {
     for (const b of reg.blocks) layers.push({ y: b.y + b.h, draw: () => this.drawBlock(ctx, b, reg.id, animT) });
     for (const t of reg.trees) layers.push({ y: t.y, draw: () => drawProp(ctx, { kind: 'tree', x: t.x, y: t.y, r: t.r }, animT) });
     for (const npc of NPCS) if (npc.region === reg.id) layers.push({ y: npc.y, draw: () => this.drawNpc(ctx, npc, animT) });
-    layers.push({ y: this.world.region.portal.y, draw: () => this.drawPortal(ctx) });
+    layers.push({ y: this.world.region.portal.y, draw: () => this.drawPortal(ctx, this.world.region.portal) });
+    for (const gate of this.world.region.gates ?? []) layers.push({ y: gate.y, draw: () => this.drawPortal(ctx, gate) });
+    if (reg.id === 'floresta' && this.world.save.quest.step === 2) layers.push({ y: ANOMALY.y, draw: () => this.drawAnomaly(ctx) });
     const tomb = this.world.save.tomb;
     if (tomb && tomb.region === reg.id) layers.push({ y: tomb.y, draw: () => this.drawTomb(ctx) });
     for (const d of this.world.drops) layers.push({ y: d.y, draw: () => this.drawDrop(ctx, d.x, d.y) });
@@ -498,8 +504,15 @@ export class MundoController {
     ctx.fillText(npc.name, npc.x, npc.y - 44);
   }
 
-  private drawPortal(ctx: CanvasRenderingContext2D) {
-    const p = this.world.region.portal;
+  private drawAnomaly(ctx: CanvasRenderingContext2D) {
+    const pulse = 0.35 + Math.sin(this.world.clock / 200) * 0.15;
+    ctx.fillStyle = `rgba(62,232,255,${pulse})`;
+    ctx.beginPath();
+    ctx.arc(ANOMALY.x, ANOMALY.y, 16, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  private drawPortal(ctx: CanvasRenderingContext2D, p: { x: number; y: number; label: string; need?: 'ruidos' }) {
     const pulse = 1 + Math.sin(this.world.clock / 180) * 0.08;
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -516,7 +529,8 @@ export class MundoController {
     ctx.fillStyle = '#e9fff4';
     ctx.font = '700 16px "Chakra Petch", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(p.label, 0, -40);
+    const locked = p.need === 'ruidos' && this.world.save.quest.step < 4;
+    ctx.fillText(locked ? 'BLOQUEADO' : p.label, 0, -40);
     ctx.restore();
   }
 
@@ -606,7 +620,13 @@ export class MundoController {
     ctx.fillRect(-8, m.r * 0.45, 5, 8 + step);
     ctx.fillRect(3, m.r * 0.45, 5, 8 - step);
     ctx.restore();
-    if (m.dead < 0 && (m.kind === 'boss' || m.hit > 0)) this.bar(ctx, m.x, m.y - m.r - 16, m.kind === 'boss' ? 64 : 28, m.hp / m.maxHp, color);
+    if (m.dead < 0 && (m.kind === 'boss' || m.hit > 0 || m.hp < m.maxHp || m.alert > 0)) this.bar(ctx, m.x, m.y - m.r - 16, m.kind === 'boss' ? 64 : 28, m.hp / m.maxHp, color);
+    if (m.dead < 0 && (m.kind === 'boss' || m.alert > 0)) {
+      ctx.fillStyle = '#e8fff4';
+      ctx.font = '700 11px "Chakra Petch", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(m.name, m.x, m.y - m.r - 24);
+    }
   }
 
   private bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, k: number, color: string) {

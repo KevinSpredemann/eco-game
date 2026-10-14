@@ -24,6 +24,8 @@ import {
   withdraw,
   type Loot,
 } from './rules';
+import { think } from './ai';
+import { ANOMALY, enterForest, takeFragment, turnIn } from './quest';
 import type { MonsterKind, MundoGear, MundoInput, MundoRegionId, MundoSave, MundoSlot, SessionMode, StatId } from './types';
 
 export const STILL: MundoInput = { mx: 0, my: 0, aim: 0, fire: false, ability: false };
@@ -49,6 +51,8 @@ export interface Actor {
   phase: number;
   speed: number;
   r: number;
+  homeX: number;
+  homeY: number;
 }
 
 export interface Shot {
@@ -80,10 +84,10 @@ export interface MundoPublic {
 }
 
 const MONSTER_NAME: Record<MonsterKind, string> = {
-  chaser: 'Perseguidor',
-  ranged: 'Atirador',
-  caller: 'Chamador',
-  boss: 'Guardião da Mata',
+  chaser: 'Slime de Sucata',
+  ranged: 'Aranha de Cristal',
+  caller: 'Sentinela da Floresta',
+  boss: 'Guardião do Portal',
 };
 
 export class MundoWorld {
@@ -130,6 +134,8 @@ export class MundoWorld {
       phase: 0,
       speed: 220,
       r: 16,
+      homeX: 0,
+      homeY: 0,
     };
     this.sync();
     this.player.hp = this.player.maxHp;
@@ -175,14 +181,16 @@ export class MundoWorld {
       phase: 0,
       speed: boss ? 70 : kind === 'chaser' ? 150 : kind === 'ranged' ? 110 : 170,
       r: boss ? 34 : 18,
+      homeX: x,
+      homeY: y,
     };
     this.monsters.push(a);
     return a;
   }
 
-  load(id: MundoRegionId, how: 'spawn' | 'arrival') {
+  load(id: MundoRegionId, how: 'spawn' | 'arrival', arrive?: { x: number; y: number }) {
     const reg = REGIONS[id];
-    const at = how === 'arrival' ? reg.arrival : reg.spawn;
+    const at = arrive ?? (how === 'arrival' ? reg.arrival : reg.spawn);
     this.epoch++;
     this.regionId = id;
     this.player.x = at.x;
@@ -206,6 +214,7 @@ export class MundoWorld {
   private tick(dt: number, input: MundoInput) {
     this.clock += dt * 1000;
     this.save = expireTomb(this.save, this.clock);
+    this.advanceQuest();
     this.sync();
     if (this.weaponCd > 0) this.weaponCd -= dt;
     if (this.abilityCd > 0) this.abilityCd -= dt;
@@ -316,57 +325,75 @@ export class MundoWorld {
 
   private tryPortal() {
     if (this.portalCd > 0) return;
-    const p = this.region.portal;
-    if (Math.hypot(this.player.x - p.x, this.player.y - p.y) > PORTAL_R) return;
-    this.load(p.to, 'arrival');
-    this.note = this.region.name;
+    const spots = [this.region.portal, ...(this.region.gates ?? [])];
+    for (const p of spots) {
+      if (Math.hypot(this.player.x - p.x, this.player.y - p.y) > PORTAL_R) continue;
+      if (p.need === 'ruidos' && this.save.quest.step < 4) {
+        this.note = 'Bloqueado · termine Os Ruídos da Floresta';
+        return;
+      }
+      this.load(p.to, 'arrival', p.arrive);
+      this.note = this.region.name;
+      return;
+    }
+  }
+
+  private advanceQuest() {
+    const before = this.save.quest.step;
+    if (this.regionId === 'floresta') {
+      this.save = enterForest(this.save);
+      this.save = takeFragment(this.save, this.player.x, this.player.y);
+    }
+    if (this.save.quest.step === before) return;
+    if (this.save.quest.step === 2) this.note = 'Floresta Antiga. O fragmento está mais para dentro.';
+    if (this.save.quest.step === 3) this.note = 'Fragmento de energia. Volte para Lina.';
+  }
+
+  talkNpc(id: string): string {
+    if (id !== 'pesquisadora') return '';
+    const turned = turnIn(this.save);
+    this.save = turned.save;
+    this.sync();
+    return turned.note;
   }
 
   private stepMonsters(dt: number) {
     const p = this.player;
     const epoch = this.epoch;
+    let meleeSlots = 0;
     for (const m of this.monsters) {
       if (this.epoch !== epoch) return;
       if (m.dead >= 0) continue;
       if (m.alert > 0) m.alert -= dt;
       if (m.cd > 0) m.cd -= dt;
-      const dx = p.x - m.x;
-      const dy = p.y - m.y;
-      const dist = Math.hypot(dx, dy) || 1;
+      const dist = Math.hypot(p.x - m.x, p.y - m.y) || 1;
       if (m.kind === 'boss') {
         this.bossAct(m, dt, dist);
         continue;
       }
-      const see = dist < (m.kind === 'caller' ? 380 : 440) || m.alert > 0;
-      if (!see || p.dead >= 0) continue;
-      m.aim = Math.atan2(dy, dx);
-      if (m.kind === 'chaser') {
-        const sp = m.speed * (m.alert > 0 ? 1.35 : 1);
-        this.move(m, (dx / dist) * sp * dt, (dy / dist) * sp * dt);
-        if (dist < 46 && m.cd <= 0) {
-          this.hurt(p, 12, m);
-          m.cd = 0.9;
-          m.atk = 0.18;
-        }
-      } else if (m.kind === 'ranged') {
-        if (dist < 140) this.move(m, (-dx / dist) * m.speed * dt, (-dy / dist) * m.speed * dt);
-        else if (dist > 280) this.move(m, (dx / dist) * m.speed * dt, (dy / dist) * m.speed * dt);
-        else {
-          this.move(m, (-dy / dist) * m.speed * 0.45 * dt, (dx / dist) * m.speed * 0.45 * dt);
-          if (m.cd <= 0) {
-            this.bolt(m, m.aim, 280, 8, 1.3);
-            m.cd = m.alert > 0 ? 0.8 : 1.15;
-            m.atk = 0.16;
-          }
-        }
-      } else {
-        if (dist < 160) this.move(m, (-dx / dist) * m.speed * dt, (-dy / dist) * m.speed * dt);
-        else if (dist > 260) this.move(m, (dx / dist) * m.speed * 0.55 * dt, (dy / dist) * m.speed * 0.55 * dt);
-        if (m.cd <= 0) {
-          this.call(m);
-          m.cd = 2.2;
-          m.atk = 0.2;
-        }
+      if (m.kind === 'player') continue;
+      const ahead = meleeSlots;
+      if (m.kind === 'chaser' && dist < 46) meleeSlots++;
+      const intent = think(
+        { kind: m.kind, x: m.x, y: m.y, homeX: m.homeX, homeY: m.homeY, speed: m.speed, alert: m.alert, cd: m.cd },
+        { x: p.x, y: p.y, dead: p.dead >= 0 },
+        { blocked: (x, y) => blocked(this.region, x, y, 2), attackers: ahead },
+      );
+      if (intent.state === 'idle') continue;
+      m.aim = intent.aim;
+      this.move(m, intent.vx * dt, intent.vy * dt);
+      if (intent.melee && m.cd <= 0) {
+        this.hurt(p, 12, m);
+        m.cd = 0.9;
+        m.atk = 0.18;
+      } else if (intent.bolt && m.cd <= 0) {
+        this.bolt(m, m.aim, 280, 8, 1.3);
+        m.cd = m.alert > 0.5 ? 0.8 : 1.15;
+        m.atk = 0.16;
+      } else if (intent.call && m.cd <= 0) {
+        this.call(m);
+        m.cd = 2.2;
+        m.atk = 0.2;
       }
     }
   }

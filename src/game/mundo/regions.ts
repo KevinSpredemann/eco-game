@@ -4,6 +4,16 @@ import type { MonsterKind, MundoRegionId } from './types';
 export const PORTAL_R = 52;
 export const INTERACT_R = 130;
 
+export interface Gate {
+  x: number;
+  y: number;
+  to: MundoRegionId;
+  label: string;
+  arrive?: { x: number; y: number };
+  /** tranca até a missão chegar no passo 4 */
+  need?: 'ruidos';
+}
+
 export interface RegionDef {
   id: MundoRegionId;
   name: string;
@@ -13,7 +23,8 @@ export interface RegionDef {
   safe: boolean;
   spawn: { x: number; y: number };
   arrival: { x: number; y: number };
-  portal: { x: number; y: number; to: MundoRegionId; label: string };
+  portal: Gate;
+  gates?: Gate[];
   shop?: { x: number; y: number };
   bank?: { x: number; y: number };
   blocks: { x: number; y: number; w: number; h: number }[];
@@ -76,6 +87,20 @@ export const REGIONS: Record<MundoRegionId, RegionDef> = {
       { kind: 'caller', x: 1880, y: 1460 },
       { kind: 'boss', x: 2300, y: 1100 },
     ],
+    gates: [{ x: 2480, y: 640, to: 'clareira', label: 'Clareira', arrive: { x: 280, y: 480 }, need: 'ruidos' }],
+  },
+  clareira: {
+    id: 'clareira',
+    name: 'Clareira',
+    w: 1400,
+    h: 1000,
+    safe: true,
+    spawn: { x: 400, y: 500 },
+    arrival: { x: 280, y: 480 },
+    portal: { x: 180, y: 480, to: 'floresta', label: 'Floresta', arrive: { x: 2360, y: 640 } },
+    blocks: [],
+    trees: [{ x: 700, y: 280, r: 28 }],
+    spawns: [],
   },
 };
 
