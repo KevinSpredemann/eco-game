@@ -4,17 +4,21 @@ import { STUDIO } from './elements';
 
 export const START_COINS = 150;
 
-/** Personagens livres desde a primeira partida. O resto continua na progressão. */
-export const STARTER_CHARS = ['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris', 'vortex', 'nara', 'vexa', 'clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2'];
+/**
+ * Quinze livres na conta nova. Os dez do estúdio entram, e mais cinco
+ * para cobrir vento, suporte, plasma, natureza e sombra.
+ * O servidor usa esta mesma lista. O resto continua na loja.
+ */
+export const STARTER_CHARS = ['kael', 'iris', 'vortex', 'nara', 'vexa', 'clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2'];
 
 export const CHAR_PRICES: Record<string, number> = {
   kael: 0,
-  luna: 0,
-  bruno: 0,
-  zoe: 0,
-  maya: 0,
-  zed: 0,
-  tara: 0,
+  luna: 500,
+  bruno: 500,
+  zoe: 600,
+  maya: 600,
+  zed: 700,
+  tara: 700,
   iris: 0,
   nyx: 600,
   rex: 800,

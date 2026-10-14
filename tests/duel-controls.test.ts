@@ -3,6 +3,7 @@ import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
 import { DUEL, duelTiebreak, roundBanner } from '../src/game/duel';
 import { REWIND_TIME } from '../src/game/constants';
+import { CHARACTERS } from '../src/game/characters';
 import { CHAR_PRICES, grantStarters, newProfile, owns, STARTER_CHARS } from '../src/game/economy';
 import { ARROW_LAYOUT, ESDF_KEYS, LEGACY_ESDF, LEGACY_QWER, LEGACY_SHIFT, LEGACY_SHIFT_NOTEBOOK, NOTEBOOK_KEYS, WASD_KEYS, assistAim, clickFireLatch, nearestAim, presetKeys, stepAim } from '../src/ui/input';
 import { loadSettings, migrateMoveKeys } from '../src/ui/settings';
@@ -381,14 +382,22 @@ describe('controles de notebook e elenco inicial', () => {
 
   it('os iniciais entram sem apagar moedas nem personagens comprados', () => {
     const fresh = newProfile();
-    expect(STARTER_CHARS).toEqual(['kael', 'luna', 'bruno', 'zoe', 'maya', 'zed', 'tara', 'iris', 'vortex', 'nara', 'vexa', 'clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2']);
+    expect(STARTER_CHARS).toEqual(['kael', 'iris', 'vortex', 'nara', 'vexa', 'clave', 'fuga', 'lyra', 'metra', 'resona', 'rufo', 'solfa', 'vibra', 'sibilo', 'sibilo2']);
+    expect(STARTER_CHARS).toHaveLength(15);
     for (const id of STARTER_CHARS) {
       expect(CHAR_PRICES[id]).toBe(0);
       expect(owns(fresh, 'char:' + id)).toBe(true);
     }
+    expect(fresh.owned.filter((id) => id.startsWith('char:'))).toHaveLength(15);
     expect(CHAR_PRICES.nyx).toBe(600);
     expect(CHAR_PRICES.rex).toBe(800);
+    expect(CHAR_PRICES.luna).toBe(500);
     expect(owns(fresh, 'char:nyx')).toBe(false);
+    expect(owns(fresh, 'char:luna')).toBe(false);
+    expect(CHARACTERS).toHaveLength(28);
+    const freeIds = Object.entries(CHAR_PRICES).filter(([, price]) => price === 0).map(([id]) => id);
+    expect(freeIds.sort()).toEqual([...STARTER_CHARS].sort());
+    expect(CHARACTERS.every((c) => c.id in CHAR_PRICES)).toBe(true);
 
     const old = newProfile();
     old.coins = 440;
@@ -400,6 +409,7 @@ describe('controles de notebook e elenco inicial', () => {
     expect(old.owned.filter((id) => id === 'char:kael')).toHaveLength(1);
     expect(old.owned).toContain('char:nyx');
     expect(old.owned).toContain('char:iris');
+    expect(old.owned).toContain('char:clave');
     expect(grantStarters(old)).toBe(false);
   });
 });
