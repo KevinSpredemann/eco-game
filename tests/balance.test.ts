@@ -104,7 +104,7 @@ describe('balanceamento central', () => {
     expect(l.ult).toBe('meteoro');
     expect(l.kit).toBe('bomba');
     const ok = sanitizeLoadout({ primary: 'lancador', skill: 'marcador', ult: 'estase', kit: 'kit' }, () => true);
-    expect(ok).toEqual({ primary: 'lancador', skill: 'marcador', ult: 'estase', kit: 'kit' });
+    expect(ok).toEqual({ primary: 'lancador', skill: 'marcador', ult: 'estase', kit: 'kit', secondary: null });
   });
 
   it('troca de equipamento no meio da rodada não mexe na recarga do poder', () => {

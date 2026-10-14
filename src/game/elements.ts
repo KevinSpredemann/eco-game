@@ -61,6 +61,33 @@ export const WALL_REACH = 46;
 export const WALL_STUN = 0.7;
 export const WALL_BONUS = 6;
 
+/** energia da partida (X1 e 2x2). Começa cheia e volta sozinha. */
+export const ENERGY_MAX = 100;
+export const ENERGY_REGEN = 14;
+/** custo de Q, E, R e F. O projétil gasta ao sair; a área só gasta se acertar alguém. */
+export const SLOT_COST = [18, 24, 30, 16] as const;
+
+/**
+ * Rajada de Plasma: um projétil médio, recarga curta, marca de 4 s.
+ * O próximo poder do kit no alvo marcado gasta a marca e soma uma explosão limitada.
+ * Sozinho, o projétil continua valendo. A marca que acaba não explode.
+ */
+export const PLASMA = {
+  id: 'plasma',
+  name: 'Rajada de Plasma',
+  cd: 2.8,
+  cost: 22,
+  dmg: 12,
+  range: 260,
+  speed: 680,
+  radius: 16,
+  mark: 4,
+  burst: 10,
+  /** teto do golpe do kit + a explosão (a marca some mesmo se o teto já estiver cheio) */
+  cap: 22,
+} as const;
+export const PLASMA_COLOR = '#c86bff';
+
 const BASE: Omit<PowerDef, 'name' | 'element'>[] = [
   { cd: 3.2, dmg: 10, range: 280, speed: 720, radius: 16 },
   { cd: 4.8, dmg: 9, range: 160, speed: 0, radius: 88 },
@@ -270,11 +297,24 @@ export function powerSlotIndex(slot: string): number | null {
   return null;
 }
 
-/** Recusa o uso sem mexer na recarga. Null significa que o poder pode sair. */
-export function denyPowerCast(slot: string, cd: readonly number[]): string | null {
+/**
+ * Recusa o uso sem mexer na recarga nem na energia.
+ * Projétil (speed > 0): se o golpe sai, gasta os dois mesmo errando o alvo.
+ * Área instantânea (speed === 0): sem inimigo no círculo, não gasta nada.
+ */
+export function denyPowerCast(slot: string, cd: readonly number[], energy: number = ENERGY_MAX): string | null {
   const i = powerSlotIndex(slot);
   if (i === null) return null;
   if ((cd[i] ?? 0) > 0) return 'Habilidade em recarga';
+  if (energy < SLOT_COST[i]) return 'Energia insuficiente';
+  return null;
+}
+
+/** X ainda não entrou nesta partida (bloqueada ou o servidor tirou do equipamento). */
+export function denyPlasma(on: boolean, cd: number, energy: number): string | null {
+  if (!on) return 'Habilidade ainda não desbloqueada';
+  if (cd > 0) return 'Habilidade em recarga';
+  if (energy < PLASMA.cost) return 'Energia insuficiente';
   return null;
 }
 

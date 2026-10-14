@@ -2,7 +2,7 @@ import { ArenaDef, BORDER, WORLD_H, WORLD_W, bridgeState, inRect } from './arena
 import { GUN_Y, isPrimary } from './weapons';
 import { BOSS } from './balance';
 import type { Difficulty, Game, Input, Player } from './sim';
-import { WALL_REACH, botPower, kitOf, wallSlam } from './elements';
+import { PLASMA, SLOT_COST, WALL_REACH, botPower, kitOf, wallSlam } from './elements';
 import * as C from './constants';
 
 const CELL = 20;
@@ -635,13 +635,14 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
         out.aim = ang + b.aimOff * 0.25;
         out.ca = out.aim;
         out.cr = d;
-        const slot = botPower(
+        let slot = botPower(
           kitOf(p.char.id),
           p.powerCd,
           { burn: foe.burnT, frozen: foe.frozenT, gust: foe.gustT, shock: foe.shockT },
           d,
           wallSlam(p.x, p.y, foe.x, foe.y, WALL_REACH, (x, y) => !game.isFree(x, y, 10)),
         );
+        if (slot !== null && p.energy < SLOT_COST[slot]) slot = null;
         if (slot !== null && b.seenT >= b.react && b.restT <= 0) {
           if (slot === 0) out.ability = true;
           else if (slot === 1) out.skill = true;
@@ -650,6 +651,11 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
             out.bonus = true;
             out.item = true;
           }
+          b.restT = Math.max(0.28, b.react * 0.55);
+        } else if (p.plasmaOn && p.plasmaCd <= 0 && p.energy >= PLASMA.cost && d < PLASMA.range && b.seenT >= b.react && b.restT <= 0) {
+          out.plasma = true;
+          out.aim = ang;
+          out.ca = ang;
           b.restT = Math.max(0.28, b.react * 0.55);
         }
       }

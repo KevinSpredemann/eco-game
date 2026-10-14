@@ -170,6 +170,7 @@ class Account {
     this.profile.xp += coins;
     this.profile.matches++;
     if (r.placement === 1 && r.players > 1) this.profile.wins++;
+    normalizeProfile(this.profile);
     this.changed();
     return coins;
   }

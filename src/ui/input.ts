@@ -2,7 +2,7 @@ import type { Input } from '../game/sim';
 import type { AimKind } from '../game/balance';
 
 /** ações que podem ser remapeadas no teclado */
-export type Slot = 'ability' | 'skill' | 'ult' | 'dash' | 'item' | 'bonus';
+export type Slot = 'ability' | 'skill' | 'ult' | 'dash' | 'item' | 'bonus' | 'plasma';
 export type Action = Slot | 'fire';
 export type KeyBinds = Record<Action, string>;
 
@@ -14,6 +14,7 @@ export const DEFAULT_KEYS: KeyBinds = {
   dash: 'ShiftLeft',
   item: 'Space',
   bonus: 'KeyF',
+  plasma: 'KeyX',
   fire: 'KeyJ',
 };
 /** Notebook: o mouse mira e atira. F usa o item. O cursor não é capturado. */
@@ -24,6 +25,7 @@ export const NOTEBOOK_KEYS: KeyBinds = {
   dash: 'ShiftLeft',
   item: 'KeyF',
   bonus: 'Space',
+  plasma: 'KeyX',
   fire: 'KeyJ',
 };
 export type ControlStyle = 'classic' | 'notebook';
@@ -89,6 +91,7 @@ export const ACTION_LABEL: Record<Action, string> = {
   dash: 'Impulso / esquiva',
   item: 'Item (granada, mina…)',
   bonus: 'Poder do cristal / utilidade',
+  plasma: 'Rajada de Plasma',
   fire: 'Atirar (além do clique)',
 };
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Escape', 'KeyP']);
@@ -380,6 +383,7 @@ export class InputManager {
     bindBtn('#btn-bonus', 'bonus');
     bindBtn('#btn-skill', 'skill');
     bindBtn('#btn-ult', 'ult');
+    bindBtn('#btn-plasma', 'plasma');
     // analógico direito (no lugar do ATIRAR): arrastar = mira em 360° e atira enquanto segura;
     // só tocar = atira na mira automática. Ao soltar, a última direção arrastada continua valendo.
     const fireBtn = touchRoot.querySelector<HTMLElement>('#btn-fire')!;
@@ -568,6 +572,7 @@ export class InputManager {
       bonus: q.has('bonus'),
       skill: q.has('skill'),
       ult: q.has('ult'),
+      plasma: q.has('plasma'),
       fire: fire && !this.aiming,
       aim: null as number | null,
       touchCast: q.size ? this.touchCast : null,

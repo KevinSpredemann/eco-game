@@ -178,17 +178,20 @@ export interface Loadout {
   kit: KitId;
   skill: SkillId;
   ult: UltId;
+  /** um poder extra. null = espaço vazio. Só existe 'plasma', e só se estiver liberado. */
+  secondary?: string | null;
 }
-export const DEFAULT_LOADOUT: Loadout = { primary: 'assinatura', kit: 'bomba', skill: 'rolamento', ult: 'meteoro' };
+export const DEFAULT_LOADOUT: Loadout = { primary: 'assinatura', kit: 'bomba', skill: 'rolamento', ult: 'meteoro', secondary: null };
 
 /** confere um equipamento recebido (online/arquivo) e troca o que for inválido ou não liberado */
 export function sanitizeLoadout(l: Partial<Loadout> | undefined | null, owns: (key: string) => boolean = () => true): Loadout {
-  const out = { ...DEFAULT_LOADOUT };
+  const out: Loadout = { ...DEFAULT_LOADOUT };
   if (!l || typeof l !== 'object') return out;
   if (l.primary === 'assinatura' || ((STANDARD_PRIMARIES as readonly string[]).includes(String(l.primary)) && (PRIMARY_PRICE[String(l.primary)] === 0 || owns('gear:' + l.primary)))) out.primary = String(l.primary);
   if (l.kit && l.kit in KITS && (KITS[l.kit].price === 0 || owns('gear:' + l.kit))) out.kit = l.kit;
   if (l.skill && l.skill in SKILLS && (SKILLS[l.skill].price === 0 || owns('gear:' + l.skill))) out.skill = l.skill;
   if (l.ult && l.ult in ULTS && (ULTS[l.ult].price === 0 || owns('gear:' + l.ult))) out.ult = l.ult;
+  out.secondary = l.secondary === 'plasma' && owns('power:plasma') ? 'plasma' : null;
   return out;
 }
 export function gearPrice(id: string): number | null {

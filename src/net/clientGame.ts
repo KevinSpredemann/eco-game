@@ -169,7 +169,7 @@ export class ClientGame {
     this.zones = s.Z;
 
     for (const row of s.P) {
-      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks] = row as any[];
+      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks, energy, plasmaCd, plasmaT, plasmaOn] = row as any[];
       const p = this.players.find((q) => q.id === id);
       if (!p) continue;
       const wasAlive = p.alive;
@@ -200,6 +200,10 @@ export class ClientGame {
       p.frozenT = frozenT ?? (fl & 8388608 ? 1 : 0);
       p.powerCd = [pcd0 ?? 0, pcd1 ?? 0, pcd2 ?? 0, pcd3 ?? 0];
       p.comboStacks = stacks ?? 0;
+      p.energy = energy ?? 100;
+      p.plasmaCd = plasmaCd ?? 0;
+      p.plasmaT = plasmaT ?? 0;
+      p.plasmaOn = !!plasmaOn;
       p.maxHp = maxHp ?? COMBAT.maxHp;
       p.skillCd = skillCd ?? 0;
       p.ultCharge = ult ?? 0;
@@ -458,6 +462,10 @@ function blankPlayer(id: string, name: string, char: ReturnType<typeof getCharac
     burnDps: 0,
     burnFrom: '',
     powerCd: [0, 0, 0, 0],
+    energy: 100,
+    plasmaCd: 0,
+    plasmaT: 0,
+    plasmaOn: loadout.secondary === 'plasma',
     comboStacks: 0,
     hidden: false,
     tookDamage: false,

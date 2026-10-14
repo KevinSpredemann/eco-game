@@ -1100,7 +1100,7 @@ export class Renderer {
           this.animOf(e.pid).cast = 1;
           const p = pc(e.pid);
           const el = e.skill as Element;
-          const col = ELEMENT_COLOR[el] ?? p?.color ?? '#fff';
+          const col = e.skill === 'plasma' ? '#c86bff' : ELEMENT_COLOR[el] ?? p?.color ?? '#fff';
           this.ring(e.x, e.y - 10, col, 44);
           if (ELEMENT_COLOR[el]) this.burst(e.x, e.y - 10, col, 12, 180);
           if (e.skill === 'rolamento') this.burst(e.x, e.y, '#bff4ff', 10, 160);

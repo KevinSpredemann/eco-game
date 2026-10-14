@@ -1,4 +1,4 @@
-import { STANDARD_PRIMARIES, gearPrice } from './balance';
+import { STANDARD_PRIMARIES, gearPrice, sanitizeLoadout, type Loadout } from './balance';
 // Moedas, preços e itens de personalização. Usado pelo jogo e pelo servidor.
 
 export const START_COINS = 150;
@@ -119,7 +119,12 @@ export interface Profile {
   equipped: { char: string; skin: string; trail: string; acc: string; weapon: string };
   /** nível da habilidade de cada personagem (ausente = 1) */
   abilityLv?: Record<string, number>;
+  /** poderes extras liberados por partida jogada (não se compra) */
+  powerUnlocks?: string[];
 }
+
+/** Rajada de Plasma entra depois da primeira partida. Moedas não liberam. */
+export const PLASMA_UNLOCK_MATCHES = 1;
 
 /** preço para subir do nível n para n+1 (índice = nível atual) */
 export const UPGRADE_COST = [0, 200, 350, 500, 700];
@@ -147,7 +152,33 @@ export function newProfile(username = 'Convidado'): Profile {
     ],
     equipped: { char: 'kael', skin: 'padrao', trail: 'nenhum', acc: 'nenhum', weapon: 'assinatura' },
     abilityLv: {},
+    powerUnlocks: [],
   };
+}
+
+/** Grava no perfil o poder extra que a partida já liberou. Tira o que foi colocado na mão, sem compra. */
+export function syncPowerUnlocks(p: Profile): boolean {
+  let changed = false;
+  if (!Array.isArray(p.powerUnlocks)) {
+    p.powerUnlocks = [];
+    changed = true;
+  }
+  const key = 'power:plasma';
+  const earned = (p.matches ?? 0) >= PLASMA_UNLOCK_MATCHES;
+  if (earned && !p.powerUnlocks.includes('plasma')) {
+    p.powerUnlocks.push('plasma');
+    changed = true;
+  }
+  const has = p.powerUnlocks.includes('plasma');
+  if (has && !p.owned.includes(key)) {
+    p.owned.push(key);
+    changed = true;
+  }
+  if (!has && p.owned.includes(key)) {
+    p.owned = p.owned.filter((id) => id !== key);
+    changed = true;
+  }
+  return changed;
 }
 
 export function itemPrice(item: string): number | null {
@@ -273,7 +304,14 @@ export function normalizeProfile(p: Profile): boolean {
     p.equipped.weapon = 'assinatura';
     changed = true;
   }
+  if (syncPowerUnlocks(p)) changed = true;
   return changed;
+}
+
+/** O que entra na partida: o servidor e a tela usam a mesma conferência. */
+export function acceptedLoadout(p: Profile, raw: Partial<Loadout> | null | undefined): Loadout {
+  normalizeProfile(p);
+  return sanitizeLoadout(raw, (k) => owns(p, k));
 }
 
 export type MatchMode = 'duelo' | 'dupla';

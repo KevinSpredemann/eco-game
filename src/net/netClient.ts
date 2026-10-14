@@ -36,7 +36,7 @@ export class NetClient {
   onRematch: (state: 'wait' | 'no' | 'go', by?: string) => void = () => {};
   onError: (msg: string) => void = () => {};
   onClose: () => void = () => {};
-  private pending = { dash: false, ability: false, item: false, bonus: false, skill: false, ult: false };
+  private pending = { dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, plasma: false };
   private lastSent = '';
   private lastSentAt = 0;
   private pingTimer = 0;
@@ -145,8 +145,9 @@ export class NetClient {
     if (i.bonus) P.bonus = true;
     if (i.skill) P.skill = true;
     if (i.ult) P.ult = true;
+    if (i.plasma) P.plasma = true;
     if (typeof i.ca === 'number') this.pendCast = [Math.round(i.ca * 100) / 100, typeof i.cr === 'number' ? Math.round(i.cr) : null];
-    const press = (P.dash ? BTN.dash : 0) | (P.ability ? BTN.ability : 0) | (P.item ? BTN.item : 0) | (P.bonus ? BTN.bonus : 0) | (P.skill ? BTN.skill : 0) | (P.ult ? BTN.ult : 0);
+    const press = (P.dash ? BTN.dash : 0) | (P.ability ? BTN.ability : 0) | (P.item ? BTN.item : 0) | (P.bonus ? BTN.bonus : 0) | (P.skill ? BTN.skill : 0) | (P.ult ? BTN.ult : 0) | (P.plasma ? BTN.plasma : 0);
     const bits = press | (i.fire ? BTN.fire : 0);
     const aim = typeof i.aim === 'number' ? Math.round(i.aim * 100) / 100 : null;
     const payload: [number, number, number, number | null, number | null, number | null] = [Math.round(i.mx * 100) / 100, Math.round(i.my * 100) / 100, bits, aim, press ? this.pendCast[0] : null, press ? this.pendCast[1] : null];
@@ -157,7 +158,7 @@ export class NetClient {
     this.send({ t: 'input', i: payload });
     this.lastSent = key;
     this.lastSentAt = now;
-    this.pending = { dash: false, ability: false, item: false, bonus: false, skill: false, ult: false };
+    this.pending = { dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, plasma: false };
     this.pendCast = [null, null];
   }
 

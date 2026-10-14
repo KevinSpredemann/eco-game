@@ -4,7 +4,7 @@
 import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout } from '../game/balance';
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
-import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, kitOf } from '../game/elements';
+import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, PLASMA, PLASMA_COLOR, kitOf } from '../game/elements';
 import { drawGear, GearKind } from './gearArt';
 import { Carousel, fitText } from './carousel';
 
@@ -97,21 +97,36 @@ export class LoadoutScreen {
     this.renderPowers();
   }
 
-  /** X1 e 2x2 entram com o kit do personagem. Arma e ultimate não mudam o dano. */
+  /** X1 e 2x2 entram com o kit do personagem e, no máximo, um poder extra. */
   private renderPowers() {
     const kit = kitOf(this.charId);
     const keys = ['Q', 'E', 'R', 'F'];
+    const unlocked = this.deps.owns('power:plasma');
+    const on = this.l.secondary === 'plasma';
     const slots = this.root.querySelector('.lo-slots')!;
-    slots.innerHTML = kit.powers
+    const kitHtml = kit.powers
       .map(
         (pw, i) =>
           `<div class="lo-slot on" style="--c:${ELEMENT_COLOR[pw.element]}"><span class="lo-slot-k">${keys[i]}</span><b>${pw.name}</b><small>${ELEMENT_NAME[pw.element]} · ${pw.cd.toFixed(1)}s · ${pw.speed <= 0 ? 'área' : 'projétil'}</small></div>`,
       )
       .join('');
+    const state = !unlocked ? 'bloqueada' : on ? 'equipada' : 'livre';
+    slots.innerHTML =
+      kitHtml +
+      `<button type="button" class="lo-slot ${on ? 'on' : ''} ${unlocked ? '' : 'lock'}" data-sec="plasma" style="--c:${PLASMA_COLOR}"><span class="lo-slot-k">X</span><b>${PLASMA.name}</b><small>${state} · ${PLASMA.cd.toFixed(1)}s · projétil · 1 espaço</small></button>`;
+    slots.querySelector<HTMLButtonElement>('[data-sec]')?.addEventListener('click', () => {
+      this.deps.click();
+      if (!this.deps.owns('power:plasma')) {
+        this.deps.toast('Habilidade ainda não desbloqueada');
+        return;
+      }
+      this.l = { ...this.l, secondary: this.l.secondary === 'plasma' ? null : 'plasma' };
+      this.renderPowers();
+    });
     const list = this.root.querySelector<HTMLElement>('.lo-list');
     if (list) list.hidden = true;
     const det = this.root.querySelector('.lo-detail')!;
-    det.innerHTML = `<div class="lo-dhead"><span class="lo-state on">Poder principal · ${kit.passiveName}</span></div><p class="lo-desc">${kit.passiveDesc} ${kit.powers.map((pw, i) => `${keys[i]} ${pw.name}: ${ELEMENT_FX[pw.element]}.`).join(' ')}</p><p class="lo-cmp">Estes quatro poderes já vêm com o personagem. Arma, granada e ultimate ficam de fora da partida. Escolher outros poderes ainda não está liberado.</p>`;
+    det.innerHTML = `<div class="lo-dhead"><span class="lo-state on">Poder principal · ${kit.passiveName}</span></div><p class="lo-desc">${kit.passiveDesc} ${kit.powers.map((pw, i) => `${keys[i]} ${pw.name}: ${ELEMENT_FX[pw.element]}.`).join(' ')}</p><p class="lo-cmp">Q, E, R e F já vêm com o personagem. O espaço extra cabe em um poder: Rajada de Plasma, depois da primeira partida. Não se compra. Arma, granada e ultimate ficam de fora. Projétil gasta energia e recarga ao sair, mesmo se errar. Poder em área sem inimigo no círculo não gasta nada.</p>`;
   }
 
   get value() {

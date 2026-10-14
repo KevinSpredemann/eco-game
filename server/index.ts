@@ -8,7 +8,7 @@ import { CHARACTERS } from '../src/game/characters';
 import { BotBrain } from '../src/game/bot';
 import { Game, GameMode, Input, MIN_PLAYERS, MODE_RULES } from '../src/game/sim';
 import { Loadout, botLoadout, DEFAULT_LOADOUT, sanitizeLoadout } from '../src/game/balance';
-import { abilityLevel, buy, canEquipWeapon, equip, matchReward, newProfile, normalizeProfile, owns, Profile, EquipSlot, MatchMode, levelOf } from '../src/game/economy';
+import { abilityLevel, acceptedLoadout, buy, canEquipWeapon, equip, matchReward, newProfile, normalizeProfile, owns, Profile, EquipSlot, MatchMode, levelOf } from '../src/game/economy';
 import { BTN, ClientMsg, encodeSnapshot, echoSignature, EndInfo, LobbyPlayer, RoomInfo, ServerMsg, StartInfo, PROTO } from '../src/net/protocol';
 import { rematchStatus, RematchVote } from '../src/net/rematch';
 import { checkPassword, hashPassword, signToken, validPassword, validUsername, verifyToken } from './auth';
@@ -143,6 +143,7 @@ const http = createServer(async (req, res) => {
       u.profile.xp += coins;
       u.profile.matches++;
       if (Number(r.placement) === 1 && Number(r.players) > 1) u.profile.wins++;
+      normalizeProfile(u.profile);
       u.lastRewardAt = Date.now();
       await store.save(u);
       return send(res, 200, { coins, profile: publicProfile(u) });
@@ -410,7 +411,7 @@ function tick(r: Room, dt: number) {
   for (const m of r.members) {
     inputs[m.id] = m.input;
     // botões de toque único são consumidos no passo
-    m.input = { ...m.input, dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, ca: null, cr: null };
+    m.input = { ...m.input, dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, plasma: false, ca: null, cr: null };
   }
   g.step(dt, inputs);
   if (g.phase !== 'rewind' && r.skipVotes.size) r.skipVotes.clear();
@@ -468,6 +469,7 @@ async function finishGame(r: Room) {
         u.profile.xp += coins;
         u.profile.matches++;
         if (g.winners.includes(p.id)) u.profile.wins++;
+        normalizeProfile(u.profile);
         await store.save(u);
       }
     }
@@ -649,7 +651,7 @@ wss.on('connection', (ws) => {
       case 'loadout': {
         let profile: Profile = newProfile();
         if (c.userKey) profile = (await store.get(c.userKey))?.profile ?? profile;
-        c.loadout = sanitizeLoadout(m.l, (k) => owns(profile, k));
+        c.loadout = acceptedLoadout(profile, m.l);
         // no meio da partida: vale a partir da próxima rodada
         if (c.room?.game) c.room.game.setLoadout(c.id, c.loadout);
         break;
@@ -697,7 +699,7 @@ wss.on('connection', (ws) => {
         const [mx, my, bits, aim, ca, cr] = m.i;
         const prev = c.input;
         const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? v : null);
-        const press = !!(bits & (BTN.dash | BTN.ability | BTN.item | BTN.bonus | BTN.skill | BTN.ult));
+        const press = !!(bits & (BTN.dash | BTN.ability | BTN.item | BTN.bonus | BTN.skill | BTN.ult | BTN.plasma));
         c.input = {
           mx: Math.max(-1, Math.min(1, Number(mx) || 0)),
           my: Math.max(-1, Math.min(1, Number(my) || 0)),
@@ -709,6 +711,7 @@ wss.on('connection', (ws) => {
           bonus: prev.bonus || !!(bits & BTN.bonus),
           skill: prev.skill || !!(bits & BTN.skill),
           ult: prev.ult || !!(bits & BTN.ult),
+          plasma: prev.plasma || !!(bits & BTN.plasma),
           aim: num(aim),
           ca: press ? num(ca) : prev.ca ?? null,
           cr: press ? (num(cr) === null ? null : Math.max(0, Math.min(2000, num(cr)!))) : prev.cr ?? null,

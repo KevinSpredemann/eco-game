@@ -33,9 +33,13 @@ import { DUEL, duelTiebreak, type DuelReason } from './duel';
 import {
   BURN_TICK,
   BURN_TIME,
+  ENERGY_MAX,
+  ENERGY_REGEN,
   FROZEN_TIME,
   KNOCK,
   MARK_TIME,
+  PLASMA,
+  SLOT_COST,
   VISUAL_WEAPON,
   WALL_BONUS,
   WALL_REACH,
@@ -130,6 +134,8 @@ export interface Input {
   /** mira da habilidade: ângulo e distância a partir dos pés (ausente = automático) */
   ca?: number | null;
   cr?: number | null;
+  /** Rajada de Plasma (X), se entrou no equipamento desta partida */
+  plasma?: boolean;
 }
 
 export interface Player {
@@ -169,6 +175,14 @@ export interface Player {
   burnFrom: string;
   /** recarga dos quatro poderes (Q E R F) */
   powerCd: [number, number, number, number];
+  /** 0–100. O servidor (e o jogo local) é quem gasta e recupera. */
+  energy: number;
+  /** recarga da Rajada de Plasma */
+  plasmaCd: number;
+  /** marca de plasma neste jogador (segundos) */
+  plasmaT: number;
+  /** o espaço extra desta partida trouxe a Rajada de Plasma */
+  plasmaOn: boolean;
   /** combos fechados nesta rodada (a ninja fica mais rápida) */
   comboStacks: number;
   hidden: boolean;
@@ -423,6 +437,8 @@ export interface Bullet {
   /** poder do X1: o acerto aplica o elemento, não o efeito da arma desenhada */
   el?: Element;
   knock?: number;
+  /** Rajada de Plasma: marca o alvo. Não usa o efeito da arma desenhada. */
+  plasma?: boolean;
 }
 
 export interface Bomb {
@@ -572,7 +588,8 @@ export type GameEvent =
   | { type: 'minion'; x: number; y: number; kind: MinionKind }
   | { type: 'block'; x: number; y: number }
   | { type: 'stunned'; x: number; y: number; pid: string }
-  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string };
+  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string }
+  | { type: 'deny'; pid: string; msg: string };
 
 export type Phase = 'prep' | 'play' | 'rewind' | 'call' | 'results';
 /** de onde veio o dano (para o indicador de direção e a cor do número) */
@@ -749,6 +766,10 @@ export class Game {
       burnDps: 0,
       burnFrom: '',
       powerCd: [0, 0, 0, 0],
+      energy: ENERGY_MAX,
+      plasmaCd: 0,
+      plasmaT: 0,
+      plasmaOn: lo.secondary === 'plasma',
       comboStacks: 0,
       hidden: false,
       tookDamage: false,
@@ -903,6 +924,9 @@ export class Game {
         burnDps: 0,
         burnFrom: '',
         powerCd: [0, 0, 0, 0],
+        energy: ENERGY_MAX,
+        plasmaCd: 0,
+        plasmaT: 0,
         comboStacks: 0,
         tookDamage: false,
         tripleDone: false,
@@ -940,6 +964,7 @@ export class Game {
         p.loadout = p.pendingLoadout;
         p.pendingLoadout = null;
       }
+      p.plasmaOn = p.loadout.secondary === 'plasma';
       this.equip(p);
       if (this.mode === 'dupla') {
         const sp = this.teamSpawn(p.team, i % 2);
@@ -1341,6 +1366,9 @@ export class Game {
       p.gustT = Math.max(0, p.gustT - dt);
       p.shockT = Math.max(0, p.shockT - dt);
       for (let i = 0; i < 4; i++) p.powerCd[i] = Math.max(0, p.powerCd[i] - dt);
+      p.plasmaCd = Math.max(0, p.plasmaCd - dt);
+      p.plasmaT = Math.max(0, p.plasmaT - dt);
+      if (p.alive) p.energy = Math.min(ENERGY_MAX, p.energy + ENERGY_REGEN * dt);
       if (p.burnT > 0 && p.alive) {
         p.burnAcc += dt;
         while (p.burnAcc >= BURN_TICK && p.alive) {
@@ -1398,6 +1426,7 @@ export class Game {
         if (inp.skill) this.castPower(p, 1, castAng, inp);
         if (inp.ult) this.castPower(p, 2, castAng, inp);
         if (inp.bonus || inp.item) this.castPower(p, 3, castAng, inp);
+        if (inp.plasma) this.castPlasma(p, castAng);
       }
 
     const inBush = (this.arena.bushes ?? []).some((b) => dist(p.x, p.y, b.x, b.y) < b.r);
@@ -2644,14 +2673,32 @@ export class Game {
     return 'turbo';
   }
 
-  /** Q E R F no X1 e no 2x2. Não grava tiro no Eco e não usa a arma. */
+  private foeInRadius(p: Player, x: number, y: number, radius: number) {
+    return this.players.some((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, x, y) <= radius);
+  }
+
+  /**
+   * Q E R F no X1 e no 2x2. Não grava tiro no Eco e não usa a arma.
+   * Recarga e energia só caem depois que o golpe é aceito.
+   * Área sem inimigo no círculo: não gasta. Projétil: gasta ao sair, mesmo se errar.
+   */
   private castPower(p: Player, slot: number, ang: number, inp?: Input) {
     if (p.powerCd[slot] > 0) return;
     const def = kitOf(p.char.id).powers[slot];
-    p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+    const cost = SLOT_COST[slot];
+    if (p.energy < cost) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      return;
+    }
     const knock = KNOCK[def.element];
     if (def.speed <= 0) {
       const pt = this.castPoint(p, inp, ang, def.range);
+      if (!this.foeInRadius(p, pt.x, pt.y, def.radius)) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido' });
+        return;
+      }
+      p.energy -= cost;
+      p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
       this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element });
       for (const o of this.players) {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
@@ -2659,6 +2706,8 @@ export class Game {
       }
       return;
     }
+    p.energy -= cost;
+    p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
     const muzzle = 18;
     this.bullets.push({
       id: this.fragId++,
@@ -2679,13 +2728,63 @@ export class Game {
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
   }
 
+  /** Rajada de Plasma. Projétil: gasta ao sair, mesmo se não acertar. */
+  private castPlasma(p: Player, ang: number) {
+    if (!p.plasmaOn) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Habilidade ainda não desbloqueada' });
+      return;
+    }
+    if (p.plasmaCd > 0) return;
+    if (p.energy < PLASMA.cost) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
+      return;
+    }
+    p.energy -= PLASMA.cost;
+    p.plasmaCd = PLASMA.cd;
+    const muzzle = 18;
+    this.bullets.push({
+      id: this.fragId++,
+      x: p.x + Math.cos(ang) * muzzle,
+      y: p.y - GUN_Y + Math.sin(ang) * muzzle,
+      vx: Math.cos(ang) * PLASMA.speed,
+      vy: Math.sin(ang) * PLASMA.speed,
+      owner: p.id,
+      dmg: PLASMA.dmg,
+      life: PLASMA.range / PLASMA.speed,
+      weapon: 'pulsador',
+      pierce: false,
+      fromEcho: false,
+      hit: [],
+      plasma: true,
+    });
+    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: 'plasma' });
+  }
+
+  /** Marca de 4 s. O dano do projétil não passa do valor da habilidade. */
+  private deliverPlasma(src: Player, dst: Player, damage: number) {
+    if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
+    this.hurt(dst, Math.min(PLASMA.dmg, Math.max(0, damage)), src.id, 'pulse');
+    dst.plasmaT = PLASMA.mark;
+  }
+
   /** Lê o combo, grava o elemento novo e aplica queimadura, lentidão, tontura ou empurrão. */
   private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number) {
     if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
     const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT };
     const extra = bonusDamage(src.char.id, aura, dst.stunT > 0);
     const combo = tuneCombo(src.char.id, comboOf(aura, element));
+    const marked = dst.plasmaT > 0;
+    let burst = 0;
+    if (marked) {
+      dst.plasmaT = 0;
+      burst = Math.min(PLASMA.burst, Math.max(0, PLASMA.cap - (damage + extra)));
+    }
     this.hurt(dst, damage + extra, src.id, 'pulse');
+    if (burst > 0) {
+      this.hurt(dst, burst, src.id, 'pulse');
+      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Explosão de Plasma', bonus: burst, pid: src.id });
+      src.comboStacks = Math.min(8, src.comboStacks + 1);
+    }
     if (element === 'fire') {
       dst.burnT = BURN_TIME;
       dst.burnDps = burnDpsOf(src.char.id);
@@ -2955,6 +3054,17 @@ export class Game {
           }
           if (!this.bodyHit(o, b.x, b.y)) continue;
           // poder do X1: dano e elemento aqui. A arma desenhada não queima, cura nem empurra de novo.
+          if (b.plasma) {
+            b.hit.push(o.id);
+            const src = this.players.find((q) => q.id === b.owner);
+            if (src) this.deliverPlasma(src, o, b.dmg);
+            else this.hurt(o, Math.min(PLASMA.dmg, b.dmg), b.owner, 'shot', Math.atan2(b.vy, b.vx));
+            if (!b.pierce) {
+              b.life = 0;
+              break;
+            }
+            continue;
+          }
           if (b.el) {
             b.hit.push(o.id);
             const src = this.players.find((q) => q.id === b.owner);

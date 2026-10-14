@@ -53,6 +53,7 @@
         <button id="btn-dash" class="tbtn dash"><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">IMPULSO</span></button>
         <button id="btn-fire" class="tbtn fire" hidden aria-label="Mirar e atirar: arraste para mirar"><span class="aring"></span><span class="aknob"></span><span class="tlabel">ATIRAR</span></button>
         <button id="btn-item" class="tbtn item" hidden><canvas class="ticon"></canvas><span class="tlabel">ITEM</span></button>
+        <button id="btn-plasma" class="tbtn item" hidden><span class="tlabel">PLASMA</span></button>
         <button id="btn-bonus" class="tbtn bonus empty"><canvas class="cd" width="120" height="120"></canvas><span class="bicon"></span><span class="tlabel">PODER</span></button>
         <button id="btn-skill" class="tbtn skill" hidden><canvas class="ticon"></canvas><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">HAB 2</span><span class="tcd"></span></button>
         <button id="btn-ult" class="tbtn ult" hidden><canvas class="ticon"></canvas><canvas class="cd" width="120" height="120"></canvas><span class="tlabel">ULT</span><span class="tcd"></span></button>
@@ -398,7 +399,7 @@
           <div class="howto-grid" id="howto-grid">
           <div class="card">
             <h4>Duelo x1</h4>
-            <p>Online ou offline, você contra um rival, só com poderes. Q, E, R e F. Cada poder é fogo, gelo, raio ou vento. Juntar os efeitos na ordem certa dá dano extra (a linha COMBO DISPONÍVEL aparece quando a janela está aberta). Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Sem arma e sem munição.</p>
+            <p>Online ou offline, você contra um rival, só com poderes. Q, E, R e F, e a barra de energia. Cada poder gasta energia e recarrega sozinho. Sem energia o aviso é Energia insuficiente e a recarga não começa. Projétil gasta ao sair, mesmo se errar. Poder em área sem inimigo no círculo avisa Nenhum alvo válido e não gasta nada. Juntar os efeitos na ordem certa dá dano extra. Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Sem arma e sem munição.</p>
           </div>
           <div class="card">
             <h4>2x2</h4>
@@ -414,11 +415,11 @@
           </div>
           <div class="card">
             <h4>Controles</h4>
-            <p><b>Computador:</b> WASD anda · mouse mira · <b>Q E R F</b> poderes · <b>Shift</b> impulso · <b>Esc</b> cancela a mira ou pausa. No notebook, um toque usa o poder na mira. No clássico, segure para ver a área e solte para usar. Recarga, atordoamento ou queda recusam o poder e não começam outra recarga.<br /><b>Celular:</b> analógico da esquerda anda. Toque no poder para usar na mira, ou arraste para ver a área e solte. Para cancelar, solte em cima do "✕".</p>
+            <p><b>Computador:</b> WASD anda · mouse mira · <b>Q E R F</b> poderes · <b>X</b> Rajada de Plasma (se estiver no espaço extra) · <b>Shift</b> impulso · <b>Esc</b> cancela a mira ou pausa. No notebook, um toque usa o poder na mira. No clássico, segure para ver a área e solte para usar. Recarga, energia, alvo inválido, atordoamento ou queda recusam o poder e não começam outra recarga.<br /><b>Celular:</b> analógico da esquerda anda. Toque no poder para usar na mira, ou arraste para ver a área e solte. Para cancelar, solte em cima do "✕".</p>
           </div>
           <div class="card">
             <h4>Equipamento</h4>
-            <p>Antes da partida você vê o poder principal e os quatro golpes do personagem, com elemento, recarga e efeito. Arma, granada e ultimate não entram no X1 nem no 2x2. A roupa não muda o dano. Trocar quais poderes entram na partida ainda não está liberado.</p>
+            <p>Antes da partida você vê os quatro golpes do personagem e um espaço extra. Rajada de Plasma entra nesse espaço depois da primeira partida. Não se compra. Se ainda estiver bloqueada, o aviso é Habilidade ainda não desbloqueada. O servidor confere o espaço no começo da partida. Arma, granada e ultimate não entram no X1 nem no 2x2. A roupa não muda o dano.</p>
           </div>
           <div class="card">
             <h4>Lendo os Ecos</h4>

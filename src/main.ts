@@ -3,7 +3,7 @@ import { audio } from './audio/audio';
 import { ARENAS, WORLD_W, getArena } from './game/arenas';
 import { CHARACTERS, getCharacter, withLevel, withSkin } from './game/characters';
 import * as C from './game/constants';
-import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, canEquipWeapon, coinText, itemView, missingCoinsText, owns, upgradePrice } from './game/economy';
+import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, acceptedLoadout, canEquipWeapon, coinText, itemView, missingCoinsText, owns, upgradePrice } from './game/economy';
 import { roundBanner, type DuelReason } from './game/duel';
 import type { RoundEchoLine } from './systems/echo/digest';
 import { Game, GameEvent, GameMode, Input, MIN_PLAYERS, MINION_INFO, MinionKind, MODE_RULES, OBJECTIVES, RosterEntry, TEAM_COLORS } from './game/sim';
@@ -27,7 +27,7 @@ import { Carousel, fitText } from './ui/carousel';
 import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
-import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, comboReady, cooldownOf, denyPowerCast, kitOf, powerSlotIndex } from './game/elements';
+import { ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, comboReady, cooldownOf, denyPlasma, denyPowerCast, kitOf, powerSlotIndex } from './game/elements';
 import { ACTION_LABEL, Action, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
@@ -1649,7 +1649,12 @@ function startOnline(info: import('./net/protocol').StartInfo) {
 // ------------------------------------------------------------------ partida
 function localRoster(): RosterEntry[] {
   const p = account.profile;
-  const human: RosterEntry = { id: 'p0', char: settings.char, isBot: false, name: 'Você', skin: p.equipped.skin, trail: p.equipped.trail, lv: abilityLevel(p, settings.char), loadout: sanitizeLoadout(settings.loadout, (k) => owns(p, k)) };
+  const humanLoadout = acceptedLoadout(p, settings.loadout);
+  if (humanLoadout.secondary !== (settings.loadout.secondary ?? null)) {
+    settings.loadout = humanLoadout;
+    saveSettings(settings);
+  }
+  const human: RosterEntry = { id: 'p0', char: settings.char, isBot: false, name: 'Você', skin: p.equipped.skin, trail: p.equipped.trail, lv: abilityLevel(p, settings.char), loadout: humanLoadout };
   if (training()) return [human];
   const n = matchMode === 'duelo' ? 1 : 3;
   const pool = CHARACTERS.map((c) => c.id).filter((id) => id !== settings.char);
@@ -1696,6 +1701,7 @@ function beginMatchView(g: AnyGame) {
   $('#touch').classList.toggle('boss', me.boss);
   $('#btn-fire').hidden = !g.combat || powers;
   $('#btn-item').hidden = !g.combat || me.boss || powers;
+  $('#btn-plasma').hidden = !powers;
   $('#btn-bonus').hidden = powers ? false : training() && !isOnline();
   $('#btn-skill').hidden = !g.combat;
   $('#btn-ult').hidden = !g.combat;
@@ -1882,12 +1888,19 @@ function powersMatch(g: AnyGame) {
   return (g.mode === 'duelo' || g.mode === 'dupla') && !g.human.boss;
 }
 
+function powerHasTarget(me: { id: string; x: number; y: number; team: number }, reach: number) {
+  if (!game) return false;
+  return game.players.some((o) => o.alive && o.id !== me.id && game!.hostile(me, o) && Math.hypot(o.x - me.x, o.y - me.y) <= reach);
+}
+
 function comboLine(g: AnyGame): string {
   const me = g.human;
   if (!me.alive) return '';
   const foes = g.players
     .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
     .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT }));
+  const plasma = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
+  if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return 'COMBO DISPONÍVEL: Explosão de Plasma';
   const hit = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes);
   return hit ? `COMBO DISPONÍVEL ${hit.key}: ${hit.name}` : '';
 }
@@ -1904,6 +1917,7 @@ function buildSlots(g: AnyGame): SlotView[] {
       .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
       .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT }));
     const ready = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes);
+    const plasmaUp = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
     kit.powers.forEach((pw, i) => {
       const left = me.powerCd[i] ?? 0;
       const cd = cooldownOf(me.char.id, pw.cd);
@@ -1915,9 +1929,25 @@ function buildSlots(g: AnyGame): SlotView[] {
         color: ELEMENT_COLOR[pw.element],
         cd: left / cd,
         secs: left,
-        desc: `${labels[i]} — ${pw.name} (${ELEMENT_NAME[pw.element]}): ${ELEMENT_FX[pw.element]}. Recarga ${cd.toFixed(1)}s.`,
-        hot: ready?.slot === i,
+        desc: `${labels[i]} — ${pw.name} (${ELEMENT_NAME[pw.element]}): ${ELEMENT_FX[pw.element]}. Recarga ${cd.toFixed(1)}s. Custa ${SLOT_COST[i]} de energia.`,
+        hot: ready?.slot === i || (!ready && plasmaUp && left <= 0),
       });
+    });
+    const plasmaLeft = me.plasmaCd ?? 0;
+    const plasmaOn = !!me.plasmaOn;
+    slots.push({
+      id: 'plasma',
+      key: 'X',
+      name: 'PLASMA',
+      art: { kind: 'symbol', id: me.char.id, color: PLASMA_COLOR },
+      color: PLASMA_COLOR,
+      cd: plasmaOn ? plasmaLeft / PLASMA.cd : 1,
+      secs: plasmaOn ? plasmaLeft : 0,
+      off: !plasmaOn,
+      note: plasmaOn ? undefined : 'BLOQUEADA',
+      desc: plasmaOn
+        ? `X — ${PLASMA.name}: projétil médio, marca de ${PLASMA.mark}s. O próximo poder no alvo marcado explode (teto ${PLASMA.cap}). Recarga ${PLASMA.cd}s. Custa ${PLASMA.cost} de energia.`
+        : 'Rajada de Plasma libera depois da primeira partida. Não se compra com moedas.',
     });
     slots.push({ id: 'dash', key: K('dash'), name: 'Impulso', art: { kind: 'dash', id: 'dash', color: '#9ad8ff' }, color: '#9ad8ff', cd: me.dashCd / C.DASH_CD, secs: me.dashCd, off: me.stasisT > 0, note: me.stasisT > 0 ? 'BLOQUEADO' : undefined, desc: 'Arrancada curta na direção em que você anda (recarga 2,2 s).' });
     return slots;
@@ -2045,8 +2075,15 @@ function deniedReason(slot: Slot): string {
     return `Recarga ${Math.ceil(me.bossCd[k])}s`;
   }
   if (game.mode === 'duelo' || game.mode === 'dupla') {
-    const why = denyPowerCast(slot, me.powerCd ?? [0, 0, 0, 0]);
-    if (powerSlotIndex(slot) !== null) return why ?? '';
+    if (slot === 'plasma') return denyPlasma(!!me.plasmaOn, me.plasmaCd ?? 0, me.energy ?? ENERGY_MAX) ?? '';
+    const why = denyPowerCast(slot, me.powerCd ?? [0, 0, 0, 0], me.energy ?? ENERGY_MAX);
+    if (why) return why;
+    const i = powerSlotIndex(slot);
+    if (i !== null) {
+      const def = kitOf(me.char.id).powers[i];
+      if (def.speed <= 0 && !powerHasTarget(me, def.range + def.radius)) return 'Nenhum alvo válido';
+      return '';
+    }
   }
   if (slot === 'ability') return `Recarga ${Math.ceil(me.abilCd)}s`;
   if (slot === 'skill') return `Recarga ${Math.ceil(me.skillCd)}s`;
@@ -2138,10 +2175,13 @@ function updateHud() {
     const wTxt = g.mode === 'duelo' || g.mode === 'dupla' ? kitOf(me.char.id).passiveName : isPrimary(me.weapon) ? w.name : `${w.name} ${w.ammo ? me.ammo + 'x' : Math.ceil(me.weaponT) + 's'}`;
     // no computador a barra de habilidades já mostra item e recargas
     const itTxt = me.item && input.touchMode ? `<span class="itm">${ITEMS[me.item].name} x${me.itemN}</span>` : '';
+    const ePct = Math.max(0, Math.min(100, Math.round(((me.energy ?? ENERGY_MAX) / ENERGY_MAX) * 100)));
+    const energyBit = g.mode === 'duelo' || g.mode === 'dupla' ? `<span class="ebar" title="Energia"><i style="width:${ePct}%"></i></span><b class="en">${Math.ceil(me.energy ?? 0)}</b>` : '';
     setHTML(
       '#hud-status',
-      `<span class="hpbar"><i class="${cls}" style="width:${Math.round(f * 100)}%"></i>${me.shieldHp > 0 ? `<s style="width:${Math.round((me.shieldHp / 50) * 100)}%"></s>` : ''}</span><b>${Math.ceil(me.hp)}${me.shieldHp > 0 ? `<small class="shv">+${Math.ceil(me.shieldHp)}⛉</small>` : ''}</b><span class="wpn">${wTxt}</span>`,
+      `<span class="hpbar"><i class="${cls}" style="width:${Math.round(f * 100)}%"></i>${me.shieldHp > 0 ? `<s style="width:${Math.round((me.shieldHp / 50) * 100)}%"></s>` : ''}</span><b>${Math.ceil(me.hp)}${me.shieldHp > 0 ? `<small class="shv">+${Math.ceil(me.shieldHp)}⛉</small>` : ''}</b>${energyBit}<span class="wpn">${wTxt}</span>`,
     );
+    $('#hud-status').dataset.energy = g.mode === 'duelo' || g.mode === 'dupla' ? String(Math.ceil(me.energy ?? 0)) : '';
     // item, habilidades e poder já aparecem nos botões/barra de habilidades (HUD limpo)
     void itTxt;
     $('#btn-item .tlabel').textContent = me.item ? `${({ bomba: 'BOMBA', mina: 'MINA', gelo: 'GELO', kit: 'KIT', pulso: 'PULSO' } as Record<string, string>)[me.item] ?? 'ITEM'} ${me.itemN}` : 'ITEM';
@@ -2310,6 +2350,9 @@ function onEvents(events: GameEvent[]) {
         break;
       case 'combo':
         showTip(`${e.name} +${e.bonus}`, 2.2);
+        break;
+      case 'deny':
+        if (mine) toast(e.msg, 1800);
         break;
       case 'hit':
         if (e.by === 'fall') audio.fall(panOf(e.x));
@@ -2723,7 +2766,7 @@ function readInput(): Input {
   const stickAim = input.manualAim();
   if (game && game.combat && stickAim !== null) i.aim = stickAim;
   // mira das habilidades: mouse (computador) ou arrasto do botão (toque)
-  const pressed = (['ability', 'skill', 'ult', 'bonus', 'dash', 'item'] as Slot[]).find((k) => (i as any)[k]);
+  const pressed = (['ability', 'skill', 'ult', 'bonus', 'dash', 'item', 'plasma'] as Slot[]).find((k) => (i as any)[k]);
   if (game && pressed) {
     const me = game.human;
     if (i.touchCast) {
@@ -2755,6 +2798,9 @@ function slotInfo(slot: Slot): { kind: 'instant' | 'direction' | 'point'; range:
     if (slot === 'dash') return { kind: 'direction', range: S.avanco.range ?? 330, r: 0, w: 64, shape: 'line', name: S.avanco.name, color: '#ff3b3b' };
     if (slot === 'ability') return { ...none, r: S.impacto.radius ?? 175, name: S.impacto.name, color: '#ff3b3b' };
     return none;
+  }
+  if (slot === 'plasma') {
+    return { kind: 'direction', range: PLASMA.range, r: PLASMA.radius, w: 0, shape: 'arrow', name: PLASMA.name, color: PLASMA_COLOR };
   }
   if ((game.mode === 'duelo' || game.mode === 'dupla') && powerSlotIndex(slot) !== null) {
     const i = powerSlotIndex(slot)!;
@@ -2803,7 +2849,7 @@ input.canUse = (slot) => {
     const k = map[slot];
     return !k || (me.bossCd[k] <= 0 && (game.bossPhase ?? 1) >= BOSS.skills[k].phase);
   }
-  if ((game.mode === 'duelo' || game.mode === 'dupla') && powerSlotIndex(slot) !== null) return denyPowerCast(slot, me.powerCd ?? [0, 0, 0, 0]) === null;
+  if ((game.mode === 'duelo' || game.mode === 'dupla') && (powerSlotIndex(slot) !== null || slot === 'plasma')) return deniedReason(slot) === '';
   if (slot === 'ability') return me.abilCd <= 0;
   if (slot === 'skill') return me.skillCd <= 0;
   if (slot === 'ult') return me.ultCharge >= 100;
@@ -2815,6 +2861,7 @@ input.onDenied = (slot) => {
   audio.click();
   const why = deniedReason(slot);
   skillBar.why(slot, why);
+  if (why === 'Energia insuficiente' || why === 'Nenhum alvo válido' || why === 'Habilidade ainda não desbloqueada') toast(why, 1800);
   // no toque: aviso curto em cima do botão
   const btn = document.querySelector<HTMLElement>(`#btn-${slot === 'ability' ? 'ability' : slot}`);
   if (btn && input.touchMode) {

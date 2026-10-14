@@ -1724,6 +1724,25 @@ input[type='checkbox'] {
 .hud-status .hpbar i.low {
   background: linear-gradient(90deg, #d62a2a, #ff5a5a);
 }
+.hud-status .ebar {
+  width: 120px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+.hud-status .ebar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #7a5cff, #3ee8ff);
+}
+.hud-status .en {
+  color: #b7a6ff;
+  font-size: 12px;
+  min-width: 1.6em;
+}
 .hud-status .hpbar s {
   position: absolute;
   inset: 0 auto 0 0;
@@ -3153,6 +3172,15 @@ input[type='checkbox'] {
   color: var(--ink);
   letter-spacing: 0.02em;
   text-transform: none;
+}
+button.lo-slot {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lo-slot.lock {
+  opacity: 0.55;
 }
 .lo-slot.on {
   border-color: var(--c);

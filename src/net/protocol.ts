@@ -25,7 +25,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 8;
+export const PROTO = 9;
 
 export interface RoomInfo {
   code: string;
@@ -85,7 +85,7 @@ export type ServerMsg =
   | { t: 'error'; msg: string }
   | { t: 'pong'; at: number };
 
-export const BTN = { dash: 1, ability: 2, fire: 4, item: 8, bonus: 16, skill: 32, ult: 64 };
+export const BTN = { dash: 1, ability: 2, fire: 4, item: 8, bonus: 16, skill: 32, ult: 64, plasma: 128 };
 
 // ------------------------------------------------------------------ snapshot
 export interface Snapshot {
@@ -247,6 +247,10 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
       r1(p.burnT),
       r1(p.frozenT),
       p.comboStacks,
+      r1(p.energy),
+      r1(p.plasmaCd),
+      r1(p.plasmaT),
+      p.plasmaOn ? 1 : 0,
     ]),
     F: g.fragments.map((f) => [f.id, r1(f.x), r1(f.y), f.golden ? 1 : 0]),
     W: g.powerups.map((w) => [w.id, w.kind, r1(w.x), r1(w.y), r1(w.age)]),
