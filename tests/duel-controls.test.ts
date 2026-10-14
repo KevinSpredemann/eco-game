@@ -51,6 +51,22 @@ function mirror() {
   });
 }
 
+describe('previsão online', () => {
+  it('encostar numa parede não quebra o quadro nem atravessa', () => {
+    const g = duel();
+    const cg = mirror();
+    g.players[0].x = 150;
+    g.players[0].y = 360;
+    cg.applySnapshot(encodeSnapshot(g, true, false), []);
+    expect(cg.phase).toBe('play');
+    expect(() => {
+      for (let i = 0; i < 40; i++) cg.update(STEP, { mx: 1, my: 0, dash: false, ability: false, aim: 0 });
+    }).not.toThrow();
+    expect(cg.human.x).toBeGreaterThan(150);
+    expect(cg.human.x).toBeLessThanOrEqual(170 - 16 + 0.2);
+  });
+});
+
 describe('X1 com morte súbita', () => {
   it('a rodada dura 2 minutos e a morte súbita 60 segundos', () => {
     const g = duel();

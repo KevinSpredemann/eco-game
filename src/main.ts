@@ -3049,7 +3049,11 @@ function frame(now: number) {
     const g = game;
     if (g instanceof ClientGame) {
       const inp = currentScreen() === null ? readInput() : { mx: 0, my: 0, dash: false, ability: false };
-      g.update(dt, inp);
+      try {
+        g.update(dt, inp);
+      } catch (err) {
+        console.error(err);
+      }
       if (typeof inp.aim === 'number') g.human.aim = inp.aim;
       net?.sendInput(inp);
     } else if (!g.paused && g.phase !== 'results') {

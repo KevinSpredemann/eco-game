@@ -649,6 +649,16 @@ export type DmgSrc = 'arma' | 'eco' | 'perigo' | 'golpe' | 'explosao' | 'criatur
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
 
+/** tira a velocidade que entra na parede. Vale na simulação e na previsão online. */
+function slideVelocity(p: { vx?: number; vy?: number }, nx: number, ny: number) {
+  if (p.vx === undefined || p.vy === undefined) return;
+  const vn = p.vx * nx + p.vy * ny;
+  if (vn < 0) {
+    p.vx -= vn * nx;
+    p.vy -= vn * ny;
+  }
+}
+
 export class Game {
   readonly arena: ArenaDef;
   readonly cfg: MatchConfig;
@@ -2180,15 +2190,6 @@ export class Game {
     return true;
   }
 
-  private slideOut(p: { vx?: number; vy?: number }, nx: number, ny: number) {
-    if (p.vx === undefined || p.vy === undefined) return;
-    const vn = p.vx * nx + p.vy * ny;
-    if (vn < 0) {
-      p.vx -= vn * nx;
-      p.vy -= vn * ny;
-    }
-  }
-
   collideWorld(p: { x: number; y: number; vx?: number; vy?: number }, r = C.PLAYER_R) {
     const walls = this.iceWalls?.length ? [...this.arena.walls, ...this.iceWalls] : this.arena.walls;
     for (let iter = 0; iter < 4; iter++) {
@@ -2212,13 +2213,13 @@ export class Game {
             dy = opts[0][2];
             p.x += dx * (opts[0][0] + r);
             p.y += dy * (opts[0][0] + r);
-            this.slideOut(p, dx, dy);
+            slideVelocity(p, dx, dy);
           } else {
             const nx = dx / d;
             const ny = dy / d;
             p.x = cx + nx * r;
             p.y = cy + ny * r;
-            this.slideOut(p, nx, ny);
+            slideVelocity(p, nx, ny);
           }
         }
       }
