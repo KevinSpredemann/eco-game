@@ -28,6 +28,7 @@ import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
 import { ACTION_LABEL, Action, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
+import { MundoController } from './ui/mundoView';
 import { SkillBar, SlotView, drawSlotArt, slotReady } from './ui/skillbar';
 import type { AimPreview } from './render/combatFx';
 
@@ -41,6 +42,7 @@ input.binds = settings.keys;
 
 type AnyGame = Game | ClientGame;
 let game: AnyGame | null = null;
+let mundoCtl: MundoController | null = null;
 let matchMode: MatchMode = 'dupla';
 let net: NetClient | null = null;
 let onlineMode: GameMode = 'duelo';
@@ -556,21 +558,37 @@ function pickMode(id: MatchMode) {
   openSelect();
 }
 
-function modePickButton(id: MatchMode | 'mundo', name: string, line: string, tag: string, color: string, icon: string, disabled = false): HTMLButtonElement {
+function modePickButton(id: MatchMode | 'mundo', name: string, line: string, tag: string, color: string, icon: string, disabled = false, onClick?: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'mode-pick';
   b.style.setProperty('--c', color);
   b.disabled = disabled;
   b.innerHTML = `<span class="mode-ico">${icon}</span><span class="mbody"><span class="mtag">${tag}</span><span class="mt">${name}</span><span class="md">${line}</span></span>`;
-  if (!disabled) b.addEventListener('click', () => pickMode(id as MatchMode));
+  if (!disabled) b.addEventListener('click', () => (onClick ? onClick() : pickMode(id as MatchMode)));
   return b;
+}
+
+function openMundo() {
+  if (mundoCtl || game) return;
+  audio.click();
+  show(null);
+  $('#hud').hidden = true;
+  $('#touch').hidden = true;
+  mundoCtl = new MundoController(canvas, $('#mundo-ui'), account.profile.equipped.char || settings.char, closeMundo);
+}
+
+function closeMundo() {
+  const ctl = mundoCtl;
+  mundoCtl = null;
+  ctl?.destroy();
+  show('screen-title');
 }
 
 function fillModeLists(grid: HTMLElement, more: HTMLElement) {
   grid.innerHTML = '';
   for (const m of MODE_INFO) grid.appendChild(modePickButton(m.id, m.name, m.desc, m.tag, m.color, m.icon));
-  grid.appendChild(modePickButton('mundo', 'ECO Mundo', 'Um mundo para explorar. Chega na próxima atualização.', 'Em breve', '#5dff8a', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="14" fill="rgba(93,255,138,.2)" stroke="#5dff8a" stroke-width="3"/><path d="M24 10v28M12 20c6 3 18 3 24 0M12 28c6-3 18-3 24 0" stroke="#c8ffd8" stroke-width="2" fill="none"/></svg>', true));
+  grid.appendChild(modePickButton('mundo', 'ECO Mundo', 'Vila segura, floresta e um chefe. Solo.', 'Solo', '#5dff8a', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="14" fill="rgba(93,255,138,.2)" stroke="#5dff8a" stroke-width="3"/><path d="M24 10v28M12 20c6 3 18 3 24 0M12 28c6-3 18-3 24 0" stroke="#c8ffd8" stroke-width="2" fill="none"/></svg>', false, openMundo));
   more.innerHTML = '';
   more.hidden = true;
 }
@@ -2651,6 +2669,11 @@ function frame(now: number) {
     laidW = innerWidth;
     laidH = innerHeight;
     layout();
+  }
+  if (mundoCtl) {
+    mundoCtl.frame(dt);
+    requestAnimationFrame(frame);
+    return;
   }
   if (game) {
     const g = game;

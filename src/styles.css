@@ -5302,3 +5302,97 @@ body.rewinding #hud-status {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------- ECO Mundo */
+#mundo-ui {
+  position: fixed;
+  inset: 0;
+  z-index: 16;
+  pointer-events: none;
+  color: var(--ink);
+}
+#mundo-ui button,
+#mundo-ui .mundo-panel {
+  pointer-events: auto;
+}
+.mundo-top {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: max(10px, env(safe-area-inset-top)) 12px 0;
+}
+.mundo-readout {
+  flex: 1;
+  min-width: 0;
+}
+.mundo-hp,
+.mundo-xp {
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.mundo-hp > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #5dff8a;
+}
+.mundo-xp > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #ffd23e;
+}
+.mundo-readout p,
+.mundo-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  text-shadow: 0 1px 2px #000;
+}
+.mundo-hint {
+  position: absolute;
+  left: 12px;
+  right: 150px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+}
+.mundo-actions {
+  position: absolute;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mundo-panel {
+  position: absolute;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 24px));
+  max-height: min(70vh, 460px);
+  overflow: auto;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(14, 12, 28, 0.94);
+  border: 1px solid rgba(140, 120, 255, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mundo-panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.mundo-panel p {
+  margin: 0;
+}
+.mundo-bag p {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
