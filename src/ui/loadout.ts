@@ -43,6 +43,9 @@ export interface PowerCardOpts {
   cost: number;
   /** texto curto. Sem isto, vale o papel do golpe. */
   line?: string;
+  /** faixa de equipados: tecla, ícone, nome e elemento — sem texto longo nem chips */
+  compact?: boolean;
+  key?: string;
 }
 
 /** Card da biblioteca. Ícone, nome, categoria · elemento, efeito curto, chips e estado. A tecla não entra. */
@@ -51,6 +54,10 @@ export function powerCardHtml(pw: PowerDef, opts: PowerCardOpts): string {
   const cls = ['pw-card', opts.state, opts.selected ? 'focus' : '', opts.linked ? 'syn-on' : '', opts.ult ? 'ult' : '', opts.extra ?? ''].filter(Boolean).join(' ');
   const line = opts.line || opts.why || powerRole(pw);
   const badge = opts.linked ? '<em class="pw-badge">Sinergia</em>' : '';
+  if (opts.compact) {
+    const key = opts.key ? `<kbd class="pw-key">${opts.key}</kbd>` : '';
+    return `<button type="button" class="${cls} slim" ${opts.attrs} data-state="${opts.state}" data-el="${pw.element}" title="${pw.name} — ${powerRole(pw)}">${key}${previewHtml(pw, 'sm')}<span class="pw-copy"><b class="pw-name">${pw.name}</b><small class="pw-meta">${opts.ult ? 'Suprema' : ELEMENT_NAME[pw.element]}${opts.linked ? ' · <i class="pw-syn-dot">sinergia</i>' : ''}</small></span></button>`;
+  }
   const chips = relevantFacts(pw, opts.slot, opts.cost)
     .map((f) => `<i class="pw-chip"><span>${f.label}</span> ${f.value}</i>`)
     .join('');
@@ -166,6 +173,7 @@ export class LoadoutScreen {
           attrs: `data-kit="${i}"`,
           slot: i,
           cost: SLOT_COST[i],
+          compact: true,
         });
       })
       .join('');
@@ -182,8 +190,9 @@ export class LoadoutScreen {
           extra: ' z',
           slot: -1,
           cost: current.cost,
+          compact: true,
         })
-      : `<button type="button" class="pw-card z empty${this.focusKind === 'extra' && !this.focusExtra ? ' focus' : ''}" data-slot="z" data-state="available">${previewEmpty('sm')}<span class="pw-copy"><b class="pw-name">Vazio</b><small class="pw-meta">Extra</small><em class="pw-line">Escolha um poder na lista.</em><em class="pw-state">${this.focusKind === 'extra' && !this.focusExtra ? 'Selecionado' : 'Disponível'}</em></span></button>`;
+      : `<button type="button" class="pw-card z empty slim${this.focusKind === 'extra' && !this.focusExtra ? ' focus' : ''}" data-slot="z" data-state="available"><kbd class="pw-key">${plasmaKey}</kbd>${previewEmpty('sm')}<span class="pw-copy"><b class="pw-name">Vazio</b><small class="pw-meta">Extra · escolha abaixo</small></span></button>`;
     slots.innerHTML = `<div class="pw-equip">${kitHtml}${zCard}</div>`;
     const keep = this.root.querySelector<HTMLElement>('.pw-grid')?.scrollTop ?? 0;
     slots.querySelectorAll<HTMLElement>('[data-kit]').forEach((el) => {
@@ -298,7 +307,7 @@ export class LoadoutScreen {
 
   private abilityCard(
     pw: PowerDef,
-    opts: { key: string; state: 'equipped' | 'available' | 'locked' | 'unavailable'; why: string; selected: boolean; linked: boolean; ult: boolean; attrs: string; extra?: string; slot: number; cost: number; line?: string },
+    opts: { key: string; state: 'equipped' | 'available' | 'locked' | 'unavailable'; why: string; selected: boolean; linked: boolean; ult: boolean; attrs: string; extra?: string; slot: number; cost: number; line?: string; compact?: boolean },
   ) {
     return powerCardHtml(pw, opts);
   }
@@ -321,7 +330,13 @@ export class LoadoutScreen {
     const facts = relevantFacts(picked, slot, cost);
     const owned = extra ? this.deps.owns('power:' + (picked as StudioDef).id) : true;
     const equipped = extra && current?.id === (picked as StudioDef).id;
-    const rows = this.shownRows(synergies, picked, equipped || !extra ? slot : -2);
+    // Extra ainda fora do Z: mostra o que ele fecharia se fosse equipado (e não as sinergias de outros poderes).
+    const preview = extra && !equipped;
+    const rows = preview
+      ? listSynergies(this.charId, (picked as StudioDef).id)
+          .filter((row) => row.slots.includes(-1) || row.powers.some((p) => p.name === picked.name))
+          .map((row) => (row.state === 'active' ? { ...row, state: 'possible' as const, need: 'Ative ao equipar no Z' } : row))
+      : this.shownRows(synergies, picked, slot);
     const syn = rows.length
       ? rows.map((row) => this.synergyRow(row)).join('')
       : `<li class="syn-row none"><span class="syn-copy"><b>Nenhuma</b><small>Este poder não fecha sinergia.</small></span><em class="syn-badge">— Nenhuma</em></li>`;
@@ -340,8 +355,9 @@ export class LoadoutScreen {
       const label = equipped ? 'Tirar do Z' : current ? 'Substituir' : 'Equipar';
       primary = `<button type="button" class="btn small primary" data-equip>${label}</button>`;
     }
-    const long = `<div class="pw-long"><p>${targetLine(picked)} Salvo: ${saved?.name ?? 'vazio'}. Agora: ${current?.name ?? 'vazio'}. Voltar mantém o salvo.</p>${note}</div>`;
-    return `<div class="pw-sheet" data-el="${picked.element}"><div class="pw-hero">${previewHtml(picked, 'lg')}<div class="pw-id"><h3>${picked.name}</h3><p class="pw-kicker">${categoryLabel(picked)} · ${ELEMENT_NAME[picked.element]}</p></div></div><div class="pw-scroll"><p class="pw-role">${powerRole(picked)}</p><ul class="pw-facts">${facts.map((f) => `<li><span>${f.label}</span><b>${f.value}</b></li>`).join('')}</ul><p class="pw-use">${useLine(picked)} ${aimLine(picked)}</p>${long}</div><div class="pw-syn-box"><h4>Sinergias</h4><ul class="pw-syn">${syn}</ul></div><div class="pw-actions">${primary}<button type="button" class="btn small" data-train>Treinar combo</button></div></div>`;
+    const slotLine = extra ? ` <small class="pw-saved">Z salvo: ${saved?.name ?? 'vazio'} · agora: ${current?.name ?? 'vazio'}. Voltar mantém o salvo.</small>` : '';
+    const long = `<div class="pw-long"><p>${targetLine(picked)}${slotLine}</p>${note}</div>`;
+    return `<div class="pw-sheet" data-el="${picked.element}"><div class="pw-hero">${previewHtml(picked, 'lg')}<div class="pw-id"><h3>${picked.name}</h3><p class="pw-kicker">${categoryLabel(picked)} · ${ELEMENT_NAME[picked.element]}</p></div></div><div class="pw-scroll"><p class="pw-role">${powerRole(picked)}</p><ul class="pw-facts">${facts.map((f) => `<li><span>${f.label}</span><b>${f.value}</b></li>`).join('')}</ul><p class="pw-use">${useLine(picked)} ${aimLine(picked)}</p>${long}</div><div class="pw-syn-box"><h4>${preview ? 'Sinergias se equipar' : 'Sinergias'}</h4><ul class="pw-syn">${syn}</ul></div><div class="pw-actions">${primary}<button type="button" class="btn small" data-train>Treinar combo</button></div></div>`;
   }
 
   private synergyRow(row: SynergyRow) {

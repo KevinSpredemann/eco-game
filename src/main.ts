@@ -985,10 +985,10 @@ function charDetail(at?: number) {
   const st = charState(c);
   const lvC = withLevel(c, st.lv);
   const nextC = withLevel(c, Math.min(5, st.lv + 1));
-  const next = selectCtx === 'lobby' ? 'Usar na sala ›' : usesLoadout() ? 'Poderes ›' : 'Escolher mapa ›';
   const coins = account.profile.coins;
+  // Seguir é só pelo PRÓXIMO do topo; aqui fica apenas a compra de quem está bloqueado.
   const action = st.owned
-    ? `<button class="btn primary go-btn" data-action="to-map">${next}</button>`
+    ? ''
     : coins >= st.price
       ? `<button class="btn primary go-btn" id="buy-char"><span class="coin"></span>Libera com ${st.price} moedas</button>`
       : `<button class="btn go-btn" disabled>Libera com ${st.price} moedas · faltam ${st.price - coins}</button>`;
@@ -1563,7 +1563,7 @@ function openLoadout(ctx: 'pre' | 'pause' | 'lobby') {
     charId: ctx === 'pause' && game ? game.human.char.id : settings.char,
     loadout: settings.loadout,
     subtitle: sub,
-    confirmText: ctx === 'pre' ? 'Mapa ›' : 'Confirmar ✓',
+    confirmText: ctx === 'pre' ? 'Próximo ›' : 'Confirmar ✓',
     onConfirm: (l) => {
       settings.loadout = l;
       saveSettings(settings);
@@ -2015,12 +2015,27 @@ function powerHasTarget(me: { id: string; x: number; y: number; team: number }, 
   return game.players.some((o) => o.alive && o.id !== me.id && game!.hostile(me, o) && Math.hypot(o.x - me.x, o.y - me.y) <= reach);
 }
 
+/** combo armado: tecla, nome e quanto falta da janela (0–1) */
+function comboState(g: AnyGame): { key: string; name: string; frac: number } | null {
+  const me = g.human;
+  if (!me.alive) return null;
+  const foes = g.players
+    .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
+    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
+  const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
+  const hit = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
+  if (hit) return { key: input.touchMode ? ['Q', 'E', 'R', 'F'][hit.slot] : hit.key, name: hit.name, frac: hit.total ? Math.min(1, hit.left / hit.total) : 0 };
+  const plasma = g.players.find((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
+  if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return { key: '', name: 'Explosão de Plasma', frac: Math.min(1, plasma.plasmaT / 4) };
+  return null;
+}
+
 function comboLine(g: AnyGame): string {
   const me = g.human;
   if (!me.alive) return '';
   const foes = g.players
     .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT }));
+    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
   const plasma = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
   if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return 'COMBO DISPONÍVEL: Explosão de Plasma';
   const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
@@ -2043,7 +2058,7 @@ function buildSlots(g: AnyGame): SlotView[] {
     const labels = [K('ability'), K('skill'), K('ult'), K('bonus')];
     const foes = g.players
       .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-      .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT }));
+      .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
     const ready = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
     const plasmaUp = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
     // Barra: Q, E, F, R e depois o Z. O índice do kit não muda (R continua no espaço 2).
@@ -2373,10 +2388,21 @@ function updateHud() {
   const tune = tuneHint(g.arena.id);
   setText('#hud-tune', tune);
   $('#hud-tune').hidden = !tune || g.phase === 'results';
-  const combo = powersMatch(g) ? comboLine(g) : '';
+  // combo armado: tecla + nome + barra da janela que está acabando (some sozinho quando fecha)
+  const cs = powersMatch(g) && g.phase === 'play' ? comboState(g) : null;
   const comboEl = $('#hud-combo');
-  comboEl.hidden = !combo;
-  if (comboEl.textContent !== combo) comboEl.textContent = combo;
+  comboEl.hidden = !cs;
+  if (cs) {
+    const sig = `${cs.key}|${cs.name}`;
+    if (comboEl.dataset.sig !== sig) {
+      comboEl.dataset.sig = sig;
+      comboEl.innerHTML = `<span class="cb-tag">COMBO</span>${cs.key ? `<kbd>${escapeHtml(cs.key)}</kbd>` : ''}<b>${escapeHtml(cs.name)}</b><i class="cb-bar"><i></i></i>`;
+      comboEl.classList.remove('pop');
+      void comboEl.offsetWidth;
+      comboEl.classList.add('pop');
+    }
+    (comboEl.querySelector('.cb-bar i') as HTMLElement).style.width = `${Math.round(cs.frac * 100)}%`;
+  } else comboEl.dataset.sig = '';
   scoreboard.update(g);
   const me = g.human;
   const ab = me.char.ability;
@@ -2527,6 +2553,20 @@ function panOf(x: number) {
 }
 
 let lastShootSound = 0;
+let comboPopT = 0;
+function comboPop(name: string, bonus: number, vfx?: string) {
+  const el = $('#combo-pop');
+  const col = vfx === 'ult' ? '#f0d78c' : vfx === 'root' ? '#7dff9a' : vfx === 'burst' ? '#9ad7ff' : '#ffe14a';
+  el.style.setProperty('--c', col);
+  el.innerHTML = `<b>${escapeHtml(name.toUpperCase())}</b>${bonus > 0 ? `<small>COMBO +${Math.round(bonus)}</small>` : ''}`;
+  el.hidden = false;
+  el.classList.remove('on');
+  void el.offsetWidth;
+  el.classList.add('on');
+  clearTimeout(comboPopT);
+  comboPopT = window.setTimeout(() => (el.hidden = true), 1150);
+}
+
 function onEvents(events: GameEvent[]) {
   if (!game) return;
   const g = game;
@@ -2571,8 +2611,9 @@ function onEvents(events: GameEvent[]) {
         if (mine && hintStage === 3) hintStage = 4;
         break;
       case 'combo':
-        showTip(e.name, 1.6);
         audio.combo(panOf(e.x), e.vfx === 'ult');
+        // combo SEU: nome grande e rápido no alto (sem caixa de texto no meio da arena)
+        if (mine) comboPop(e.name, e.bonus, e.vfx);
         break;
       case 'deny':
         audio.fail(panOf(g.players.find((p) => p.id === e.pid)?.x ?? g.human.x));
