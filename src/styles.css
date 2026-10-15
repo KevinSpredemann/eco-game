@@ -1931,7 +1931,6 @@ input[type='checkbox'] {
   display: block;
   z-index: 1;
 }
-.car-card.center canvas.portrait,
 .car-card.center canvas.preview {
   visibility: hidden;
 }

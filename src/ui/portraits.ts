@@ -11,17 +11,13 @@ export function dpr(): number {
   return Math.min(window.devicePixelRatio || 1, 3);
 }
 
-/** Desenha o personagem de corpo inteiro num canvas de card. */
-export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { locked?: boolean; time?: number; acc?: string } = {}) {
-  const w = cv.clientWidth || cv.width;
-  const h = cv.clientHeight || cv.height;
+/**
+ * Arte do card de seleção, no centro e nas laterais.
+ * Mesmo chão, mesma escala e a mesma vista de frente para os 28.
+ * Não usa folha de estúdio nem uma imagem genérica.
+ */
+export function paintSelectCenter(g: CanvasRenderingContext2D, c: CharacterDef, w: number, h: number, opts: { time?: number; acc?: string } = {}) {
   if (!w || !h) return;
-  const k = dpr();
-  cv.width = Math.round(w * k);
-  cv.height = Math.round(h * k);
-  const g = cv.getContext('2d')!;
-  g.setTransform(k, 0, 0, k, 0, 0);
-  // fundo
   const bg = g.createLinearGradient(0, 0, 0, h);
   bg.addColorStop(0, shade(c.glow ?? c.color, -0.78));
   bg.addColorStop(1, '#0b0820');
@@ -32,7 +28,6 @@ export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { loc
   halo.addColorStop(1, hexA(c.color, 0));
   g.fillStyle = halo;
   g.fillRect(0, 0, w, h);
-  // linhas de energia
   g.strokeStyle = hexA(c.color, 0.12);
   g.lineWidth = 1;
   for (let y = h * 0.62; y < h; y += 7) {
@@ -57,6 +52,19 @@ export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { loc
   drawCharacter(g, c, 'down', opts.time ?? 0, false);
   if (acc && !accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
   g.restore();
+}
+
+/** Desenha o personagem de corpo inteiro num canvas de card. */
+export function drawPortrait(cv: HTMLCanvasElement, c: CharacterDef, opts: { locked?: boolean; time?: number; acc?: string } = {}) {
+  const w = cv.clientWidth || cv.width;
+  const h = cv.clientHeight || cv.height;
+  if (!w || !h) return;
+  const k = dpr();
+  cv.width = Math.round(w * k);
+  cv.height = Math.round(h * k);
+  const g = cv.getContext('2d')!;
+  g.setTransform(k, 0, 0, k, 0, 0);
+  paintSelectCenter(g, c, w, h, opts);
 }
 
 const spriteCache = new Map<string, HTMLImageElement>();

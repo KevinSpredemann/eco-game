@@ -24,7 +24,6 @@ import { drawGear } from './ui/gearArt';
 import { Scoreboard } from './ui/scoreboard';
 import { avatarURL, drawMapPreview, drawPortrait } from './ui/portraits';
 import { Carousel, fitText } from './ui/carousel';
-import { HeroScene } from './ui/heroArt';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
 import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex, studioOf } from './game/elements';
@@ -334,7 +333,6 @@ function show(id: string | null) {
   }
   if (id === 'screen-cosmetics') startCosPreview();
   else stopCosPreview();
-  if (id !== 'screen-select') heroScene.stop();
   if (id !== 'screen-map') mapScene.stop();
   const inGame = !!game && (id === null || id === 'screen-pause' || id === 'screen-results' || id === 'screen-options');
   $('#hud').hidden = !inGame || id === 'screen-results';
@@ -911,7 +909,6 @@ $('#cos-tabs')?.addEventListener('click', (e) => {
 const usesLoadout = () => true;
 
 // ------------------------------------------------------------------ seleção (personagem → mapa): carrosséis
-const heroScene = new HeroScene(document.createElement('canvas'));
 const mapScene = new MapScene(document.createElement('canvas'));
 let charCar: Carousel | null = null;
 let mapCar: Carousel | null = null;
@@ -943,7 +940,6 @@ function refreshCharCards() {
     requestAnimationFrame(() => drawPortrait(el.querySelector('canvas')!, withSkin(c, skin), { locked: !st.owned }));
   });
   fitText(charCar.center.querySelector<HTMLElement>('.car-label b'));
-  placeHeroStage();
   $('#char-thumbs')
     .querySelectorAll<HTMLElement>('button')
     .forEach((b, i) => {
@@ -954,16 +950,6 @@ function refreshCharCards() {
       const tn = b.querySelector('.tn');
       if (tn) tn.textContent = st.owned ? CHARACTERS[i].name : `${CHARACTERS[i].name} · ${st.price}`;
     });
-}
-
-function placeHeroStage() {
-  if (!charCar) return;
-  const c = CHARACTERS[charCar.index];
-  const cv = (heroScene as any).cv as HTMLCanvasElement;
-  cv.className = 'stage';
-  charCar.center.appendChild(cv);
-  const st = charState(c);
-  heroScene.set(withSkin(withLevel(c, abilityLevel(account.profile, c.id)), account.profile.equipped.skin), !st.owned, st.owned ? '' : `Libera com ${st.price} moedas`);
 }
 
 /**
@@ -1057,7 +1043,6 @@ function buildCharCarousel() {
       .querySelectorAll('button')
       .forEach((b, k) => b.classList.toggle('on', k === i));
     ($('#char-thumbs').children[i] as HTMLElement)?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-    placeHeroStage();
     charDetail();
     audio.ability(c.ability.id);
     if (charState(c).owned) {
@@ -1192,7 +1177,6 @@ function openSelect() {
   lockPanelHeight($('#char-detail'), CHARACTERS.length, (i) => charDetail(i), idx);
   charCar!.set(idx, true);
   refreshCharCards();
-  heroScene.start();
 }
 const LOCK = '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="11" width="14" height="10" rx="2" fill="#ffd23e"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#ffd23e" stroke-width="2.4" fill="none"/></svg>';
 
