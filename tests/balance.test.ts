@@ -99,6 +99,8 @@ describe('balanceamento central', () => {
     expect(pa.energy).toBe(energy);
     pa.ultCharge = 100;
     g.step(STEP, { a: { ...idle, ult: true, ca: 0, cr: 100 }, b: idle });
+    // a suprema prepara (aviso no chão) e depois sai
+    for (let k = 0; k < 30; k++) g.step(STEP, { a: idle, b: idle });
     expect(pa.powerCd[2]).toBeGreaterThan(0);
     expect(pa.ultCharge).toBeLessThan(40);
     expect(pa.energy).toBe(energy);

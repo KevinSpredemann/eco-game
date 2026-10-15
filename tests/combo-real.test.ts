@@ -47,6 +47,8 @@ function duel(charId: string, d: number) {
     a.y = 360;
     a.energy = 100;
     a.ultCharge = 100;
+    a.powerCd.fill(0);
+    a.castT = 0;
   };
   return { g, a, b, log, run, refill };
 }

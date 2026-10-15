@@ -26,7 +26,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 11;
+export const PROTO = 12;
 
 export interface RoomInfo {
   code: string;
@@ -116,6 +116,8 @@ export interface Snapshot {
   W: (number | string)[][];
   C: (number | string)[][];
   GR?: number[][];
+  /** rastro da suprema no chão */
+  UZ?: (number | string)[][];
   E: (number | string)[][];
   EM?: (number | string)[][];
   ED?: EchoDigest[];
@@ -266,11 +268,13 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
       r1(p.ctrlT),
       r1(p.rootT),
       r1(p.stunT),
+      r1(p.iceT),
     ]),
     F: g.fragments.map((f) => [f.id, r1(f.x), r1(f.y), f.golden ? 1 : 0]),
     W: g.powerups.map((w) => [w.id, w.kind, r1(w.x), r1(w.y), r1(w.age)]),
     C: g.clones.map((c) => [c.owner, r1(c.x), r1(c.y), r2(c.dir), c.decoy ? 1 : 0]),
     GR: g.groves.map((gr) => [gr.id, r1(gr.x), r1(gr.y), gr.r, r1(gr.t), gr.heal]),
+    UZ: g.ultZones.map((z) => [z.id, z.owner, r1(z.x), r1(z.y), z.r, EL_IDS.indexOf(z.el as (typeof EL_IDS)[number]), r2(z.t), r2(z.total), z.blown ? 1 : 0]),
     E: g.echoViews.map((e) => [e.key, r1(e.x), r1(e.y), r2(e.dir), (e.moving ? 1 : 0) | (e.active ? 2 : 0) | (e.disrupted ? 4 : 0) | (e.iced ? 8 : 0) | (e.expiring ? 16 : 0), r2(e.pulse), e.age, r2(e.warn ?? 0), r2(e.warnAng ?? 0), e.warnKind ?? 0, r1(e.offLeft ?? 0)]),
     EM: withEchoMeta ? g.echoViews.map((e) => [e.key, e.rec.playerId, e.rec.characterId, e.rec.color, e.rec.round]) : undefined,
     ED: withRoutes ? [...g.echoDigests.values()] : undefined,

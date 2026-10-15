@@ -153,14 +153,41 @@ export interface Kit {
 }
 
 export interface Combo {
-  id: 'shatter' | 'steam' | 'cinder' | 'storm' | 'arc' | 'thermal' | 'chill';
+  id: 'shatter' | 'steam' | 'cinder' | 'storm' | 'arc' | 'thermal' | 'chill' | 'freeze' | 'vortex';
   name: string;
   bonus: number;
   clearFrozen?: boolean;
   aoe?: number;
+  /** congela: segura o alvo parado por estes segundos */
+  hold?: number;
+  /** puxa os inimigos deste raio para o alvo */
+  pull?: number;
+  /** espalha a queimadura para quem está neste raio */
+  spreadBurn?: number;
 }
 
 export const BURN_TIME = 3;
+/**
+ * Onde a suprema cai fica uma marca do elemento. Raio e duração no chão.
+ * Fogo: zona que queima (pouco dano por tique). Água: onda que empurra e molha.
+ * Terra: pilares que prendem. Ar: vórtice que puxa e no fim arremessa.
+ */
+export const ULT_LAND: Record<Element, { r: number; t: number; name: string; desc: string }> = {
+  fire: { r: 92, t: 2.6, name: 'Colapso Solar', desc: 'Explode e deixa o chão em chamas por 2,6 s.' },
+  ice: { r: 130, t: 1.0, name: 'Maré Abissal', desc: 'Uma onda empurra para fora e deixa molhado.' },
+  nature: { r: 110, t: 1.4, name: 'Ruptura Titânica', desc: 'Pilares sobem do chão e prendem quem está na área.' },
+  wind: { r: 140, t: 1.3, name: 'Tempestade do Vazio', desc: 'Um vórtice puxa para o centro e no fim arremessa.' },
+  lightning: { r: 100, t: 0.8, name: 'Tempestade Elétrica', desc: 'Raios caem em volta e deixam tonto.' },
+  shadow: { r: 80, t: 0.7, name: 'Eclipse', desc: 'A sombra explode no ponto do impacto.' },
+  plasma: { r: 90, t: 0.8, name: 'Colapso de Plasma', desc: 'O plasma explode no ponto do impacto.' },
+};
+/** Ultimate: preparo mínimo (o rival vê o aviso no chão e pode reagir) */
+export const ULT_WINDUP = 0.45;
+/** dano de cada tique da zona de fogo da suprema (a cada 0,5 s) */
+export const ULT_FIRE_TICK = 2;
+
+/** Congelamento: tempo parado dentro do gelo. */
+export const FREEZE_HOLD = 0.9;
 export const FROZEN_TIME = 2.4;
 export const MARK_TIME = 3.2;
 export const BURN_TICK = 0.5;
@@ -255,9 +282,16 @@ const BASE: Omit<PowerDef, 'name' | 'element'>[] = [
   { cd: 3.6, dmg: 8, range: 240, speed: 680, radius: 16 },
 ];
 
+/** Geada era gelo; agora o elemento é Água: o golpe em linha vira jato, o de área vira onda. */
+function waterName(name: string, i: number): string {
+  if (name !== 'Geada' && name !== 'Gelo Sombrio') return name;
+  if (name === 'Gelo Sombrio') return 'Água Sombria';
+  return BASE[i].speed <= 0 ? 'Onda' : "Jato d'Água";
+}
+
 function kit(els: [Element, Element, Element, Element], names: [string, string, string, string], passive: PassiveId, passiveName: string, passiveDesc: string): Kit {
   return {
-    powers: BASE.map((b, i) => ({ ...b, name: names[i], element: els[i] })) as Kit['powers'],
+    powers: BASE.map((b, i) => ({ ...b, name: waterName(names[i], i), element: els[i] })) as Kit['powers'],
     passive,
     passiveName,
     passiveDesc,
@@ -269,14 +303,14 @@ export const KITS: Record<string, Kit> = {
   kael: kit(['wind', 'ice', 'lightning', 'fire'], ['Rajada', 'Orvalho', 'Faísca', 'Brasa'], 'knock', 'Corrente de ar', 'O vento empurra mais forte.'),
   luna: kit(['lightning', 'ice', 'fire', 'wind'], ['Faísca', 'Orvalho', 'Labareda', 'Rajada'], 'refund', 'Improviso', 'Um combo devolve um pouco da recarga.'),
   bruno: kit(['wind', 'fire', 'ice', 'lightning'], ['Rajada', 'Labareda', 'Geada', 'Faísca'], 'wall', 'Leitura do mapa', 'Pancada na parede atordoa por mais tempo.'),
-  zoe: kit(['ice', 'wind', 'fire', 'lightning'], ['Geada', 'Rajada', 'Labareda', 'Faísca'], 'hunter', 'Caça ao lento', 'Golpeia mais forte quem está congelado.'),
+  zoe: kit(['ice', 'wind', 'fire', 'lightning'], ['Geada', 'Rajada', 'Labareda', 'Faísca'], 'hunter', 'Caça ao lento', 'Golpeia mais forte quem está molhado.'),
   maya: kit(['fire', 'wind', 'ice', 'lightning'], ['Labareda', 'Sopro Quente', 'Geada', 'Faísca'], 'pyro', 'Maga do fogo', 'Causa dano extra em quem já está queimando.'),
   zed: kit(['lightning', 'ice', 'wind', 'fire'], ['Sobrecarga', 'Geada', 'Rajada', 'Brasa'], 'stun', 'Sobrecarga', 'O raio deixa tonto por mais tempo.'),
   nyx: kit(['ice', 'lightning', 'wind', 'fire'], ['Gelo Sombrio', 'Corte Relâmpago', 'Rajada', 'Fagulha'], 'speed', 'Passo do combo', 'Cada combo deixa ela mais rápida.'),
   rex: kit(['fire', 'lightning', 'wind', 'ice'], ['Fornalha', 'Faísca', 'Rajada', 'Geada'], 'tick', 'Fornalha', 'A queimadura dele dói mais.'),
   iris: kit(['ice', 'wind', 'lightning', 'fire'], ['Geada', 'Brisa', 'Faísca', 'Brasa'], 'heal', 'Alívio', 'Cada combo cura um pouco.'),
   tara: kit(['wind', 'lightning', 'fire', 'ice'], ['Rajada', 'Faísca', 'Labareda', 'Geada'], 'stunhunt', 'Quebra-guarda', 'Golpeia mais forte quem está tonto.'),
-  kai: kit(['ice', 'lightning', 'fire', 'wind'], ['Geada', 'Estilhaço', 'Labareda', 'Rajada'], 'shatter', 'Gelo profundo', 'Estilhaçar causa mais dano.'),
+  kai: kit(['ice', 'lightning', 'fire', 'wind'], ['Geada', 'Estilhaço', 'Labareda', 'Rajada'], 'shatter', 'Água profunda', 'Eletrocutar causa mais dano.'),
   leo: kit(['lightning', 'wind', 'ice', 'fire'], ['Descarga', 'Vendaval', 'Geada', 'Brasa'], 'chain', 'Condutor', 'Tempestade causa mais dano.'),
   mei: kit(['fire', 'ice', 'wind', 'lightning'], ['Caldeira', 'Geada', 'Vapor', 'Faísca'], 'steam', 'Pressão', 'A explosão de vapor alcança mais longe.'),
   duda: kit(['lightning', 'fire', 'wind', 'ice'], ['Centelha', 'Faísca', 'Rajada', 'Geada'], 'haste', 'Oficina', 'As recargas dos poderes são mais curtas.'),
@@ -345,13 +379,13 @@ export const KITS: Record<string, Kit> = {
     ],
     passive: 'hunter',
     passiveName: 'Cordas',
-    passiveDesc: 'O gelo da corda deixa lento. O tiro para na parede.',
+    passiveDesc: 'A água da corda deixa lento. O tiro para na parede.',
   },
   metra: {
     powers: [
       { name: 'Pulso do Metrônomo', element: 'lightning', cd: 4.5, dmg: 10, range: 150, speed: 0, radius: 82, category: 'attack' },
       { name: 'Brasa', element: 'fire', cd: 3.4, dmg: 8, range: 240, speed: 700, radius: 14, category: 'attack' },
-      { name: 'Geada', element: 'ice', cd: 6.5, dmg: 13, range: 280, speed: 620, radius: 16, category: 'attack' },
+      { name: "Jato d'Água", element: 'ice', cd: 6.5, dmg: 13, range: 280, speed: 620, radius: 16, category: 'attack' },
       { name: 'Rajada', element: 'wind', cd: 4.2, dmg: 8, range: 140, speed: 0, radius: 78, category: 'control' },
     ],
     passive: 'stun',
@@ -361,7 +395,7 @@ export const KITS: Record<string, Kit> = {
   resona: {
     powers: [
       { name: 'Pulsar Sônico', element: 'wind', cd: 4.6, dmg: 9, range: 160, speed: 0, radius: 90, category: 'control' },
-      { name: 'Geada', element: 'ice', cd: 3.5, dmg: 8, range: 250, speed: 700, radius: 14, category: 'attack' },
+      { name: "Jato d'Água", element: 'ice', cd: 3.5, dmg: 8, range: 250, speed: 700, radius: 14, category: 'attack' },
       { name: 'Descarga', element: 'lightning', cd: 6.8, dmg: 15, range: 310, speed: 600, radius: 18, category: 'attack' },
       { name: 'Brasa', element: 'fire', cd: 3.2, dmg: 8, range: 220, speed: 740, radius: 14, category: 'attack' },
     ],
@@ -372,7 +406,7 @@ export const KITS: Record<string, Kit> = {
   rufo: {
     powers: [
       { name: 'Rufar', element: 'fire', cd: 4.2, dmg: 12, range: 160, speed: 0, radius: 22, category: 'attack', act: 'dash' },
-      { name: 'Geada', element: 'ice', cd: 3.6, dmg: 8, range: 240, speed: 680, radius: 14, category: 'attack' },
+      { name: "Jato d'Água", element: 'ice', cd: 3.6, dmg: 8, range: 240, speed: 680, radius: 14, category: 'attack' },
       { name: 'Estalo', element: 'lightning', cd: 6.4, dmg: 14, range: 280, speed: 640, radius: 16, category: 'attack' },
       { name: 'Rajada', element: 'wind', cd: 4.5, dmg: 8, range: 140, speed: 0, radius: 80, category: 'control' },
     ],
@@ -389,12 +423,12 @@ export const KITS: Record<string, Kit> = {
     ],
     passive: 'heal',
     passiveName: 'Escala',
-    passiveDesc: 'O gelo no chão deixa lento quem está no círculo.',
+    passiveDesc: 'A água no chão deixa lento quem está no círculo.',
   },
   vibra: {
     powers: [
       { name: 'Campo Vibrato', element: 'wind', cd: 4.4, dmg: 9, range: 150, speed: 0, radius: 86, category: 'control' },
-      { name: 'Geada', element: 'ice', cd: 3.5, dmg: 7, range: 240, speed: 700, radius: 14, category: 'attack' },
+      { name: "Jato d'Água", element: 'ice', cd: 3.5, dmg: 7, range: 240, speed: 700, radius: 14, category: 'attack' },
       { name: 'Estalo', element: 'lightning', cd: 6.6, dmg: 14, range: 300, speed: 620, radius: 16, category: 'attack' },
       { name: 'Brasa', element: 'fire', cd: 3.3, dmg: 8, range: 220, speed: 740, radius: 14, category: 'attack' },
     ],
@@ -418,7 +452,7 @@ export const KITS: Record<string, Kit> = {
       { name: 'Sussurro Falso', element: 'lightning', cd: 5.2, dmg: 8, range: 110, speed: 0, radius: 26, category: 'mobility', act: 'blink', step: 110 },
       { name: 'Nota', element: 'wind', cd: 3.6, dmg: 8, range: 230, speed: 700, radius: 14, category: 'attack' },
       { name: 'Labareda', element: 'fire', cd: 6.4, dmg: 14, range: 280, speed: 640, radius: 16, category: 'attack' },
-      { name: 'Geada', element: 'ice', cd: 4.6, dmg: 7, range: 140, speed: 0, radius: 74, category: 'control' },
+      { name: 'Onda', element: 'ice', cd: 4.6, dmg: 7, range: 140, speed: 0, radius: 74, category: 'control' },
     ],
     passive: 'shatter',
     passiveName: 'Sumiço',
@@ -430,32 +464,39 @@ export function kitOf(id: string): Kit {
   return KITS[id] ?? KITS.kael;
 }
 
+/**
+ * Quatro elementos principais: Fogo, Água, Terra e Ar. O id interno continua o antigo
+ * (ice = Água, nature = Terra, wind = Ar) para não quebrar save, rede e testes.
+ * Raio, Sombra e Plasma são poderes especiais, fora dos quatro.
+ */
+export const MAIN_ELEMENTS: readonly Element[] = ['fire', 'ice', 'nature', 'wind'];
+
 export const ELEMENT_NAME: Record<Element, string> = {
   fire: 'Fogo',
-  ice: 'Gelo',
+  ice: 'Água',
   lightning: 'Raio',
-  wind: 'Vento',
-  nature: 'Natureza',
+  wind: 'Ar',
+  nature: 'Terra',
   shadow: 'Sombra',
   plasma: 'Plasma',
 };
 
 export const ELEMENT_COLOR: Record<Element, string> = {
   fire: '#ff7a59',
-  ice: '#9fe8ff',
+  ice: '#4fb8ff',
   lightning: '#ffe14a',
   wind: '#7dffe0',
-  nature: '#3dcc6a',
+  nature: '#c99a52',
   shadow: '#8a7cff',
   plasma: PLASMA_COLOR,
 };
 
 export const ELEMENT_FX: Record<Element, string> = {
   fire: 'queima por alguns segundos',
-  ice: 'deixa lento',
+  ice: 'deixa molhado e lento',
   lightning: 'deixa tonto',
   wind: 'empurra para trás',
-  nature: 'enraíza por um instante',
+  nature: 'prende no chão por um instante',
   shadow: 'não marca o alvo; o piscar prepara a emboscada',
   plasma: 'empurra com a onda',
 };
@@ -477,9 +518,14 @@ const EMPTY: Aura = { burn: 0, frozen: 0, gust: 0, shock: 0 };
 
 /** Um combo de sequência por golpe. A pancada na parede é à parte. */
 export function comboOf(aura: Aura, next: Element): Combo | null {
-  if (aura.frozen > 0 && next === 'lightning') return { id: 'shatter', name: 'Estilhaçar', bonus: 16, clearFrozen: true };
+  if (aura.frozen > 0 && next === 'lightning') return { id: 'shatter', name: 'Eletrocutar', bonus: 16, clearFrozen: true };
   if (aura.frozen > 0 && next === 'fire') return { id: 'steam', name: 'Vapor', bonus: 14, clearFrozen: true, aoe: 72 };
-  if (aura.burn > 0 && next === 'wind') return { id: 'cinder', name: 'Brasas', bonus: 10 };
+  // Água + Água: o alvo molhado congela de verdade (fica parado e sem conjurar)
+  if (aura.frozen > 0 && next === 'ice') return { id: 'freeze', name: 'Congelamento', bonus: 8, clearFrozen: true, hold: FREEZE_HOLD };
+  // Água + Ar: redemoinho que puxa quem está perto para o alvo
+  if (aura.frozen > 0 && next === 'wind') return { id: 'vortex', name: 'Vórtice', bonus: 9, clearFrozen: true, aoe: 96, pull: 96 };
+  // Fogo + Ar: o fogo vira um redemoinho e pega em quem está perto
+  if (aura.burn > 0 && next === 'wind') return { id: 'cinder', name: 'Inferno Espiral', bonus: 10, aoe: 80, spreadBurn: 80 };
   if (aura.gust > 0 && next === 'lightning') return { id: 'storm', name: 'Tempestade', bonus: 12 };
   if (aura.shock > 0 && next === 'fire') return { id: 'arc', name: 'Arco-chama', bonus: 10 };
   if (aura.burn > 0 && next === 'ice') return { id: 'thermal', name: 'Choque térmico', bonus: 8 };
@@ -574,6 +620,11 @@ export function botPower(kitDef: Kit, cds: number[], mark: Aura, dist: number, n
     if (fire !== null) return fire;
     const plasma = slotOf(kitDef, cds, 'plasma', dist);
     if (plasma !== null) return plasma;
+    // Água molhou: Ar faz o Vórtice, Água de novo congela
+    const wind = slotOf(kitDef, cds, 'wind', dist);
+    if (wind !== null) return wind;
+    const water = slotOf(kitDef, cds, 'ice', dist);
+    if (water !== null) return water;
   }
   if ((aura.root ?? 0) > 0) {
     for (let i = 0; i < 4; i++) {

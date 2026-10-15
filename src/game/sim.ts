@@ -57,6 +57,9 @@ import {
   WALL_REACH,
   bonusDamage,
   burnDpsOf,
+  ULT_LAND,
+  ULT_FIRE_TICK,
+  ULT_WINDUP,
   cooldownOf,
   gustSlow,
   healOnCombo,
@@ -215,6 +218,8 @@ export interface Player {
    * e o segundo golpe quase nunca chegava a tempo.
    */
   ctrlT: number;
+  /** Congelamento (Água + Água): preso dentro do gelo por este tempo */
+  iceT: number;
   /** o espaço extra desta partida trouxe a Rajada de Plasma */
   plasmaOn: boolean;
   /** combos fechados nesta rodada (a ninja fica mais rápida) */
@@ -284,7 +289,7 @@ export interface Player {
   /** preparando um golpe (não atira, anda devagar) */
   castT: number;
   /** golpe com preparo: ainda não gastou energia nem recarga */
-  pendingCast: { slot: number; ang: number; ca?: number | null; cr?: number | null; at: number } | null;
+  pendingCast: { slot: number; ang: number; ca?: number | null; cr?: number | null; ch?: number | null; at: number } | null;
   /** recarga do ataque básico */
   basicCd: number;
   /** preso no chão. Não anda nem esquiva. */
@@ -501,6 +506,8 @@ export interface Bullet {
   slot?: number;
   /** este projétil marca, não enraíza */
   mark?: boolean;
+  /** a ultimate deste projétil já caiu (uma vez só) */
+  landed?: boolean;
 }
 
 export interface Bomb {
@@ -562,6 +569,23 @@ export interface Clone {
   absorb?: number;
   pop?: number;
 }
+
+/** Rastro da ultimate no chão: zona de fogo, maré, vórtice, pilares... Some sozinho. */
+export interface UltZone {
+  id: number;
+  owner: string;
+  x: number;
+  y: number;
+  r: number;
+  el: Element;
+  t: number;
+  total: number;
+  acc: number;
+  /** vórtice: a rajada final já saiu */
+  blown?: boolean;
+}
+
+export { ULT_WINDUP } from './elements';
 
 export interface Grove {
   id: number;
@@ -678,7 +702,9 @@ export type GameEvent =
   /** projétil de poder acabou sem acertar (parede ou alcance): dissipa no lugar */
   | { type: 'pend'; x: number; y: number; el: string; wall?: boolean }
   /** começou o preparo de um poder (energia na mão) */
-  | { type: 'windup'; pid: string; x: number; y: number; el: string; t: number }
+  | { type: 'windup'; pid: string; x: number; y: number; el: string; t: number; ult?: boolean; tx?: number; ty?: number; r?: number; lane?: boolean }
+  /** a ultimate caiu: efeito grande no chão (mesmo ponto do efeito real) */
+  | { type: 'ultland'; pid: string; x: number; y: number; el: string; r: number }
   /** piscar: de onde saiu para onde chegou (posição real) */
   | { type: 'blink'; pid: string; x0: number; y0: number; x1: number; y1: number; el: string }
   | { type: 'deny'; pid: string; msg: string; x?: number; y?: number };
@@ -709,6 +735,7 @@ export class Game {
   fragments: Fragment[] = [];
   clones: Clone[] = [];
   groves: Grove[] = [];
+  ultZones: UltZone[] = [];
   powerups: { id: number; kind: PowerId; x: number; y: number; age: number }[] = [];
   bullets: Bullet[] = [];
   bombs: Bomb[] = [];
@@ -885,6 +912,7 @@ export class Game {
       fieldEl: '',
       reactCd: 0,
       ctrlT: 0,
+      iceT: 0,
       plasmaOn: !!lo.secondary,
       comboStacks: 0,
       hidden: false,
@@ -999,6 +1027,7 @@ export class Game {
     this.abilityOrbs = [];
     this.orbTimer = 5 + Math.random() * 3;
     this.iceWalls = [];
+    this.ultZones = [];
     this.vortexes = [];
     this.smokes = [];
     this.hooks = [];
@@ -1058,6 +1087,7 @@ export class Game {
         fieldEl: '',
         reactCd: 0,
         ctrlT: 0,
+        iceT: 0,
         comboStacks: 0,
         tookDamage: false,
         tripleDone: false,
@@ -1325,6 +1355,7 @@ export class Game {
     }
     this.updateClones(dt);
     this.updateGroves(dt);
+    this.updateUltZones(dt);
     this.updateTurrets(dt);
     this.replayEchoActions(tms);
     this.updatePowerups(dt);
@@ -1535,6 +1566,7 @@ export class Game {
       if (p.fieldT <= 0) p.fieldEl = '';
       p.reactCd = Math.max(0, p.reactCd - dt);
       p.ctrlT = Math.max(0, p.ctrlT - dt);
+      p.iceT = Math.max(0, p.iceT - dt);
       p.basicCd = Math.max(0, p.basicCd - dt);
       p.rootT = Math.max(0, p.rootT - dt);
       p.rootResistT = Math.max(0, p.rootResistT - dt);
@@ -1595,7 +1627,7 @@ export class Game {
       const c = p.pendingCast;
       p.pendingCast = null;
       p.castT = 0;
-      this.castPower(p, c.slot, c.ang, { mx: 0, my: 0, dash: false, ability: false, ca: c.ca, cr: c.cr });
+      this.castPower(p, c.slot, c.ang, { mx: 0, my: 0, dash: false, ability: false, ca: c.ca, cr: c.cr, ch: c.ch });
     }
     const free = p.stunT <= 0 && p.castT <= 0;
 
@@ -2899,16 +2931,17 @@ export class Game {
   }
 
   private foeInRadius(p: Player, x: number, y: number, radius: number, los = false) {
-    return this.players.some((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, x, y) <= radius && (!los || this.sight(p.x, p.y, o.x, o.y)));
+    return this.players.some((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, x, y) <= radius && (!los || this.sight(p.x, p.y, o.x, o.y, p.id)));
   }
 
   /** Parede, pilar e borda no meio do trecho. As pontas não contam. */
-  private sight(ax: number, ay: number, bx: number, by: number) {
+  /** through: id de quem conjura — a própria barreira não tapa a visão dele. */
+  private sight(ax: number, ay: number, bx: number, by: number, through?: string) {
     const d = Math.hypot(bx - ax, by - ay);
     if (d < 14) return true;
     const inset = 8 / d;
     return (
-      this.solidAlong(ax + (bx - ax) * inset, ay + (by - ay) * inset, bx - (bx - ax) * inset, by - (by - ay) * inset, 2) === null
+      this.solidAlong(ax + (bx - ax) * inset, ay + (by - ay) * inset, bx - (bx - ax) * inset, by - (by - ay) * inset, 2, through) === null
     );
   }
 
@@ -3033,6 +3066,7 @@ export class Game {
     p.fieldEl = '';
     p.reactCd = 0;
     p.ctrlT = 0;
+    p.iceT = 0;
     p.plasmaT = 0;
     p.stunT = 0;
     p.slowT = 0;
@@ -3142,6 +3176,7 @@ export class Game {
       abilityTrace(p.id, 'deny', 'charge');
       return;
     }
+    if (ult && !tune.skipWindup && def.act !== 'dash' && def.act !== 'blink') return this.beginUlt(p, def, ang, inp, tune, Math.max(wind, ULT_WINDUP));
     if (wind <= 0 || tune.skipWindup) {
       this.castPower(p, slot, ang, inp);
       return;
@@ -3164,6 +3199,98 @@ export class Game {
     p.castT = Math.max(p.castT, wind);
     this.events.push({ type: 'windup', pid: p.id, x: p.x, y: p.y, el: def.element, t: wind });
     abilityTrace(p.id, 'windup', def.name);
+  }
+
+  /** Suprema: aviso no chão + preparo. Atordoar quem prepara cancela (já existe no laço). */
+  private beginUlt(p: Player, def: PowerDef, ang: number, inp: Input | undefined, tune: { range: number; radius: number }, wind: number) {
+    if (p.pendingCast || p.powerCd[2] > 0) return;
+    let tx: number;
+    let ty: number;
+    let r: number;
+    if (def.speed <= 0) {
+      const pt = this.castPoint(p, inp, ang, tune.range);
+      if (!this.foeInRadius(p, pt.x, pt.y, tune.radius, def.los !== false)) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido', x: p.x, y: p.y });
+        abilityTrace(p.id, 'deny', 'target');
+        return;
+      }
+      tx = pt.x;
+      ty = pt.y;
+      r = tune.radius;
+    } else {
+      const a = typeof inp?.ca === 'number' && isFinite(inp.ca) ? inp.ca : ang;
+      tx = p.x + Math.cos(a) * tune.range;
+      ty = p.y + Math.sin(a) * tune.range;
+      r = ULT_LAND[def.element]?.r ?? 90;
+    }
+    p.pendingCast = { slot: 2, ang, ca: inp?.ca, cr: inp?.cr, ch: inp?.ch, at: this.roundT + wind };
+    p.castT = Math.max(p.castT, wind);
+    this.events.push({ type: 'windup', pid: p.id, x: p.x, y: p.y, el: def.element, t: wind, ult: true, tx, ty, r, lane: def.speed > 0 });
+    abilityTrace(p.id, 'windup', def.name);
+  }
+
+  /** A suprema caiu aqui (acerto, parede ou fim do alcance). Uma vez por suprema. */
+  private ultLand(src: Player, x: number, y: number, el: Element) {
+    const spec = ULT_LAND[el] ?? ULT_LAND.plasma;
+    this.events.push({ type: 'ultland', pid: src.id, x, y, el, r: spec.r });
+    const foes = this.players.filter((o) => o.alive && o.playing && this.hostile(src, o) && dist(o.x, o.y, x, y) <= spec.r && this.sight(x, y, o.x, o.y));
+    if (el === 'ice') {
+      // Maré Abissal: a onda empurra para fora e deixa molhado
+      for (const o of foes) {
+        const d = Math.hypot(o.x - x, o.y - y) || 1;
+        this.knock(o, ((o.x - x) / d) * 240, ((o.y - y) / d) * 240);
+        o.frozenT = Math.max(o.frozenT, FROZEN_TIME);
+        this.slow(o, FROZEN_TIME * 0.6);
+      }
+    } else if (el === 'nature') {
+      // Ruptura Titânica: pilares sobem e prendem
+      for (const o of foes) this.applyRoot(o, 0.9);
+    } else if (el === 'lightning') {
+      for (const o of foes) this.stun(o, 0.45);
+    }
+    this.ultZones.push({ id: this.fragId++, owner: src.id, x, y, r: spec.r, el, t: spec.t, total: spec.t, acc: 0 });
+  }
+
+  /** Fogo queima quem fica; o vórtice puxa e no fim arremessa. Sem dano extra fora disso. */
+  private updateUltZones(dt: number) {
+    for (const z of this.ultZones) {
+      z.t -= dt;
+      z.acc += dt;
+      const src = this.players.find((p) => p.id === z.owner);
+      if (!src) continue;
+      const inside = () => this.players.filter((o) => o.alive && o.playing && this.hostile(src, o) && dist(o.x, o.y, z.x, z.y) <= z.r);
+      if (z.el === 'fire' && z.acc >= 0.5) {
+        z.acc -= 0.5;
+        for (const o of inside()) {
+          this.hurt(o, ULT_FIRE_TICK, src.id, 'pulse');
+          if (!o.alive) continue;
+          o.burnT = Math.max(o.burnT, 1.2);
+          o.burnDps = Math.max(o.burnDps, burnDpsOf(src.char.id));
+          o.burnFrom = src.id;
+        }
+      } else if (z.el === 'wind') {
+        if (!z.blown && z.t > 0.3 && z.acc >= 0.15) {
+          z.acc = 0;
+          for (const o of inside()) {
+            const d = Math.hypot(z.x - o.x, z.y - o.y) || 1;
+            const step = Math.min(26, d);
+            o.pullX = o.x + ((z.x - o.x) / d) * step;
+            o.pullY = o.y + ((z.y - o.y) / d) * step;
+            o.pullT = 0.16;
+          }
+        } else if (!z.blown && z.t <= 0.3) {
+          z.blown = true;
+          for (const o of inside()) {
+            const d = Math.hypot(o.x - z.x, o.y - z.y) || 1;
+            o.pullT = 0;
+            this.knock(o, ((o.x - z.x) / d) * 560, ((o.y - z.y) / d) * 560);
+            o.gustT = MARK_TIME;
+          }
+          this.events.push({ type: 'ultland', pid: src.id, x: z.x, y: z.y, el: 'wind', r: z.r * 1.1 });
+        }
+      }
+    }
+    this.ultZones = this.ultZones.filter((z) => z.t > 0);
   }
 
   /**
@@ -3218,11 +3345,14 @@ export class Game {
       for (const o of this.players) {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
         if (dist(o.x, o.y, pt.x, pt.y) > tune.radius) continue;
-        if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
+        if (los && !this.sight(p.x, p.y, o.x, o.y, p.id)) continue;
         this.deliverPower(p, o, def.element, dmg, knock, true, { slot, projectile: false, mark: !!def.mark });
       }
       if (def.grove === 'heal') this.placeGrove(p, pt.x, pt.y, tune.radius, 4);
-      if (ult) p.ultCharge = 0;
+      if (ult) {
+        p.ultCharge = 0;
+        this.ultLand(p, pt.x, pt.y, def.element);
+      }
       return;
     }
     pay();
@@ -3370,7 +3500,7 @@ export class Game {
       for (const o of this.players) {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
         if (dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
-        if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
+        if (los && !this.sight(p.x, p.y, o.x, o.y, p.id)) continue;
         this.deliverPower(p, o, def.element, def.dmg, KNOCK[def.element], true, { slot: -1, projectile: false });
         if (def.yank && def.yank > 0) {
           const dx = p.x - o.x;
@@ -3406,6 +3536,14 @@ export class Game {
     });
     abilityTrace(p.id, 'launch', def.name);
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
+  }
+
+  /** Projétil da suprema que acabou sem acertar ninguém: cai onde parou. */
+  private landUltShot(b: Bullet) {
+    if (b.slot !== 2 || !b.el || b.landed || b.fromEcho) return;
+    b.landed = true;
+    const src = this.players.find((q) => q.id === b.owner);
+    if (src) this.ultLand(src, b.x, b.y, b.el);
   }
 
   /** Marca de 4 s. O dano do projétil não passa do valor da habilidade. */
@@ -3459,6 +3597,7 @@ export class Game {
     }
     if (reaction?.reactLock) dst.reactCd = reaction.reactLock;
     if (reaction?.clearCtrl) dst.ctrlT = 0;
+    const frozeNow = !!reaction?.hold;
     const bonus = reaction ? (reaction.id === 'root-aoe' ? Math.min(reaction.bonus, Math.max(0, EXTRA_CAP - move)) : reaction.bonus) : 0;
     const plasma = dst.plasmaT > 0;
     let burst = 0;
@@ -3480,8 +3619,14 @@ export class Game {
         dst.burnFrom = src.id;
         dst.burnAcc = 0;
       } else if (element === 'ice') {
-        dst.frozenT = FROZEN_TIME;
-        this.slow(dst, FROZEN_TIME);
+        if (frozeNow) {
+          // Congelamento: preso no gelo, sem andar nem conjurar. Não molha de novo (não encadeia).
+          dst.iceT = reaction!.hold!;
+          this.stun(dst, reaction!.hold!);
+        } else {
+          dst.frozenT = FROZEN_TIME;
+          this.slow(dst, FROZEN_TIME);
+        }
       } else if (element === 'lightning') dst.shockT = MARK_TIME;
       else if (element === 'wind') dst.gustT = MARK_TIME;
       else if (element === 'nature' && !cast?.mark) this.applyRoot(dst, reaction?.rootAdd ?? ROOT_TIME);
@@ -3507,6 +3652,26 @@ export class Game {
         for (const o of this.players) {
           if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
           if (dist(o.x, o.y, dst.x, dst.y) < reaction.aoe && this.sight(dst.x, dst.y, o.x, o.y)) this.hurt(o, reaction.bonus * 0.5, src.id, 'pulse');
+        }
+      }
+      for (const o of this.players) {
+        if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
+        const d = dist(o.x, o.y, dst.x, dst.y);
+        // Vórtice: puxa quem está perto para o alvo
+        if (reaction.pull && d < reaction.pull && d > 1) {
+          const step = Math.min(56, d - 18);
+          if (step > 0) {
+            o.pullX = o.x + ((dst.x - o.x) / d) * step;
+            o.pullY = o.y + ((dst.y - o.y) / d) * step;
+            o.pullT = 0.35;
+          }
+          this.slow(o, 0.8);
+        }
+        // Inferno Espiral: a chama gira e pega em quem está perto
+        if (reaction.spreadBurn && d < reaction.spreadBurn && this.sight(dst.x, dst.y, o.x, o.y)) {
+          o.burnT = Math.max(o.burnT, BURN_TIME * 0.6);
+          o.burnDps = Math.max(o.burnDps, burnDpsOf(src.char.id));
+          o.burnFrom = src.id;
         }
       }
     }
@@ -3770,6 +3935,7 @@ export class Game {
               this.events.push({ type: 'deny', pid: b.owner, msg: 'Obstáculo', x: b.x, y: b.y });
               this.events.push({ type: 'pend', x: b.x, y: b.y, el: b.plasma ? 'plasma' : b.el ?? 'basic', wall: true });
             }
+            this.landUltShot(b);
             abilityTrace(b.owner, 'wall', `${Math.round(b.x)},${Math.round(b.y)}`);
             break;
           }
@@ -3823,8 +3989,13 @@ export class Game {
           if (b.el) {
             b.hit.push(o.id);
             const src = this.players.find((q) => q.id === b.owner);
-            if (src) this.deliverPower(src, o, b.el, b.dmg, b.knock ?? 0, false, { slot: b.slot ?? -1, projectile: true, mark: !!b.mark });
-            else this.hurt(o, b.dmg, b.owner, 'shot', Math.atan2(b.vy, b.vx));
+            if (src) {
+              this.deliverPower(src, o, b.el, b.dmg, b.knock ?? 0, false, { slot: b.slot ?? -1, projectile: true, mark: !!b.mark });
+              if (b.slot === 2 && !b.landed && !b.fromEcho) {
+                b.landed = true;
+                this.ultLand(src, o.x, o.y, b.el);
+              }
+            } else this.hurt(o, b.dmg, b.owner, 'shot', Math.atan2(b.vy, b.vx));
             if (!b.pierce) {
               b.life = 0;
               break;
@@ -3900,6 +4071,7 @@ export class Game {
         this.events.push({ type: 'deny', pid: b.owner, msg: 'Fora de alcance', x: b.x, y: b.y });
         this.events.push({ type: 'pend', x: b.x, y: b.y, el: b.plasma ? 'plasma' : b.el ?? 'basic' });
       }
+      if (b.life <= 0) this.landUltShot(b);
       // foguete e lança-granadas explodem ao bater ou no fim do alcance
       const bw = WEAPONS[b.weapon];
       if (bw.blast && b.life <= 0 && !b.el) this.explode(b.x, b.y + GUN_Y, bw.blast.r, bw.blast.dmg * (b.fromEcho ? ECHO_DAMAGE_MULT : 1), b.owner, b.fromEcho);

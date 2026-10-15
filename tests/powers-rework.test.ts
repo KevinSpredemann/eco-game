@@ -142,11 +142,12 @@ describe('sinergias oficiais', () => {
     a.ultCharge = 100;
     const before = b.hp;
     rooted.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0, cr: 60 }, b: idle });
+    for (let k = 0; k < 30; k++) rooted.step(STEP, { a: idle, b: idle });
     const ev = rooted.drainEvents().filter((x) => x.type === 'combo');
     expect(ev.map((x) => (x.type === 'combo' ? x.name : ''))).toEqual(['Suprema no controle']);
     expect(ev[0]).toMatchObject({ bonus: ULT_CONTROL_BONUS, vfx: 'ult' });
     expect(before - b.hp).toBe(base + ULT_CONTROL_BONUS);
-    expect(a.ultCharge).toBe(0);
+    expect(a.ultCharge).toBeLessThan(5);
     expect(a.powerCd[2]).toBeGreaterThan(0);
 
     const open = fight();
@@ -154,9 +155,10 @@ describe('sinergias oficiais', () => {
     s.ultCharge = 100;
     const hp = t.hp;
     open.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0, cr: 60 }, b: idle });
+    for (let k = 0; k < 30; k++) open.step(STEP, { a: idle, b: idle });
     expect(hp - t.hp).toBe(base);
     expect(open.drainEvents().some((x) => x.type === 'combo')).toBe(false);
-    expect(s.ultCharge).toBe(0);
+    expect(s.ultCharge).toBeLessThan(5);
 
     const early = fight();
     const [p, q] = place(early, 60);
@@ -190,7 +192,7 @@ describe('sinergias oficiais', () => {
     expect(t.rootT).toBeGreaterThan(0);
   });
 
-  it('Brasas consome a queimadura e o segundo vento não repete', () => {
+  it('Inferno Espiral consome a queimadura e o segundo vento não repete', () => {
     const g = fight('maya', 'luna');
     const [a, b] = place(g, 90);
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
@@ -198,14 +200,14 @@ describe('sinergias oficiais', () => {
     expect(b.burnT).toBeGreaterThan(0);
     g.drainEvents();
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 90 }, b: idle });
-    const ev = g.drainEvents().filter((x) => x.type === 'combo' && x.name === 'Brasas');
+    const ev = g.drainEvents().filter((x) => x.type === 'combo' && x.name === 'Inferno Espiral');
     expect(ev).toHaveLength(1);
     expect(ev[0]).toMatchObject({ bonus: 10 });
     expect(b.burnT).toBe(0);
     a.powerCd[1] = 0;
     a.energy = 100;
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 90 }, b: idle });
-    expect(g.drainEvents().some((x) => x.type === 'combo' && x.name === 'Brasas')).toBe(false);
+    expect(g.drainEvents().some((x) => x.type === 'combo' && x.name === 'Inferno Espiral')).toBe(false);
   });
 
   it('morte limpa marca, campo e queimadura, no jogador e no bot', () => {
@@ -268,9 +270,9 @@ describe('equipamento do Z', () => {
     b.fieldT = 1.1;
     b.fieldEl = 'nature';
     const row = encodeSnapshot(g, false).P[1];
-    expect(row.at(-9)).toBe(2.4);
-    expect(row.at(-8)).toBe(1.1);
-    expect(row.at(-7)).toBe('nature');
+    expect(row.at(-10)).toBe(2.4);
+    expect(row.at(-9)).toBe(1.1);
+    expect(row.at(-8)).toBe('nature');
     const cg = new ClientGame({
       you: 'a',
       mode: 'duelo',

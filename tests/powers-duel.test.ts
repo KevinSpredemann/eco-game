@@ -70,19 +70,21 @@ describe('X1 e 2x2 só com poderes', () => {
     expect(a.energy).toBe(energy);
     a.ultCharge = 100;
     g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0 }, b: idle });
+    for (let k = 0; k < 30; k++) g.step(STEP, { a: idle, b: idle });
     expect(a.powerCd[2]).toBeGreaterThan(3);
-    expect(a.ultCharge).toBe(0);
+    expect(a.ultCharge).toBeLessThan(5);
     expect(a.energy).toBe(energy);
     const left = a.powerCd[2];
     g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0 }, b: idle });
     expect(a.powerCd[2]).toBeLessThan(left);
     expect(a.powerCd[2]).toBeGreaterThan(left - 0.05);
+    a.castT = 0;
     g.step(STEP, { a: { ...idle, bonus: true, aim: 0, ca: 0 }, b: idle });
     expect(a.powerCd[3]).toBeGreaterThan(0);
     expect(a.bonusAb).toBeNull();
   });
 
-  it('Q lança o poder e gelo seguido de raio vira Estilhaçar', () => {
+  it('Q lança o poder e gelo seguido de raio vira Eletrocutar', () => {
     const g = fight('duelo', 'kai', 'luna');
     const [a, b] = g.players;
     a.x = 640;
@@ -101,7 +103,7 @@ describe('X1 e 2x2 só com poderes', () => {
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 120 }, b: idle });
     const ev = g.drainEvents();
     const combo = ev.find((e) => e.type === 'combo');
-    expect(combo).toMatchObject({ name: 'Estilhaçar', bonus: 24 });
+    expect(combo).toMatchObject({ name: 'Eletrocutar', bonus: 24 });
     expect(b.hp).toBeLessThan(before - 20);
     expect(kitOf('kai').passive).toBe('shatter');
   });
@@ -124,7 +126,7 @@ describe('X1 e 2x2 só com poderes', () => {
     expect(b.stunT).toBeGreaterThan(0);
   });
 
-  it('gelo que já passou não vira Estilhaçar', () => {
+  it('gelo que já passou não vira Eletrocutar', () => {
     const g = fight('duelo', 'kai', 'luna');
     const [a, b] = g.players;
     a.x = 640;

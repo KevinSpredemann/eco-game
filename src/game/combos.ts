@@ -32,6 +32,9 @@ export const ULT_CONTROL_BONUS = 14;
 /** Fogo num alvo preso: explosão local, uma vez. */
 export const COMBUST_BONUS = 10;
 export const COMBUST_AOE = 64;
+/** Terra + Ar: as rochas da raiz viram estilhaços lançados em volta. */
+export const SHARDS_BONUS = 10;
+export const SHARDS_AOE = 90;
 /** Golpe ofensivo logo depois de um controle, uma vez na janela. */
 export const EXECUTE_BONUS = 8;
 /** A mesma raiz não fecha o bônus de área de novo. */
@@ -42,7 +45,7 @@ export const REACT_LOCK = 1.6;
  */
 export const CONTROL_GRACE = 1.2;
 
-const ELEMENTAL = new Set(['shatter', 'steam', 'cinder', 'storm', 'arc', 'thermal', 'chill']);
+const ELEMENTAL = new Set(['shatter', 'steam', 'cinder', 'storm', 'arc', 'thermal', 'chill', 'freeze', 'vortex']);
 
 export interface HitQuery {
   charId: string;
@@ -81,6 +84,12 @@ export interface Reaction {
   clearCtrl?: boolean;
   reactLock?: number;
   aoe?: number;
+  /** congela: segura o alvo parado (s) */
+  hold?: number;
+  /** puxa os inimigos deste raio para o alvo */
+  pull?: number;
+  /** espalha a queimadura para quem está neste raio */
+  spreadBurn?: number;
   vfx: 'ult' | 'burst' | 'root' | 'element';
 }
 
@@ -130,6 +139,9 @@ export function resolveReaction(q: HitQuery): Reaction | null {
       clearGust: elemental.id === 'storm',
       clearShock: elemental.id === 'arc',
       aoe: elemental.aoe,
+      hold: elemental.hold,
+      pull: elemental.pull,
+      spreadBurn: elemental.spreadBurn,
       reactLock: rupture ? REACT_LOCK : undefined,
       vfx: 'element',
     };
@@ -137,8 +149,13 @@ export function resolveReaction(q: HitQuery): Reaction | null {
   if (q.element === 'plasma' && (q.slow ?? 0) > 0 && q.reactCd <= 0) {
     return { id: 'chill', name: 'Ruptura', bonus: 8, reactLock: REACT_LOCK, vfx: 'element' };
   }
+  // Terra + Fogo: a fissura da raiz solta calor e explode no lugar
   if (q.element === 'fire' && root > 0 && q.reactCd <= 0) {
-    return { id: 'combustao', name: 'Combustão', bonus: COMBUST_BONUS, aoe: COMBUST_AOE, reactLock: REACT_LOCK, vfx: 'burst' };
+    return { id: 'combustao', name: 'Fissura Magmática', bonus: COMBUST_BONUS, aoe: COMBUST_AOE, reactLock: REACT_LOCK, vfx: 'burst' };
+  }
+  // Terra + Ar: o vento arranca as rochas e lança os fragmentos em volta
+  if (q.element === 'wind' && root > 0 && q.reactCd <= 0) {
+    return { id: 'shards', name: 'Tempestade de Fragmentos', bonus: SHARDS_BONUS, aoe: SHARDS_AOE, clearRoot: true, reactLock: REACT_LOCK, vfx: 'burst' };
   }
   if (q.aoe && root > 0 && q.reactCd <= 0) {
     return {
@@ -201,13 +218,13 @@ function queryOf(charId: string, pw: PowerDef, slot: number, foe: Aura, distRead
 /** quanto falta da janela que arma este combo (e o total), para a barra da tela */
 export function comboWindow(id: string, foe: Aura): { left: number; total: number } {
   const pick = (left: number, total: number) => ({ left: Math.max(0, left), total });
-  if (id === 'shatter' || id === 'steam' || id === 'chill') return pick(foe.frozen, FROZEN_TIME);
+  if (id === 'shatter' || id === 'steam' || id === 'chill' || id === 'freeze' || id === 'vortex') return pick(foe.frozen, FROZEN_TIME);
   if (id === 'cinder' || id === 'thermal') return pick(foe.burn, BURN_TIME);
   if (id === 'storm') return pick(foe.gust, MARK_TIME);
   if (id === 'arc') return pick(foe.shock, MARK_TIME);
   if (id === 'mark-root') return pick(foe.marked ?? 0, MARK_WINDOW);
   if (id === 'field-shot') return pick(foe.field ?? 0, FIELD_WINDOW);
-  if (id === 'combustao' || id === 'root-aoe') return pick(foe.root ?? 0, ROOT_TIME);
+  if (id === 'combustao' || id === 'root-aoe' || id === 'shards') return pick(foe.root ?? 0, ROOT_TIME);
   if (id === 'ult-control' || id === 'execute') return pick(Math.max(foe.ctrl ?? 0, foe.stun ?? 0, foe.root ?? 0), CONTROL_GRACE + 0.8);
   return pick(0, 1);
 }
@@ -304,7 +321,7 @@ export function powerRole(pw: PowerDef): string {
   if (pw.zone === 'heal' || pw.act === 'zone') return 'Cura quem está junto';
   if (pw.grove === 'heal') return 'Dano e um bosque de cura';
   if (pw.element === 'nature' && pw.speed <= 0) return 'Prende no chão';
-  if (pw.element === 'ice') return 'Deixa lento';
+  if (pw.element === 'ice') return 'Molha e deixa lento';
   if (pw.element === 'lightning') return 'Deixa tonto';
   if (pw.element === 'wind') return 'Empurra';
   if (pw.element === 'fire') return 'Queima';
@@ -456,16 +473,30 @@ function reactionBetween(charId: string, first: PowerDef, firstSlot: number, sec
 
 function needOf(hit: Reaction): string {
   if (hit.id === 'root-aoe') return 'alvo preso';
-  if (hit.id === 'chill' || hit.id === 'shatter' || hit.id === 'steam') return 'alvo lento';
+  if (hit.id === 'chill' || hit.id === 'shatter' || hit.id === 'steam' || hit.id === 'freeze' || hit.id === 'vortex') return 'alvo molhado';
+  if (hit.id === 'shards') return 'alvo preso na terra';
   if (hit.id === 'cinder' || hit.id === 'thermal') return 'alvo queimando';
   if (hit.id === 'storm') return 'alvo no vento';
   if (hit.id === 'arc') return 'alvo no raio';
   if (hit.id === 'field-shot') return `campo de ${FIELD_WINDOW}s no alvo`;
   if (hit.id === 'mark-root') return `marca de ${MARK_WINDOW}s no mesmo alvo`;
   if (hit.id === 'ult-control') return 'alvo preso ou tonto';
-  if (hit.id === 'combustao') return 'alvo preso';
+  if (hit.id === 'combustao') return 'alvo preso na terra';
   if (hit.id === 'execute') return 'alvo preso ou tonto';
   return 'condição do golpe anterior';
+}
+
+/** O que o combo faz, em poucas palavras, com os números do combate. */
+export function effectOf(hit: Reaction): string {
+  const tail = `soma ${hit.bonus}`;
+  if (hit.id === 'freeze') return `congela ${String(hit.hold ?? 0).replace('.', ',')}s e ${tail}`;
+  if (hit.id === 'vortex') return `puxa quem está perto e ${tail}`;
+  if (hit.id === 'cinder') return `o fogo gira e pega em volta, ${tail}`;
+  if (hit.id === 'combustao') return `explode no lugar, ${tail}`;
+  if (hit.id === 'shards') return `estilhaços em volta, ${tail}`;
+  if (hit.id === 'steam') return `vapor em volta, ${tail}`;
+  if (hit.id === 'shatter') return `choque na água, ${tail}`;
+  return tail;
 }
 
 function iconsFor(card: SynergyCard, powers: readonly PowerDef[]): [PowerDef, PowerDef] {
@@ -510,8 +541,8 @@ export function listSynergies(charId: string, secondary: string | null): Synergy
       rows.push({
         id: hit.id,
         name: hit.name,
-        effect: `soma ${hit.bonus}`,
-        benefit: `soma ${hit.bonus}`,
+        effect: effectOf(hit),
+        benefit: effectOf(hit),
         need: needOf(hit),
         order: `${a.name}, depois ${b.name}`,
         state,
@@ -528,8 +559,8 @@ export function listSynergies(charId: string, secondary: string | null): Synergy
     found.powers = [a, b];
     if (!official.has(hit.id)) {
       found.order = `${a.name}, depois ${b.name}`;
-      found.effect = `soma ${hit.bonus}`;
-      found.benefit = `soma ${hit.bonus}`;
+      found.effect = effectOf(hit);
+      found.benefit = effectOf(hit);
       found.need = needOf(hit);
     }
   };
@@ -560,8 +591,10 @@ export function listSynergies(charId: string, secondary: string | null): Synergy
 
   for (let i = 0; i < powers.length; i++) {
     for (let j = 0; j < powers.length; j++) {
-      if (i === j) continue;
-      consider(reactionBetween(charId, powers[i], i, powers[j], j), powers[i], powers[j], i, j, true);
+      const hit = reactionBetween(charId, powers[i], i, powers[j], j);
+      // o mesmo poder duas vezes só conta para o Congelamento (Água molha, Água de novo congela)
+      if (i === j && hit?.id !== 'freeze') continue;
+      consider(hit, powers[i], powers[j], i, j, true);
     }
   }
   if (extra) {
