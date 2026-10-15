@@ -91,8 +91,8 @@ describe('ficha e sinergia da tela', () => {
     const kai = listSynergies('kai', null);
     expect(kai.find((row) => row.name === 'Estilhaçar')?.state).toBe('active');
     expect(kai.find((row) => row.name === 'Raiz firme')?.state).toBe('locked');
-    expect(kai.find((row) => row.name === 'Plasma lento')?.state).toBe('possible');
-    expect(listSynergies('kai', 'plasma').find((row) => row.name === 'Plasma lento')?.state).toBe('active');
+    expect(kai.find((row) => row.name === 'Ruptura')?.state).toBe('possible');
+    expect(listSynergies('kai', 'plasma').find((row) => row.name === 'Ruptura')?.state).toBe('active');
   });
 
   it('não inventa nome fora do resolvedor', () => {
@@ -120,12 +120,12 @@ describe('ficha e sinergia da tela', () => {
     const before = kitOf('kai').powers[0].dmg;
     const delta = swapDelta('kai', null, 'plasma');
     expect(kitOf('kai').powers[0].dmg).toBe(before);
-    expect(listSynergies('kai', null).find((row) => row.name === 'Plasma lento')?.state).toBe('possible');
+    expect(listSynergies('kai', null).find((row) => row.name === 'Ruptura')?.state).toBe('possible');
     expect(delta.key).toBe('Z');
     expect(delta.added).toBe('Rajada de Plasma');
     expect(delta.removed).toBe('vazio');
-    expect(delta.gained).toContain('Plasma lento');
-    expect(delta.lost).not.toContain('Plasma lento');
+    expect(delta.gained).toContain('Ruptura');
+    expect(delta.lost).not.toContain('Ruptura');
     expect(delta.limit).toBe('Q, E, F e R não trocam. Só o Z aceita um extra.');
   });
 });

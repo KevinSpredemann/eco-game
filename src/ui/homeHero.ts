@@ -6,6 +6,11 @@ import { drawCharacter } from '../render/chars';
 import { accessoryBehind, drawAccessory } from '../render/accessories';
 import { dpr, hexA, studioSprite } from './portraits';
 
+/** Mesma conta de sempre: cerca de 78% da altura do palco, sem passar da largura. */
+export function heroFit(maxH: number, maxW: number, spanH: number, spanW: number) {
+  return Math.min((maxH * 0.78) / spanH, (maxW * 0.9) / spanW);
+}
+
 export class HomeHero {
   running = false;
   private raf = 0;
@@ -133,7 +138,7 @@ export class HomeHero {
     const spanH = Math.max(8, box.bottom - box.top);
     const spanW = Math.max(8, box.right - box.left);
     // Cerca de 78% da altura do palco. O limiar da medida ignora a sombra, senão o corpo fica pequeno.
-    const s = Math.min((maxH * 0.78) / spanH, (maxW * 0.9) / spanW);
+    const s = heroFit(maxH, maxW, spanH, spanW);
     const originX = x - ((box.left + box.right) / 2) * s;
     const bodyH = spanH * s;
     // Mesmo tamanho de antes. Os pés sobem até a base do botão Como jogar, lida do layout.
@@ -148,7 +153,6 @@ export class HomeHero {
     g.fillStyle = glow;
     g.fillRect(0, 0, this.w, this.h);
 
-    const drift = this.reduce ? 0 : Math.sin(this.phase * 0.35) * 6;
     if (!this.reduce) {
       for (let i = 0; i < 16; i++) {
         const t = this.phase * 0.45 + i * 1.7;
@@ -164,18 +168,32 @@ export class HomeHero {
     }
 
     const breath = this.reduce ? 1 : 1 + Math.sin(this.phase) * 0.012;
-    g.fillStyle = hexA(col, 0.22);
+    const sway = this.reduce ? 0 : Math.sin(this.phase * 0.7) * 0.02;
+    const footLocal = box.bottom;
+    g.fillStyle = 'rgba(4, 2, 16, 0.28)';
     g.beginPath();
-    g.ellipse(originX + drift, feetY, Math.min(bodyH * 0.28, maxW * 0.22), Math.min(18, bodyH * 0.04), 0, 0, Math.PI * 2);
+    g.ellipse(originX, feetY + 3, Math.min(bodyH * 0.26, maxW * 0.2), Math.min(14, bodyH * 0.035), 0, 0, Math.PI * 2);
     g.fill();
+    g.fillStyle = hexA(col, 0.16);
+    g.beginPath();
+    g.ellipse(originX, feetY + 1, Math.min(bodyH * 0.16, maxW * 0.12), Math.min(7, bodyH * 0.02), 0, 0, Math.PI * 2);
+    g.fill();
+    const sky = g.createLinearGradient(0, top, 0, feetY);
+    sky.addColorStop(0, hexA('#d7f6ff', 0.06));
+    sky.addColorStop(1, hexA('#d7f6ff', 0));
+    g.fillStyle = sky;
+    g.fillRect(0, 0, this.w, this.h);
 
     const acc = accessoryById(this.acc);
     g.save();
-    const bob = this.reduce ? 0 : Math.sin(this.phase * 1.6) * 3.5;
-    g.translate(originX + drift, originY + bob);
-    g.scale(s * breath, s * breath);
+    g.translate(originX, originY + footLocal * s);
+    g.rotate(sway);
+    g.scale(s, s * breath);
+    g.translate(0, -footLocal);
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = 'high';
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
     if (img) g.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight, img.naturalWidth, img.naturalHeight);
     else {
       if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);

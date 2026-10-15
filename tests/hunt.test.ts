@@ -65,22 +65,38 @@ describe('vida, dano e regeneração', () => {
   });
 });
 
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 describe('IA dos bots por dificuldade', () => {
   it('bot fácil causa bem menos dano que o difícil', () => {
     // dano total recebido em 20 s andando em círculos (vida reposta para não morrer)
     const measure = (diff: 'facil' | 'dificil') => {
-      let dmg = 0;
-      for (let k = 0; k < 10; k++) {
-        const g = duel(diff);
-        const me = g.players[0];
-        for (let t = 0; t < 20; t += STEP) {
-          const a = t * 0.8;
-          me.hp = me.maxHp;
-          g.step(STEP, { mx: Math.cos(a) * 0.6, my: Math.sin(a) * 0.6, dash: false, ability: false } as Input);
-          for (const e of g.drainEvents()) if (e.type === 'dmg' && e.pid === 'p0' && e.k === 'hp') dmg += e.n;
+      const prev = Math.random;
+      Math.random = mulberry32(0x51ed);
+      try {
+        let dmg = 0;
+        for (let k = 0; k < 10; k++) {
+          const g = duel(diff);
+          const me = g.players[0];
+          for (let t = 0; t < 20; t += STEP) {
+            const a = t * 0.8;
+            me.hp = me.maxHp;
+            g.step(STEP, { mx: Math.cos(a) * 0.6, my: Math.sin(a) * 0.6, dash: false, ability: false } as Input);
+            for (const e of g.drainEvents()) if (e.type === 'dmg' && e.pid === 'p0' && e.k === 'hp') dmg += e.n;
+          }
         }
+        return dmg;
+      } finally {
+        Math.random = prev;
       }
-      return dmg;
     };
     // perfis: erro de mira, previsão e tempo de reação ficam em ordem
     expect(PROFILES.facil.aim).toBeGreaterThan(PROFILES.normal.aim);

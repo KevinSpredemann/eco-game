@@ -208,6 +208,8 @@ export class BotBrain {
   aimDrift = 0;
   fireT = 0;
   restT = 0;
+  /** o tiro desta janela erra de propósito (sorteado uma vez, não a cada quadro) */
+  whiff = false;
   constructor(d: Difficulty) {
     const p = PROFILES[d];
     this.aimErr = p.aim;
@@ -230,6 +232,8 @@ export class BotBrain {
     this.stuckT = 0;
     this.targetId = '';
     this.seenT = 0;
+    this.whiff = false;
+    this.restT = 0;
   }
 }
 
@@ -640,9 +644,9 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
         const ang = Math.atan2(foe.y - p.y, foe.x - p.x);
         if (Math.random() < dt * 1.3) b.aimDrift = Math.random() * 2 - 1;
         b.aimOff += (b.aimDrift * b.aimErr - b.aimOff) * Math.min(1, dt * 2.5);
-        out.aim = ang + b.aimOff * 0.25;
+        out.aim = ang + b.aimOff;
         out.ca = out.aim;
-        out.cr = d;
+        out.cr = Math.max(24, d * (1 + b.aimOff * 0.35));
         const aura = { burn: foe.burnT, frozen: foe.frozenT, gust: foe.gustT, shock: foe.shockT, root: foe.rootT, marked: foe.markedT, field: foe.fieldT, fieldEl: foe.fieldEl, stun: foe.stunT };
         let slot = officialSlot(p.char.id, kitOf(p.char.id), p.powerCd, aura, d);
         if (slot === null) {
@@ -656,6 +660,13 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
         }
         if (slot === 2 && p.ultCharge < 100) slot = null;
         if (slot !== null && slot !== 2 && p.energy < SLOT_COST[slot]) slot = null;
+        const commit = () => {
+          b.whiff = Math.random() < b.sloppy * 0.8;
+          const kick = b.whiff ? (b.aimOff >= 0 ? 0.85 : -0.85) : 0;
+          out.aim = ang + b.aimOff + kick;
+          out.ca = out.aim;
+          b.restT = b.pauseLen * (1.2 - b.burst);
+        };
         if (slot !== null && b.seenT >= b.react && b.restT <= 0) {
           if (slot === 0) out.ability = true;
           else if (slot === 1) out.skill = true;
@@ -664,20 +675,16 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
             out.bonus = true;
             out.item = true;
           }
-          b.restT = Math.max(0.28, b.react * 0.55);
+          commit();
         } else if (p.plasmaOn && p.plasmaCd <= 0 && b.seenT >= b.react && b.restT <= 0) {
           const extra = studioOf(p.loadout.secondary);
           if (extra && p.energy >= extra.cost && d < Math.max(extra.range, extra.step ?? 0)) {
             out.plasma = true;
-            out.aim = ang;
-            out.ca = ang;
-            b.restT = Math.max(0.28, b.react * 0.55);
+            commit();
           }
         } else if (clear && d < BASIC.range - 8 && p.basicCd <= 0 && p.energy >= BASIC.cost && b.seenT >= b.react && b.restT <= 0) {
           out.fire = true;
-          out.aim = ang;
-          out.ca = ang;
-          b.restT = 0.35;
+          commit();
         }
       }
     }

@@ -1538,6 +1538,7 @@ export class Game {
       p.pendingCast = null;
       p.castT = 0;
       abilityTrace(p.id, 'windup-cancel', 'interrupted');
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Conjuração interrompida', x: p.x, y: p.y });
     } else if (p.pendingCast && this.roundT >= p.pendingCast.at) {
       const c = p.pendingCast;
       p.pendingCast = null;
@@ -1786,6 +1787,7 @@ export class Game {
     if (p.pendingCast) {
       p.pendingCast = null;
       abilityTrace(p.id, 'windup-cancel', 'stun');
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Conjuração interrompida', x: p.x, y: p.y });
     }
     p.ccResistT = p.stunT + COMBAT.ccResist;
     this.events.push({ type: 'stunned', x: p.x, y: p.y, pid: p.id });
@@ -3339,6 +3341,7 @@ export class Game {
       fieldEl: dst.fieldEl,
       stun: dst.stunT,
       reactCd: dst.reactCd,
+      slow: dst.slowT,
     });
     if (reaction?.clearFrozen) {
       dst.frozenT = 0;

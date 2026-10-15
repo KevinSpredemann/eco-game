@@ -17,6 +17,7 @@ import { corpsePose, gritSpecks } from './visuals';
 import { AimPreview, drawAimPreview, drawBossOver, drawBossUnder, drawCastsGround, drawPylon, drawStatus, drawTraps } from './combatFx';
 import { screenToWorld, viewFromLetterbox, type WorldView } from '../game/aimService';
 import { Expr, SpriteCache, WALK_FRAMES, drawCharacter, drawSymbol, facingOf, rr } from './sprites';
+import { AbilityVfx } from './abilityVfx';
 
 type Particle = {
   x: number;
@@ -85,6 +86,7 @@ export class Renderer {
   private flashColor = '#fff';
   private echoWasActive = new Map<string, boolean>();
   reducedEffects = false;
+  readonly abilityFx = new AbilityVfx();
   /** limite de densidade de pixels (qualidade gráfica) */
   dprCap = 3;
   /** qualidade gráfica: alta = tudo; média = menos pixels; baixa = sem luz pré-calculada e menos partículas */
@@ -843,6 +845,7 @@ export class Renderer {
   handleEvents(events: GameEvent[], game: Game) {
     const pc = (id: string) => game.players.find((p) => p.id === id);
     for (const e of events) {
+      this.abilityFx.note(e);
       switch (e.type) {
         case 'pickup':
           this.burst(e.x, e.y, e.golden ? '#ffd23e' : '#5dff8a', e.golden ? 22 : 10, 160);
@@ -1476,6 +1479,13 @@ export class Renderer {
       this.drawFlags(game, time);
       if (game.combat) this.drawCombatAir(game, time);
       this.drawBeams(dt);
+      this.abilityFx.setReduced(this.reducedEffects);
+      this.abilityFx.setAim(
+        this.aimPreview && game.phase === 'play' && game.human.alive
+          ? { x: this.aimPreview.x, y: this.aimPreview.y, ang: this.aimPreview.ang, dist: this.aimPreview.dist, color: this.aimPreview.color, charge: this.aimPreview.charge, outOfRange: this.aimPreview.outOfRange }
+          : null,
+      );
+      this.abilityFx.step(dt);
       if (this.aimPreview && game.phase === 'play' && game.human.alive) drawAimPreview(this.ctx, this.aimPreview, time);
       this.drawZaps(dt);
       this.drawBushes(a, time);
@@ -2236,6 +2246,8 @@ export class Renderer {
       ctx.stroke();
     }
     // lento (gelo / areia / fumaça)
+    this.abilityFx.setReduced(this.reducedEffects);
+    this.abilityFx.drawStatus(ctx, p, time);
     if (p.burnT > 0 && !this.reducedEffects && Math.random() < 0.35)
       this.particles.push({ x: p.x + (Math.random() - 0.5) * 16, y: p.y - 28, vx: (Math.random() - 0.5) * 20, vy: -50 - Math.random() * 30, life: 0, max: 0.45, color: '#ff7a3a', size: 2.4, kind: 'spark' });
     if (p.slowT > 0 || p.frozenT > 0) {
@@ -2639,6 +2651,8 @@ export class Renderer {
         ctx.setLineDash([]);
       }
     }
+    this.abilityFx.sync(game.bullets);
+    this.abilityFx.draw(this.ctx, time);
     for (const bm of game.bombs) {
       const k = Math.min(1, bm.t / 0.35);
       const arc = Math.sin(k * Math.PI) * 50;

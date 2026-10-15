@@ -145,7 +145,7 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     cold.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 40 && b.hp === before; i++) cold.step(STEP, { a: idle, b: idle });
     expect(before - b.hp).toBe(11 + 8);
-    expect(cold.drainEvents().some((e) => e.type === 'combo' && e.name === 'Plasma lento' && e.bonus === 8)).toBe(true);
+    expect(cold.drainEvents().some((e) => e.type === 'combo' && e.name === 'Ruptura' && e.bonus === 8)).toBe(true);
 
     const plain = fight([
       { id: 'a', char: 'vortex' },
@@ -160,7 +160,7 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     plain.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 40 && t.hp === hp; i++) plain.step(STEP, { a: idle, b: idle });
     expect(hp - t.hp).toBe(11);
-    expect(plain.drainEvents().some((e) => e.type === 'combo' && e.name === 'Plasma lento')).toBe(false);
+    expect(plain.drainEvents().some((e) => e.type === 'combo' && e.name === 'Ruptura')).toBe(false);
   });
 
   it('raiz e área somam, e sem raiz a área fica no dano base', () => {

@@ -108,7 +108,10 @@ describe('energia, recusa e Rajada de Plasma', () => {
     a.powerCd[1] = 0;
     a.energy = ENERGY_MAX;
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 120 }, b: idle });
-    expect(again - b.hp).toBeCloseTo(hit, 5);
+    const follow = g.drainEvents();
+    expect(follow.some((e) => e.type === 'combo' && e.name === 'Explosão de Plasma')).toBe(false);
+    expect(follow.some((e) => e.type === 'combo' && e.name === 'Execução combinada' && e.bonus === 8)).toBe(true);
+    expect(again - b.hp).toBeCloseTo(hit + 8, 5);
   });
 
   it('marca de plasma que acaba não explode', () => {

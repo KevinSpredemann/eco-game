@@ -27,6 +27,11 @@ export const ROOT_FIRM_TIME = 2.2;
 export const ROOT_FIRM_BONUS = 10;
 export const FIELD_BONUS = 12;
 export const ULT_CONTROL_BONUS = 14;
+/** Fogo num alvo preso: explosão local, uma vez. */
+export const COMBUST_BONUS = 10;
+export const COMBUST_AOE = 64;
+/** Golpe ofensivo logo depois de um controle, uma vez na janela. */
+export const EXECUTE_BONUS = 8;
 /** A mesma raiz não fecha o bônus de área de novo. */
 export const REACT_LOCK = 1.6;
 
@@ -47,6 +52,8 @@ export interface HitQuery {
   fieldEl: Element | '';
   stun: number;
   reactCd: number;
+  /** lentidão sem congelar. Ausente vale zero. */
+  slow?: number;
 }
 
 export interface Reaction {
@@ -100,17 +107,25 @@ export function resolveReaction(q: HitQuery): Reaction | null {
     };
   }
   if (elemental) {
+    const rupture = elemental.id === 'chill';
     return {
       id: elemental.id,
-      name: elemental.name,
+      name: rupture ? 'Ruptura' : elemental.name,
       bonus: elemental.bonus,
       clearFrozen: elemental.clearFrozen,
       clearBurn: elemental.id === 'cinder' || elemental.id === 'thermal',
       clearGust: elemental.id === 'storm',
       clearShock: elemental.id === 'arc',
       aoe: elemental.aoe,
+      reactLock: rupture ? REACT_LOCK : undefined,
       vfx: 'element',
     };
+  }
+  if (q.element === 'plasma' && (q.slow ?? 0) > 0 && q.reactCd <= 0) {
+    return { id: 'chill', name: 'Ruptura', bonus: 8, reactLock: REACT_LOCK, vfx: 'element' };
+  }
+  if (q.element === 'fire' && root > 0 && q.reactCd <= 0) {
+    return { id: 'combustao', name: 'Combustão', bonus: COMBUST_BONUS, aoe: COMBUST_AOE, reactLock: REACT_LOCK, vfx: 'burst' };
   }
   if (q.aoe && root > 0 && q.reactCd <= 0) {
     return {
@@ -131,7 +146,16 @@ export function resolveReaction(q: HitQuery): Reaction | null {
       vfx: 'burst',
     };
   }
+  if ((root > 0 || q.stun > 0) && q.slot !== 2 && q.reactCd <= 0 && isOffense(q)) {
+    return { id: 'execute', name: 'Execução combinada', bonus: EXECUTE_BONUS, reactLock: REACT_LOCK, vfx: 'burst' };
+  }
   return null;
+}
+
+/** Controle já aplicado, e este golpe é ofensivo. Natureza que prende não conta. */
+function isOffense(q: HitQuery) {
+  if (q.element === 'nature' || q.roots) return false;
+  return q.element === 'fire' || q.element === 'lightning' || q.element === 'plasma' || q.element === 'ice' || q.element === 'wind' || q.element === 'shadow';
 }
 
 export function isElemental(id: string) {
@@ -408,6 +432,8 @@ function needOf(hit: Reaction): string {
   if (hit.id === 'field-shot') return `campo de ${FIELD_WINDOW}s no alvo`;
   if (hit.id === 'mark-root') return `marca de ${MARK_WINDOW}s no mesmo alvo`;
   if (hit.id === 'ult-control') return 'alvo preso ou tonto';
+  if (hit.id === 'combustao') return 'alvo preso';
+  if (hit.id === 'execute') return 'alvo preso ou tonto';
   return 'condição do golpe anterior';
 }
 

@@ -35,6 +35,8 @@ import { ACTION_LABEL, Action, MoveScheme, Slot, isReservedKey, keyLabel, preset
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
 import { SkillBar, SlotView, drawSlotArt, slotReady } from './ui/skillbar';
+import { back as flowBack, forward as flowForward, stepLabel } from './ui/matchFlow';
+import { CastNotifier } from './ui/castNotice';
 import { markHtml, previewEmpty, previewHtml, uiTint } from './ui/powerPreview';
 import type { AimPreview } from './render/combatFx';
 
@@ -375,7 +377,11 @@ function go(action: string, el?: HTMLElement) {
     case 'back': {
       const cur = currentScreen();
       if (cur === 'screen-options') show(lastScreenBeforeOptions);
-      else if (cur === 'screen-map') show('screen-select');
+      else if (cur === 'screen-map') {
+        const prev = flowBack('map', { loadout: usesLoadout(), lobby: selectCtx === 'lobby' });
+        if (prev === 'powers') openLoadout('pre');
+        else show('screen-select');
+      }
       else if (cur === 'screen-select') {
         if (selectCtx === 'lobby') show('screen-lobby');
         else openModes();
@@ -398,20 +404,24 @@ function go(action: string, el?: HTMLElement) {
       if (selectCtx === 'lobby') {
         sendLobbyLook();
         show('screen-lobby');
-      } else openMap();
+      } else {
+        const next = flowForward('select', { lobby: false, loadout: usesLoadout(), mundo: false });
+        if (next === 'powers') openLoadout('pre');
+        else openMap();
+      }
       break;
     case 'to-chars':
-      show('screen-select');
+      if (!$('#screen-map').hidden && flowBack('map', { loadout: usesLoadout(), lobby: selectCtx === 'lobby' }) === 'powers') openLoadout('pre');
+      else show('screen-select');
       break;
     case 'start':
-      if (usesLoadout()) openLoadout('pre');
-      else startMatch();
+      startMatch();
       break;
     case 'loadout-ok':
       loadoutScreen.confirm();
       break;
     case 'loadout-back':
-      show(loadoutCtx === 'pre' ? 'screen-map' : loadoutCtx === 'pause' ? 'screen-pause' : 'screen-lobby');
+      show(loadoutCtx === 'pre' ? 'screen-select' : loadoutCtx === 'pause' ? 'screen-pause' : 'screen-lobby');
       break;
     case 'pause-loadout':
       openLoadout('pause');
@@ -974,7 +984,7 @@ function charDetail(at?: number) {
   const st = charState(c);
   const lvC = withLevel(c, st.lv);
   const nextC = withLevel(c, Math.min(5, st.lv + 1));
-  const next = selectCtx === 'lobby' ? 'Usar na sala ›' : 'Escolher mapa ›';
+  const next = selectCtx === 'lobby' ? 'Usar na sala ›' : usesLoadout() ? 'Poderes ›' : 'Escolher mapa ›';
   const coins = account.profile.coins;
   const action = st.owned
     ? `<button class="btn primary go-btn" data-action="to-map">${next}</button>`
@@ -1171,7 +1181,7 @@ window.addEventListener('keydown', (e) => {
 
 function openSelect() {
   const label = selectCtx === 'lobby' ? 'Sala online' : modeTitle(matchMode);
-  $('#select-mode').textContent = selectCtx === 'lobby' ? label : `${label} · passo 1 de ${usesLoadout() ? 3 : 2}`;
+  $('#select-mode').textContent = selectCtx === 'lobby' ? label : `${label} · ${stepLabel('select', usesLoadout())}`;
   if (!charCar) buildCharCarousel();
   const idx = Math.max(0, CHARACTERS.findIndex((c) => c.id === settings.char));
   show('screen-select');
@@ -1220,11 +1230,12 @@ function buildMapCarousel() {
 }
 
 function openMap() {
-  $('#map-mode').textContent = `${modeTitle(matchMode)} · ${getCharacter(settings.char).name} · passo 2 de ${usesLoadout() ? 3 : 2}`;
+  $('#map-mode').textContent = `${modeTitle(matchMode)} · ${getCharacter(settings.char).name} · ${stepLabel('map', usesLoadout())}`;
   $('#match-opts').hidden = training();
-  const goTxt = usesLoadout() ? 'Equipamento ›' : 'Começar partida ›';
-  $('#map-go').textContent = goTxt;
-  $('#map-go-top').textContent = usesLoadout() ? 'Próximo ›' : 'Começar ›';
+  $('#map-go').textContent = 'Começar partida ›';
+  $('#map-go-top').textContent = 'Começar ›';
+  const mapBack = document.querySelector<HTMLElement>('#screen-map [data-action="to-chars"]');
+  if (mapBack) mapBack.textContent = usesLoadout() && selectCtx !== 'lobby' ? '‹ Poderes' : '‹ Personagem';
   const botSel = $<HTMLSelectElement>('#sel-bots');
   botSel.closest('label')!.hidden = true;
   const mm = matchMode;
@@ -1543,7 +1554,7 @@ function openLoadout(ctx: 'pre' | 'pause' | 'lobby') {
   loadoutCtx = ctx;
   const sub =
     ctx === 'pre'
-      ? `${modeTitle(matchMode)} · ${getCharacter(settings.char).name} · passo 3 de 3`
+      ? `${modeTitle(matchMode)} · ${getCharacter(settings.char).name} · ${stepLabel('powers', true)}`
       : ctx === 'pause'
         ? 'Vale a partir da próxima rodada (recargas não zeram)'
         : 'Sala online · vale na próxima partida ou rodada';
@@ -1551,14 +1562,14 @@ function openLoadout(ctx: 'pre' | 'pause' | 'lobby') {
     charId: ctx === 'pause' && game ? game.human.char.id : settings.char,
     loadout: settings.loadout,
     subtitle: sub,
-    confirmText: ctx === 'pre' ? 'Começar ›' : 'Confirmar ✓',
+    confirmText: ctx === 'pre' ? 'Mapa ›' : 'Confirmar ✓',
     onConfirm: (l) => {
       settings.loadout = l;
       saveSettings(settings);
       if (l.primary !== account.profile.equipped.weapon) void account.equip('weapon', l.primary);
       audio.click();
       if (ctx === 'pre') {
-        startMatch();
+        openMap();
       } else if (ctx === 'pause') {
         if (game instanceof Game) game.setLoadout(game.human.id, l);
         else net?.send({ t: 'loadout', l });
@@ -2256,6 +2267,49 @@ function deniedReason(slot: Slot): string {
 }
 
 const skillBar = new SkillBar($('#skillbar'));
+const castNoticeEl = document.createElement('div');
+castNoticeEl.className = 'cast-notice';
+castNoticeEl.hidden = true;
+castNoticeEl.setAttribute('role', 'status');
+$('#hud').appendChild(castNoticeEl);
+const castNotices = new CastNotifier(castNoticeEl);
+let lastDenySlot: Slot | null = null;
+
+function cooldownLeft(slot: Slot): number {
+  if (!game) return 0;
+  const me = game.human;
+  if (slot === 'plasma') return me.plasmaCd ?? 0;
+  const i = powerSlotIndex(slot);
+  if (i !== null) return me.powerCd?.[i] ?? 0;
+  if (slot === 'dash') return me.dashCd;
+  if (slot === 'ability') return me.abilCd;
+  if (slot === 'skill') return me.skillCd;
+  return 0;
+}
+
+function refreshCastNotice(dt: number) {
+  castNotices.tick(dt);
+  const cur = castNotices.current;
+  if (!cur || !game) return;
+  const me = game.human;
+  if ((cur.id === 'energy' || cur.id === 'cd' || cur.id === 'ult' || cur.id === 'root') && lastDenySlot) {
+    const why = deniedReason(lastDenySlot);
+    if (!why) {
+      castNotices.clear(cur.id);
+      return;
+    }
+    const same =
+      (cur.id === 'energy' && why === 'Energia insuficiente') ||
+      (cur.id === 'cd' && why === 'Habilidade em recarga') ||
+      (cur.id === 'ult' && why === 'Ultimate em carga') ||
+      (cur.id === 'root' && why === 'Preso pelas raízes');
+    if (!same) return;
+    if (cur.id === 'cd') castNotices.showMsg(why, cooldownLeft(lastDenySlot));
+  }
+  if (renderer.aimPreview?.outOfRange && input.aiming) {
+    if (!castNotices.current || castNotices.current.id === 'aim') castNotices.showMsg('Mira fora do alcance');
+  } else castNotices.clear('aim');
+}
 let ultWasReady = false;
 /** barra de habilidades (computador) e botões de toque com recarga */
 function updateSkills(g: AnyGame) {
@@ -2518,7 +2572,7 @@ function onEvents(events: GameEvent[]) {
         break;
       case 'deny':
         audio.fail(panOf(g.players.find((p) => p.id === e.pid)?.x ?? g.human.x));
-        if (mine) toast(e.msg, 1800);
+        if (mine) castNotices.showMsg(e.msg);
         break;
       case 'hit':
         if (e.by === 'fall') audio.fall(panOf(e.x));
@@ -3151,7 +3205,8 @@ input.onDenied = (slot) => {
   audio.click();
   const why = deniedReason(slot);
   skillBar.why(slot, why);
-  if (why === 'Energia insuficiente' || why === 'Nenhum alvo válido' || why === 'Habilidade ainda não desbloqueada') toast(why, 1800);
+  lastDenySlot = slot;
+  castNotices.showMsg(why, why === 'Habilidade em recarga' ? cooldownLeft(slot) : undefined);
   // no toque: aviso curto em cima do botão
   const btn = document.querySelector<HTMLElement>(`#btn-${slot === 'ability' ? 'ability' : slot}`);
   if (btn && input.touchMode) {
@@ -3274,6 +3329,7 @@ function frame(now: number) {
     onEvents(evs);
     if (g.phase === 'play') audio.intensity = g.timeLeft() < 10 ? 1 : g.round >= 3 ? 0.5 : 0.2;
     updateAimPreview();
+    refreshCastNotice(dt);
     renderer.render(g as Game, g.paused ? 0 : dt, now / 1000);
     updateHud();
     tutorial(dt);
@@ -3308,7 +3364,7 @@ function layout() {
   const w = window.innerWidth;
   const h = window.innerHeight;
   const padTop = h > 560 ? 70 : 0;
-  const padBottom = h > 560 ? 44 : 0;
+  const padBottom = h > 560 ? 84 : 0;
   renderer.resize(w, h, padTop, padBottom);
   checkRotate();
 }
