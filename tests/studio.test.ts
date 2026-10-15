@@ -127,3 +127,14 @@ describe('estúdio', () => {
     expect(g.players).toHaveLength(2);
   });
 });
+
+describe('mapas aposentados', () => {
+  it('Recife e Cidade (ilhas com pontes) não aparecem para escolher nem sortear', async () => {
+    const { ARENAS, playableArena } = await import('../src/game/arenas');
+    const ids = ARENAS.map((a) => a.id);
+    expect(ids).not.toContain('recife');
+    expect(ids).not.toContain('cidade');
+    expect(playableArena('recife')).toBe(ARENAS[0].id);
+    expect(playableArena('vinil')).toBe('vinil');
+  });
+});
