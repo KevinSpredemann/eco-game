@@ -700,6 +700,7 @@ wss.on('connection', (ws) => {
         const prev = c.input;
         const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? v : null);
         const press = !!(bits & (BTN.dash | BTN.ability | BTN.item | BTN.bonus | BTN.skill | BTN.ult | BTN.plasma));
+        const aimed = press || !!(bits & BTN.fire);
         c.input = {
           mx: Math.max(-1, Math.min(1, Number(mx) || 0)),
           my: Math.max(-1, Math.min(1, Number(my) || 0)),
@@ -713,8 +714,8 @@ wss.on('connection', (ws) => {
           ult: prev.ult || !!(bits & BTN.ult),
           plasma: prev.plasma || !!(bits & BTN.plasma),
           aim: num(aim),
-          ca: press ? num(ca) : prev.ca ?? null,
-          cr: press ? (num(cr) === null ? null : Math.max(0, Math.min(2000, num(cr)!))) : prev.cr ?? null,
+          ca: aimed ? num(ca) : prev.ca ?? null,
+          cr: aimed ? (num(cr) === null ? null : Math.max(0, Math.min(2000, num(cr)!))) : prev.cr ?? null,
           ch: press && num(ch) !== null ? Math.max(0, Math.min(1, num(ch)!)) : null,
         };
         break;

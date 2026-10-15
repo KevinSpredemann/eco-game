@@ -1,3 +1,4 @@
+import { mouseBeatsKeys } from '../game/aimService';
 import type { Input } from '../game/sim';
 import type { AimKind } from '../game/balance';
 
@@ -321,6 +322,8 @@ export class InputManager {
   private aimAng: number | null = null;
   /** posição do mouse na tela (para mirar no computador) */
   mouse = { x: 0, y: 0, at: 0 };
+  /** último ponteiro. Um toque antigo não apaga o mouse. */
+  pointerKind: 'mouse' | 'touch' | 'none' = 'none';
   /** modo combate: Espaço vira item e o clique atira */
   combat = false;
   /** X1 e 2x2: o botão direito cancela a mira e não solta o poder do F */
@@ -624,10 +627,12 @@ export class InputManager {
     // mouse no computador: mira e atira com o botão esquerdo sobre a arena
     const canvas = document.getElementById('game')!;
     window.addEventListener('mousemove', (e) => {
+      this.pointerKind = 'mouse';
       this.mouse = { x: e.clientX, y: e.clientY, at: performance.now() };
     });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('mousedown', (e) => {
+      this.pointerKind = 'mouse';
       this.mouse = { x: e.clientX, y: e.clientY, at: performance.now() };
       if (e.button === 0) {
         // clique confirma a mira (habilidades de área)
@@ -656,6 +661,7 @@ export class InputManager {
     window.addEventListener(
       'touchstart',
       () => {
+        this.pointerKind = 'touch';
         if (!this.touchMode) {
           this.touchMode = true;
           this.onFirstTouch?.();
@@ -691,6 +697,16 @@ export class InputManager {
   /** o dedo está no analógico direito agora (para o indicador de mira) */
   get aimHeld() {
     return this.aimStick.active;
+  }
+
+  /** O ponto do mouse manda. A mira do teclado só vence se o mouse ficou parado. */
+  mouseAims(now = performance.now()): boolean {
+    return mouseBeatsKeys({
+      pointer: this.pointerKind,
+      mouseAt: this.mouse.at,
+      now,
+      keySteer: this.keyboardAim || this.arrowsDown || this.manualAim() !== null,
+    });
   }
 
   private codeBound(code: string) {

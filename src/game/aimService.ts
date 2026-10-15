@@ -58,6 +58,54 @@ export function screenToWorld(screenX: number, screenY: number, view: WorldView)
 
 export type AimShape = 'projectile' | 'line' | 'point' | 'dash' | 'self';
 
+/** A forma do indicador. "Na hora" é o momento do clique, não um golpe em si. */
+export function castAimShape(info: { kind: string; shape: string }): AimShape {
+  if (info.shape === 'self') return 'self';
+  if (info.shape === 'line') return 'dash';
+  if (info.shape === 'circle' || info.shape === 'wall') return 'point';
+  return 'projectile';
+}
+
+/** O mouse recente vence a mira do teclado. Sem tecla de mira, o último ponto do mouse vale. */
+export const MOUSE_RECENT_MS = 1200;
+
+export function mouseBeatsKeys(o: { pointer: 'mouse' | 'touch' | 'none'; mouseAt: number; now: number; keySteer: boolean }): boolean {
+  if (o.pointer !== 'mouse' || !(o.mouseAt > 0)) return false;
+  if (!o.keySteer) return true;
+  return o.now - o.mouseAt <= MOUSE_RECENT_MS;
+}
+
+export interface AimNote {
+  mouseX: number;
+  mouseY: number;
+  worldX: number;
+  worldY: number;
+  ox: number;
+  oy: number;
+  ang: number;
+  vx: number;
+  vy: number;
+  fromMouse: boolean;
+}
+
+const aimNotes: AimNote[] = [];
+
+/** Só grava com eco.aimDebug=1. Fora disso não escreve no console. */
+export function noteAim(n: AimNote) {
+  let on = false;
+  try {
+    on = typeof localStorage !== 'undefined' && localStorage.getItem('eco.aimDebug') === '1';
+  } catch {
+    on = false;
+  }
+  if (!on) return;
+  aimNotes.push(n);
+  if (aimNotes.length > 30) aimNotes.shift();
+  const host = globalThis as { __ecoAimLog?: AimNote[] };
+  host.__ecoAimLog = aimNotes;
+  console.info('[aim]', n.mouseX.toFixed(0), n.mouseY.toFixed(0), 'world', n.worldX.toFixed(1), n.worldY.toFixed(1), 'origin', n.ox.toFixed(1), n.oy.toFixed(1), 'vec', n.vx.toFixed(2), n.vy.toFixed(2));
+}
+
 export interface AimSolids {
   rects: readonly SweepRect[];
   discs: readonly SweepDisc[];

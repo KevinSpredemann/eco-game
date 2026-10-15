@@ -16,7 +16,7 @@ import { Renderer } from './render/renderer';
 import { drawCharacter } from './render/chars';
 import { drawMonster } from './render/monster';
 import { account, serverUrl } from './ui/account';
-import { InputManager, assistAim, nearestAim } from './ui/input';
+import { InputManager } from './ui/input';
 import { Settings, loadSettings, saveSettings } from './ui/settings';
 import { HomeHero, drawEquippedPreview } from './ui/homeHero';
 import { PLAY_MODES, type ModeCard } from './ui/modes';
@@ -30,7 +30,7 @@ import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLA
 import { comboReady } from './game/combos';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
-import { solveAim, type AimShape } from './game/aimService';
+import { castAimShape, noteAim, solveAim, type AimShape } from './game/aimService';
 import { ACTION_LABEL, Action, MoveScheme, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
@@ -2903,56 +2903,101 @@ const STEP = 1 / 60;
 let acc = 0;
 let last = performance.now();
 
-function aimFoes(g: AnyGame) {
-  const me = g.human;
-  return g.players
-    .filter((p) => p.alive && p.playing && g.hostile(me, p) && p.cloakT <= 0)
-    .map((p) => ({ id: p.id, x: p.x, y: p.y - GUN_Y }));
-}
-
 function readInput(): Input {
   const i = input.read();
-  const notebook = input.control === 'notebook' && !input.touchMode;
   const stickAim = input.manualAim();
-  const keyAim = input.keyboardAim || input.arrowsDown || stickAim !== null;
-  const cursorLive = !input.touchMode && input.mouse.at > 0 && !keyAim;
-  if (game && game.combat && keyAim) i.aim = stickAim ?? input.kbAim;
-  else if (game && game.combat && cursorLive) {
+  const keySteer = input.keyboardAim || input.arrowsDown || stickAim !== null;
+  const useMouse = input.mouseAims();
+  if (game && game.combat && useMouse) {
     const me = game.human;
     const cursor = renderer.toWorld(input.mouse.x, input.mouse.y);
-    let ang = Math.atan2(cursor.y - (me.y - GUN_Y), cursor.x - me.x);
-    if (notebook) {
-      ang = input.smoothAim(ang);
-      const foes = aimFoes(game);
-      if (input.lockOn) {
-        const near = nearestAim(me.x, me.y - GUN_Y, foes);
-        if (near) ang = near.aim;
-      } else ang = assistAim(ang, me.x, me.y - GUN_Y, foes);
-    }
-    i.aim = ang;
+    const oy = me.y - GUN_Y;
+    i.aim = Math.atan2(cursor.y - oy, cursor.x - me.x);
+  } else if (game && game.combat && keySteer) {
+    i.aim = stickAim ?? input.kbAim;
   }
   const pressed = (['ability', 'skill', 'ult', 'bonus', 'dash', 'item', 'plasma'] as Slot[]).find((k) => (i as any)[k]);
-  if (game && pressed) {
-    if (i.touchCast) {
+  if (game && (pressed || i.fire)) {
+    if (pressed && i.touchCast) {
       i.ca = i.touchCast.ang;
       i.cr = i.touchCast.ratio * slotRange(pressed);
-    } else if (keyAim || !cursorLive) {
+    } else if (useMouse) {
+      const screen = i.castScreen ?? { x: input.mouse.x, y: input.mouse.y };
+      const me = game.human;
+      if (pressed) {
+        const shot = pointerShot(pressed, screen.x, screen.y, true);
+        if (shot && !shot.fromFacing) {
+          i.ca = shot.ang;
+          i.cr = shot.dist;
+          i.aim = shot.ang;
+          noteAim({ mouseX: screen.x, mouseY: screen.y, worldX: shot.x, worldY: shot.y, ox: shot.ox, oy: shot.oy, ang: shot.ang, vx: Math.cos(shot.ang), vy: Math.sin(shot.ang), fromMouse: true });
+        }
+      } else {
+        const cursor = renderer.toWorld(screen.x, screen.y);
+        const oy = me.y - GUN_Y;
+        const ang = Math.atan2(cursor.y - oy, cursor.x - me.x);
+        i.ca = ang;
+        i.aim = ang;
+        noteAim({ mouseX: screen.x, mouseY: screen.y, worldX: cursor.x, worldY: cursor.y, ox: me.x, oy, ang, vx: Math.cos(ang), vy: Math.sin(ang), fromMouse: true });
+      }
+    } else if (pressed && game) {
       i.ca = stickAim ?? input.kbAim;
       // O impulso do teclado continua na distância cheia. O mouse é que encurta até o clique.
       if (pressed !== 'dash') i.cr = slotRange(pressed) * (input.precision ? 0.55 : 0.85);
-    } else {
-      const screen = i.castScreen ?? { x: input.mouse.x, y: input.mouse.y };
-      const shot = pointerShot(pressed, screen.x, screen.y, true);
-      if (shot) {
-        i.ca = shot.ang;
-        i.cr = shot.dist;
-        i.aim = shot.ang;
-      }
+      const me = game.human;
+      const ang = typeof i.ca === 'number' ? i.ca : me.dir;
+      const oy = me.y - GUN_Y;
+      noteAim({ mouseX: input.mouse.x, mouseY: input.mouse.y, worldX: me.x + Math.cos(ang), worldY: oy + Math.sin(ang), ox: me.x, oy, ang, vx: Math.cos(ang), vy: Math.sin(ang), fromMouse: false });
     }
   }
   delete i.touchCast;
   delete i.castScreen;
+  publishAimLive(i);
   return i;
+}
+
+/** Posição do corpo na tela, só com eco.aimDebug=1. Não entra no console. */
+function publishAimLive(i: Input) {
+  if (!game) return;
+  let on = false;
+  try {
+    on = localStorage.getItem('eco.aimDebug') === '1';
+  } catch {
+    return;
+  }
+  if (!on) return;
+  const me = game.human;
+  const view = renderer.worldView();
+  const zoom = view.zoom > 0 ? view.zoom : 1;
+  const toScreen = (x: number, y: number) => ({
+    sx: view.left + view.cssW / 2 + (x - view.camX) * zoom,
+    sy: view.top + view.cssH / 2 + (y - view.camY) * zoom,
+  });
+  const gun = toScreen(me.x, me.y - GUN_Y);
+  const host = globalThis as { __ecoAimLive?: unknown };
+  host.__ecoAimLive = {
+    sx: gun.sx,
+    sy: gun.sy,
+    x: me.x,
+    y: me.y,
+    dir: me.dir,
+    moveX: i.mx,
+    moveY: i.my,
+    mouseX: input.mouse.x,
+    mouseY: input.mouse.y,
+    pointer: input.pointerKind,
+    phase: game.phase,
+    energy: me.energy,
+    stun: me.stunT,
+    cds: me.powerCd,
+    kb: input.keyboardAim,
+    zoom,
+    camX: view.camX,
+    camY: view.camY,
+    foes: game.players
+      .filter((p) => p.alive && p.id !== me.id)
+      .map((p) => ({ x: p.x, y: p.y, ...toScreen(p.x, p.y) })),
+  };
 }
 
 /** Cursor de tela → ponto do golpe. O corpo só entra quando não há cursor. */
@@ -2963,7 +3008,7 @@ function pointerShot(slot: Slot, screenX: number, screenY: number, forCast: bool
   const oy = castOriginY(slot, me.y);
   const cursor = renderer.toWorld(screenX, screenY);
   const pw = powerForSlot(slot);
-  const kind: AimShape = info.kind === 'instant' || info.shape === 'self' ? 'self' : info.shape === 'line' ? 'dash' : info.shape === 'circle' || info.shape === 'wall' ? 'point' : 'projectile';
+  const kind: AimShape = castAimShape(info);
   const solids = solidsOf(game);
   return solveAim({
     ox: me.x,
@@ -3019,7 +3064,7 @@ function slotInfo(slot: Slot): { kind: 'instant' | 'direction' | 'point'; range:
     const pw = kitOf(me.char.id).powers[i];
     const point = pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink' && pw.act !== 'wall';
     const family = castFamily(pw);
-    const shape = pw.act === 'wall' ? 'wall' : pw.act === 'dash' || pw.act === 'blink' ? 'line' : point ? (family === 'instant' ? 'self' : 'circle') : 'arrow';
+    const shape = pw.act === 'wall' ? 'wall' : pw.act === 'dash' || pw.act === 'blink' ? 'line' : pw.act === 'decoy' ? 'arrow' : point ? (family === 'instant' ? 'self' : 'circle') : 'arrow';
     return {
       kind: family === 'instant' ? 'instant' : point ? 'point' : 'direction',
       range: Math.max(pw.range, pw.step ?? 0),
@@ -3147,13 +3192,13 @@ function updateAimPreview() {
       dist = Math.min(1, len / 90) * info.range;
     }
   } else {
-    const shot = pointerShot(a.slot, input.mouse.x, input.mouse.y, true);
+    const shot = input.mouseAims() ? pointerShot(a.slot, input.mouse.x, input.mouse.y, true) : null;
     if (shot && !shot.fromFacing) {
       ang = shot.ang;
       dist = shot.dist;
     }
   }
-  const shotNow = a.touch ? null : pointerShot(a.slot, input.mouse.x, input.mouse.y, true);
+  const shotNow = a.touch || !input.mouseAims() ? null : pointerShot(a.slot, input.mouse.x, input.mouse.y, true);
   const capped = shotNow && !shotNow.fromFacing ? shotNow.dist : Math.min(dist, info.range || dist);
   const along = info.kind === 'instant' ? null : shotNow && !shotNow.fromFacing ? shotNow : clipAim(me.x, info.kind === 'direction' ? oy + GUN_Y : me.y, ang, capped, game);
   const reach = along ? along.dist : capped;

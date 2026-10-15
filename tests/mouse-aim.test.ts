@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, type Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { resolveCastAngle, screenToWorld, solveAim, viewFromLetterbox } from '../src/game/aimService';
+import { castAimShape, mouseBeatsKeys, resolveCastAngle, screenToWorld, solveAim, viewFromLetterbox } from '../src/game/aimService';
 import { DASH_SPEED, DASH_TIME } from '../src/game/constants';
 
 const STEP = 1 / 60;
@@ -201,6 +201,41 @@ describe('o golpe segue o ponto, não o corpo', () => {
     g.step(STEP, { a: { ...idle, dash: true, aim: 0, ca: Math.PI, cr: 40 }, b: idle });
     expect(a.dir).toBeCloseTo(Math.PI);
     expect(a.dashT * DASH_SPEED + DASH_SPEED * STEP).toBeCloseTo(40, 0);
+  });
+});
+
+describe('quem manda na mira', () => {
+  it('o mouse recente vence o teclado e o toque não finge mouse', () => {
+    expect(mouseBeatsKeys({ pointer: 'mouse', mouseAt: 1000, now: 1500, keySteer: true })).toBe(true);
+    expect(mouseBeatsKeys({ pointer: 'mouse', mouseAt: 1000, now: 3000, keySteer: true })).toBe(false);
+    expect(mouseBeatsKeys({ pointer: 'mouse', mouseAt: 1000, now: 9000, keySteer: false })).toBe(true);
+    expect(mouseBeatsKeys({ pointer: 'touch', mouseAt: 1000, now: 1100, keySteer: false })).toBe(false);
+    expect(mouseBeatsKeys({ pointer: 'none', mouseAt: 0, now: 10, keySteer: false })).toBe(false);
+  });
+
+  it('área solta na hora continua no ponto, não no corpo', () => {
+    expect(castAimShape({ kind: 'instant', shape: 'circle' })).toBe('point');
+    expect(castAimShape({ kind: 'instant', shape: 'self' })).toBe('self');
+    expect(castAimShape({ kind: 'direction', shape: 'arrow' })).toBe('projectile');
+    expect(castAimShape({ kind: 'direction', shape: 'line' })).toBe('dash');
+    expect(castAimShape({ kind: 'point', shape: 'wall' })).toBe('point');
+  });
+
+  it('andar para a direita e atirar para a esquerda manda o básico para a esquerda', () => {
+    const g = fight([
+      { id: 'a', char: 'nara' },
+      { id: 'b', char: 'luna' },
+    ]);
+    const a = g.players[0];
+    a.x = 400;
+    a.y = 300;
+    a.dir = 0;
+    g.step(STEP, { a: { ...idle, mx: 1, my: 0, fire: true, aim: Math.PI, ca: Math.PI }, b: idle });
+    const bullet = g.bullets[g.bullets.length - 1];
+    expect(bullet.basic).toBe(true);
+    expect(bullet.vx).toBeLessThan(0);
+    expect(Math.abs(bullet.vy)).toBeLessThan(Math.abs(bullet.vx) * 0.2);
+    expect(a.dir).toBeCloseTo(0);
   });
 });
 
