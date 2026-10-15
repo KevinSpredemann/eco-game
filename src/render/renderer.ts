@@ -1130,8 +1130,8 @@ export class Renderer {
           const p = pc(e.pid);
           const el = e.skill as Element;
           const col = e.skill === 'plasma' ? '#c86bff' : ELEMENT_COLOR[el] ?? p?.color ?? '#fff';
-          this.ring(e.x, e.y - 10, col, e.r && e.r > 20 ? Math.min(e.r, 140) : 44);
-          if (!this.reducedEffects && ELEMENT_COLOR[el]) this.burst(e.x, e.y - 10, col, 12, 180);
+          // poderes elementais: o AbilityVfx desenha a área/lançamento do elemento (aqui só o que não é elemento)
+          if (!ELEMENT_COLOR[el]) this.ring(e.x, e.y - 10, col, e.r && e.r > 20 ? Math.min(e.r, 140) : 44);
           if (e.skill === 'rolamento') this.burst(e.x, e.y, '#bff4ff', 10, 160);
           if (e.skill === 'estimulo') this.ring(e.x, e.y, '#5dffb8', SKILLS.estimulo.radius ?? 160);
           break;
@@ -2296,32 +2296,10 @@ export class Renderer {
     }
     // lento (gelo / areia / fumaça)
     this.abilityFx.setReduced(this.reducedEffects);
+    // queimando, congelado/lento, raiz, tonto, eletrizado, vento e marca: tudo no AbilityVfx (um desenho só)
     this.abilityFx.drawStatus(ctx, p, time);
-    if (p.burnT > 0 && !this.reducedEffects && Math.random() < 0.35)
-      this.particles.push({ x: p.x + (Math.random() - 0.5) * 16, y: p.y - 28, vx: (Math.random() - 0.5) * 20, vy: -50 - Math.random() * 30, life: 0, max: 0.45, color: '#ff7a3a', size: 2.4, kind: 'spark' });
-    if (p.slowT > 0 || p.frozenT > 0) {
-      ctx.strokeStyle = 'rgba(160,230,255,0.8)';
-      ctx.lineWidth = 2;
-      for (let k = 0; k < 3; k++) {
-        const a0 = (k / 3) * Math.PI + time;
-        ctx.beginPath();
-        ctx.moveTo(p.x + Math.cos(a0) * 7, p.y - 6 + Math.sin(a0) * 7);
-        ctx.lineTo(p.x - Math.cos(a0) * 7, p.y - 6 - Math.sin(a0) * 7);
-        ctx.stroke();
-      }
-    }
     if (p.vampT > 0 && Math.random() < 0.2 && !this.reducedEffects)
       this.particles.push({ x: p.x + (Math.random() - 0.5) * 20, y: p.y - 30, vx: 0, vy: -40, life: 0, max: 0.6, color: '#ff3b6b', size: 2.6, kind: 'spark' });
-    if (p.stunT > 0.25) {
-      // estrelinhas de tontura
-      for (let k = 0; k < 3; k++) {
-        const a0 = time * 6 + (k / 3) * Math.PI * 2;
-        ctx.fillStyle = '#ffd23e';
-        ctx.beginPath();
-        ctx.arc(p.x + Math.cos(a0) * 16, p.y - 74 + Math.sin(a0) * 5, 2.6, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
 
     // turbo: imagens residuais
     if ((p.turboT > 0 || p.dashT > 0) && !this.reducedEffects) {
@@ -2613,6 +2591,8 @@ export class Renderer {
       const enemy = (b as any).owner === 'enemy';
       const col = enemy ? '#ff3b3b' : b.fromEcho ? '#b8e6ff' : w.color;
       const sp = Math.hypot(b.vx, b.vy) || 1;
+      // poderes (elemento, plasma, ataque básico): o efeito do elemento desenha (AbilityVfx), sem o risco reto
+      if (!b.fromEcho && ((b as any).el || (b as any).plasma || (b as any).basic)) continue;
       if (b.weapon === 'acido') {
         ctx.fillStyle = 'rgba(182,255,62,0.3)';
         ctx.beginPath();
