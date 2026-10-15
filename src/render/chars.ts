@@ -189,7 +189,13 @@ function lookOf(c: CharacterDef): Look {
       case 'lyra':
         return { ...base, hair: '#3a28a8', hairStyle: 'long', top: 'overalls', jacket: '#14a090', jacketDark: '#0a5048', shirt: '#241868', pants: '#123038', shoe: '#103038', glove: null, eye: '#204060', lashes: true };
       case 'metra':
-        return { ...base, hair: '#e6ebf4', hairStyle: 'swept', top: 'parka', jacket: '#4a5568', jacketDark: '#242a36', shirt: '#ffd0e4', pants: '#1c2430', shoe: '#3ad4e8', sole: '#e8fbff', glove: '#ff7ab8', eye: '#203040', head: 'goggles' };
+        return { ...base, hair: '#e6ebf4', hairStyle: 'short', top: 'hoodie', jacket: '#4a5568', jacketDark: '#242a36', shirt: '#ffd0e4', pants: '#1c2430', shoe: '#3ad4e8', sole: '#e8fbff', glove: '#ff7ab8', eye: '#203040', head: 'cap', extras: ['earring'] };
+      case 'vortex':
+        return { ...base, hair: '#1a1028', hairStyle: 'spiky', top: 'labcoat', jacket: '#7a4ad0', jacketDark: '#2a1848', shirt: '#1a1028', pants: '#140c22', shoe: '#2a1848', sole: '#c86bff', glove: '#c86bff', eye: '#c86bff', head: 'goggles', extras: ['bolt'] };
+      case 'nara':
+        return { ...base, hair: '#1a3a22', hairStyle: 'ponytail', top: 'overalls', jacket: '#2f8a4a', jacketDark: '#143820', shirt: '#d9ffe4', pants: '#143820', shoe: '#1a3a22', sole: '#c8f0d0', glove: null, eye: '#1a5a30', lashes: true, head: 'flower', extras: ['freckles'] };
+      case 'vexa':
+        return { ...base, hair: '#0e0c14', hairStyle: 'long', top: 'ninja', jacket: '#3a3458', jacketDark: '#161222', shirt: '#0e0c14', pants: '#100e18', shoe: '#161222', sole: '#2a2440', glove: '#2a2440', eye: '#c8b6ff', lashes: true, head: 'hood', face: 'mask' };
       case 'resona':
         return { ...base, hair: '#3ad4e0', hairStyle: 'short', jacket: '#12a0a8', jacketDark: '#0a4850', shirt: '#ff4fc3', pants: '#1a2038', shoe: '#102830', glove: '#102028', eye: '#1a2848', lashes: true, extras: ['earring'] };
       case 'rufo':
@@ -216,6 +222,15 @@ function lookOf(c: CharacterDef): Look {
 export function lookSignature(c: CharacterDef): string {
   const L = lookOf(c);
   return [L.hairStyle, L.head, L.top, L.face, L.hair, L.jacket, L.extras.join('+'), String(L.build)].join('|');
+}
+
+/**
+ * Chave da arte procedural. Não inclui o id: dois personagens no mesmo molde
+ * (cabelo, chapéu, roupa, rosto, extras e porte) geram a mesma chave.
+ */
+export function spriteKey(c: CharacterDef): string {
+  const L = lookOf(c);
+  return [L.hairStyle, L.head, L.top, L.face, L.extras.join('+'), String(L.build)].join('|');
 }
 
 // ================================================================== corpo

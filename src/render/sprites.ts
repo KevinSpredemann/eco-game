@@ -146,6 +146,45 @@ export function drawSymbol(ctx: CanvasRenderingContext2D, id: string, x: number,
       ctx.arc(0, -3, 6, 0, Math.PI * 2);
       ctx.fill();
       break;
+    case 'vortex': // núcleo de plasma
+      ctx.arc(0, 0, 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'nara': // broto
+      ctx.lineWidth = 2.4;
+      ctx.moveTo(0, 9);
+      ctx.lineTo(0, -1);
+      ctx.moveTo(0, 1);
+      ctx.quadraticCurveTo(-9, -2, -6, -9);
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(9, -3, 6, -10);
+      ctx.stroke();
+      break;
+    case 'vexa': // máscara
+      ctx.moveTo(-8, -3);
+      ctx.lineTo(0, 8);
+      ctx.lineTo(8, -3);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-4, -1);
+      ctx.lineTo(4, -1);
+      ctx.stroke();
+      break;
+    case 'metra': // compasso
+      ctx.moveTo(0, 8);
+      ctx.lineTo(-7, -6);
+      ctx.lineTo(7, -6);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, 6);
+      ctx.lineTo(5, -4);
+      ctx.stroke();
+      break;
     default: // hexágono (zed)
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
