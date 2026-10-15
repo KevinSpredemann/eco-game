@@ -1,6 +1,6 @@
 import './styles.css';
 import { audio } from './audio/audio';
-import { ARENAS, BORDER, WORLD_H, WORLD_W, getArena } from './game/arenas';
+import { ARENAS, BORDER, WORLD_H, WORLD_W, getArena, playableArena } from './game/arenas';
 import { tuneHint } from './game/mapTune';
 import { CHARACTERS, getCharacter, withLevel, withSkin } from './game/characters';
 import * as C from './game/constants';
@@ -43,6 +43,7 @@ import type { AimPreview } from './render/combatFx';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
 const settings: Settings = loadSettings();
+settings.arena = playableArena(settings.arena);
 if (import.meta.env.DEV) {
   try {
     if (localStorage.getItem('eco.dev') === '1') setAbilityTrace(true);
@@ -1787,7 +1788,7 @@ function startMatch() {
   const hint = practiceHint;
   practiceHint = '';
   if (!owns(account.profile, 'char:' + settings.char)) settings.char = account.profile.equipped.char;
-  const arena = getArena(settings.arena);
+  const arena = getArena(playableArena(settings.arena));
   const g = new Game({
     arena,
     humanChar: settings.char,
@@ -2016,15 +2017,27 @@ function powerHasTarget(me: { id: string; x: number; y: number; team: number }, 
 }
 
 /** combo armado: tecla, nome e quanto falta da janela (0–1) */
-function comboState(g: AnyGame): { key: string; name: string; frac: number } | null {
+function comboState(g: AnyGame): { key: string; name: string; frac: number; need?: string } | null {
   const me = g.human;
   if (!me.alive) return null;
   const foes = g.players
     .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
     .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
   const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
-  const hit = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
-  if (hit) return { key: input.touchMode ? ['Q', 'E', 'R', 'F'][hit.slot] : hit.key, name: hit.name, frac: hit.total ? Math.min(1, hit.left / hit.total) : 0 };
+  const cds = me.powerCd ?? [0, 0, 0, 0];
+  // "pronto" só se dá para usar agora: sem recarga, com energia (ou a suprema carregada)
+  const why = (i: number): string => {
+    if ((cds[i] ?? 0) > 0) return `recarga ${(cds[i] ?? 0).toFixed(1).replace('.', ',')}s`;
+    if (i === 2) return (me.ultCharge ?? 100) < 100 ? 'suprema em carga' : '';
+    return (me.energy ?? 100) < SLOT_COST[i] ? 'sem energia' : '';
+  };
+  const usable = [0, 1, 2, 3].map((i) => (why(i) ? 9 : 0));
+  const keyOf = (slot: number, key: string) => (input.touchMode ? ['Q', 'E', 'R', 'F'][slot] : key);
+  const hit = comboReady(me.char.id, usable, foes, labels);
+  if (hit) return { key: keyOf(hit.slot, hit.key), name: hit.name, frac: hit.total ? Math.min(1, hit.left / hit.total) : 0 };
+  // o alvo já está preparado, mas falta algo: mostra o que falta (sem fingir que dá)
+  const armed = comboReady(me.char.id, [0, 0, 0, 0], foes, labels);
+  if (armed) return { key: keyOf(armed.slot, armed.key), name: armed.name, frac: armed.total ? Math.min(1, armed.left / armed.total) : 0, need: why(armed.slot) || undefined };
   const plasma = g.players.find((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
   if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return { key: '', name: 'Explosão de Plasma', frac: Math.min(1, plasma.plasmaT / 4) };
   return null;
@@ -2393,14 +2406,19 @@ function updateHud() {
   const comboEl = $('#hud-combo');
   comboEl.hidden = !cs;
   if (cs) {
-    const sig = `${cs.key}|${cs.name}`;
+    const sig = `${cs.key}|${cs.name}|${cs.need ? 'wait' : 'go'}`;
+    comboEl.classList.toggle('wait', !!cs.need);
     if (comboEl.dataset.sig !== sig) {
       comboEl.dataset.sig = sig;
-      comboEl.innerHTML = `<span class="cb-tag">COMBO</span>${cs.key ? `<kbd>${escapeHtml(cs.key)}</kbd>` : ''}<b>${escapeHtml(cs.name)}</b><i class="cb-bar"><i></i></i>`;
-      comboEl.classList.remove('pop');
-      void comboEl.offsetWidth;
-      comboEl.classList.add('pop');
+      comboEl.innerHTML = `<span class="cb-tag">${cs.need ? 'PREPARADO' : 'COMBO'}</span>${cs.key ? `<kbd>${escapeHtml(cs.key)}</kbd>` : ''}<b>${escapeHtml(cs.name)}</b><small class="cb-need"></small><i class="cb-bar"><i></i></i>`;
+      if (!cs.need) {
+        comboEl.classList.remove('pop');
+        void comboEl.offsetWidth;
+        comboEl.classList.add('pop');
+      }
     }
+    const needEl = comboEl.querySelector('.cb-need') as HTMLElement | null;
+    if (needEl) needEl.textContent = cs.need ? `falta: ${cs.need}` : '';
     (comboEl.querySelector('.cb-bar i') as HTMLElement).style.width = `${Math.round(cs.frac * 100)}%`;
   } else comboEl.dataset.sig = '';
   scoreboard.update(g);

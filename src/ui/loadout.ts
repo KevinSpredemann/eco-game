@@ -4,7 +4,7 @@
 import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout, stageSecondary } from '../game/balance';
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
-import { ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, kitOf, studioOf, type PowerCategory, type PowerDef } from '../game/elements';
+import { ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, ULT_LAND, ULT_WINDUP, kitOf, studioOf, type PowerCategory, type PowerDef } from '../game/elements';
 import { aimLine, categoryLabel, listSynergies, powerRole, relevantFacts, swapDelta, targetLine, trainLine, useLine, type SynergyRow } from '../game/combos';
 import { previewEmpty, previewHtml } from './powerPreview';
 import { drawGear, GearKind } from './gearArt';
@@ -345,7 +345,10 @@ export class LoadoutScreen {
     let note = '';
     let primary = '';
     if (!extra) {
-      note = `<p class="pw-why">${slot === 2 ? 'Suprema do personagem.' : 'Poder do personagem.'} Q, E, F e R não trocam. Só o Z aceita um extra.</p>`;
+      const land = ULT_LAND[picked.element];
+      note = slot === 2 && land
+        ? `<p class="pw-ult"><b>${land.name}</b> — ${land.desc} Prepara ${ULT_WINDUP.toString().replace('.', ',')}s com aviso no chão; tonto cancela.</p><p class="pw-why">Q, E, F e R não trocam. Só o Z aceita um extra.</p>`
+        : `<p class="pw-why">Poder do personagem. Q, E, F e R não trocam. Só o Z aceita um extra.</p>`;
     } else if (!owned) {
       note = `<p class="pw-why">${this.lockReason(picked as StudioDef)}</p>`;
     } else if (pending) {

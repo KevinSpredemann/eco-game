@@ -7149,3 +7149,8 @@ canvas.stage,
   #screen-loadout .pw-card.slim { padding: 5px 8px; }
 }
 #screen-loadout .syn-row.none { grid-template-columns: minmax(0, 1fr) auto; }
+#hud-combo .cb-need { font-size: 0.66rem; color: #ffd0a0; letter-spacing: 0.02em; }
+#hud-combo .cb-need:empty { display: none; }
+#hud-combo.wait { border-color: rgba(255, 225, 74, 0.35); box-shadow: none; color: #d8c890; opacity: 0.85; }
+#hud-combo.wait .cb-tag { color: #d8c890; }
+#screen-loadout .pw-ult { margin: 0; font-size: 0.8rem; line-height: 1.35; color: #ffe2a0; } #screen-loadout .pw-ult b { color: #ffd23e; }
