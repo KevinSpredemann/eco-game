@@ -1,16 +1,21 @@
 // Uma reação por golpe. A simulação, o bot e a tela leem este módulo.
 import {
+  ELEMENT_FX,
   MARK_TIME,
   ROOT_AOE_BONUS,
   ROOT_TIME,
   SLOT_LABEL,
+  STUDIO,
   comboOf,
   kitOf,
+  powerCategory,
   resolvedDamage,
+  studioOf,
   tuneCombo,
   type Aura,
   type Element,
   type Kit,
+  type PowerCategory,
   type PowerDef,
 } from './elements';
 
@@ -273,5 +278,273 @@ export function powerSheet(pw: PowerDef, slot: number, cost: number) {
     duration,
     role: powerRole(pw),
     cast: pw.charge || pw.windup ? 'carrega' : pw.speed <= 0 ? 'área' : 'projétil',
+  };
+}
+
+const CATEGORY_FACE: Record<PowerCategory, string> = {
+  attack: 'Dano',
+  control: 'Controle',
+  mobility: 'Mobilidade',
+  defense: 'Defesa',
+  support: 'Suporte',
+};
+
+export function categoryLabel(pw: PowerDef): string {
+  return CATEGORY_FACE[powerCategory(pw)];
+}
+
+export interface Fact {
+  label: string;
+  value: string;
+}
+
+/** Só o que o golpe realmente usa. Zero e "no acerto" ficam de fora. */
+export function relevantFacts(pw: PowerDef, slot: number, cost: number): Fact[] {
+  const sheet = powerSheet(pw, slot, cost);
+  const heal = pw.zone === 'heal' || pw.act === 'zone';
+  const mobile = pw.act === 'dash' || pw.act === 'blink';
+  const facts: Fact[] = [];
+  if (heal) {
+    if (sheet.damage > 0) facts.push({ label: 'Cura', value: String(sheet.damage) });
+  } else if (sheet.damage > 0) {
+    facts.push({ label: 'Dano', value: String(sheet.damage) });
+  }
+  if (pw.grove === 'heal') facts.push({ label: 'Cura', value: 'bosque' });
+  if (mobile) {
+    const dist = pw.step ?? pw.range;
+    if (dist > 0) facts.push({ label: 'Distância', value: String(dist) });
+  } else if (sheet.range > 0) {
+    facts.push({ label: 'Alcance', value: String(sheet.range) });
+  }
+  const area = !mobile && (pw.speed <= 0 || pw.act === 'wall' || pw.act === 'zone') && sheet.area > 0;
+  if (area) facts.push({ label: 'Área', value: String(sheet.area) });
+  if (sheet.energy !== '0') facts.push({ label: 'Energia', value: sheet.energy });
+  if (sheet.cooldown > 0) facts.push({ label: 'Recarga', value: `${sheet.cooldown}s` });
+  if (sheet.duration && sheet.duration !== 'no acerto') facts.push({ label: 'Duração', value: sheet.duration });
+  return facts;
+}
+
+export function useLine(pw: PowerDef): string {
+  if (pw.charge || pw.windup) return 'Segure para mirar e solte.';
+  if (pw.act === 'dash' || pw.act === 'blink') return 'Aponte a direção. O deslocamento para na parede.';
+  if (pw.speed <= 0) return 'Aponte o centro. Sem alvo na área, não gasta.';
+  if (pw.home) return 'O projétil busca o alvo e para na parede.';
+  return 'O projétil segue a mira e para na parede.';
+}
+
+export function aimLine(pw: PowerDef): string {
+  if (pw.act === 'dash' || pw.act === 'blink' || pw.speed > 0) return 'Direção.';
+  return 'Ponto.';
+}
+
+export function targetLine(pw: PowerDef): string {
+  if (pw.zone === 'heal' || pw.act === 'zone') return 'Cura quem está no bosque.';
+  if (pw.grove === 'heal') return 'Dano no impacto e um bosque de cura.';
+  if (pw.act === 'decoy') return 'Segura um tiro e estoura.';
+  if (pw.act === 'wall') return 'Bloqueia tiro e movimento.';
+  if (pw.act === 'dash' || pw.act === 'blink') return 'Quem está no ponto leva o golpe.';
+  if (pw.mark) return 'Marca o alvo. Não enraíza.';
+  if ((pw.yank ?? 0) > 0) return 'Puxa o alvo.';
+  const fx = ELEMENT_FX[pw.element];
+  return fx.charAt(0).toUpperCase() + fx.slice(1) + '.';
+}
+
+export type SynergyState = 'active' | 'possible' | 'locked' | 'none';
+
+export interface SynergyRow {
+  id: string;
+  name: string;
+  effect: string;
+  benefit: string;
+  need: string;
+  order: string;
+  state: SynergyState;
+  /** Índices do kit. -1 é o Z equipado. */
+  slots: number[];
+  ends: [string, string];
+  powers: [PowerDef, PowerDef];
+}
+
+const RANK: Record<SynergyState, number> = { none: 0, locked: 1, possible: 2, active: 3 };
+
+const MARK_GHOST: PowerDef = { name: 'Marca', element: 'nature', cd: 1, dmg: 1, range: 80, speed: 400, radius: 8, mark: true };
+const ROOT_GHOST: PowerDef = { name: 'Raiz', element: 'nature', cd: 1, dmg: 1, range: 80, speed: 0, radius: 40 };
+const FIELD_GHOST: PowerDef = { name: 'Área', element: 'ice', cd: 1, dmg: 1, range: 80, speed: 0, radius: 40 };
+const SHOT_GHOST: PowerDef = { name: 'Projétil', element: 'nature', cd: 1, dmg: 1, range: 80, speed: 400, radius: 8 };
+
+function delivers(pw: PowerDef): boolean {
+  return pw.act !== 'decoy' && pw.act !== 'zone';
+}
+
+/** O que o golpe deixa num alvo limpo, do mesmo jeito que o combate grava. */
+function auraAfter(pw: PowerDef): Aura {
+  const aura: Aura = { burn: 0, frozen: 0, gust: 0, shock: 0, root: 0, marked: 0, field: 0, fieldEl: '', stun: 0 };
+  if (!delivers(pw)) return aura;
+  const aoe = pw.act === 'wall' || (pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink');
+  if (pw.element === 'fire') aura.burn = 1;
+  else if (pw.element === 'ice') aura.frozen = 1;
+  else if (pw.element === 'lightning') aura.shock = 1;
+  else if (pw.element === 'wind') aura.gust = 1;
+  else if (pw.element === 'nature' && !pw.mark) aura.root = 1;
+  if (pw.mark) aura.marked = 1;
+  if (aoe && !pw.mark) {
+    aura.field = 1;
+    aura.fieldEl = pw.element;
+  }
+  return aura;
+}
+
+function reactionBetween(charId: string, first: PowerDef, firstSlot: number, second: PowerDef, secondSlot: number): Reaction | null {
+  if (!delivers(first) || !delivers(second)) return null;
+  return resolveReaction(queryOf(charId, second, secondSlot, auraAfter(first)));
+}
+
+function needOf(hit: Reaction): string {
+  if (hit.id === 'root-aoe') return 'alvo preso';
+  if (hit.id === 'chill' || hit.id === 'shatter' || hit.id === 'steam') return 'alvo lento';
+  if (hit.id === 'cinder' || hit.id === 'thermal') return 'alvo queimando';
+  if (hit.id === 'storm') return 'alvo no vento';
+  if (hit.id === 'arc') return 'alvo no raio';
+  if (hit.id === 'field-shot') return `campo de ${FIELD_WINDOW}s no alvo`;
+  if (hit.id === 'mark-root') return `marca de ${MARK_WINDOW}s no mesmo alvo`;
+  if (hit.id === 'ult-control') return 'alvo preso ou tonto';
+  return 'condição do golpe anterior';
+}
+
+function iconsFor(card: SynergyCard, powers: readonly PowerDef[]): [PowerDef, PowerDef] {
+  if (card.slots.length === 2) return [powers[card.slots[0]], powers[card.slots[1]]];
+  if (card.id === 'field-shot') return [FIELD_GHOST, SHOT_GHOST];
+  if (card.id === 'ult-control') return [ROOT_GHOST, powers[2]];
+  return [MARK_GHOST, ROOT_GHOST];
+}
+
+/**
+ * Sinergias que resolveReaction e as três cartas oficiais realmente fecham.
+ * O Z entra no estado; a tela não compara elemento por conta própria.
+ */
+export function listSynergies(charId: string, secondary: string | null): SynergyRow[] {
+  const powers = kitOf(charId).powers;
+  const extra = studioOf(secondary);
+  const rows: SynergyRow[] = [];
+  const official = new Set<string>();
+
+  for (const card of kitSynergies(charId)) {
+    official.add(card.id);
+    const pair = iconsFor(card, powers);
+    rows.push({
+      id: card.id,
+      name: card.name,
+      effect: card.result,
+      benefit: card.result,
+      need: card.need,
+      order: card.order,
+      state: card.inKit ? 'active' : 'locked',
+      slots: card.slots.slice(),
+      ends: [pair[0].name, pair[1].name],
+      powers: pair,
+    });
+  }
+
+  const consider = (hit: Reaction | null, a: PowerDef, b: PowerDef, sa: number, sb: number, equipped: boolean) => {
+    if (!hit) return;
+    const state: SynergyState = equipped ? 'active' : 'possible';
+    const found = rows.find((row) => row.id === hit.id);
+    if (!found) {
+      rows.push({
+        id: hit.id,
+        name: hit.name,
+        effect: `soma ${hit.bonus}`,
+        benefit: `soma ${hit.bonus}`,
+        need: needOf(hit),
+        order: `${a.name}, depois ${b.name}`,
+        state,
+        slots: [sa, sb],
+        ends: [a.name, b.name],
+        powers: [a, b],
+      });
+      return;
+    }
+    if (RANK[state] <= RANK[found.state]) return;
+    found.state = state;
+    found.slots = [sa, sb];
+    found.ends = [a.name, b.name];
+    found.powers = [a, b];
+    if (!official.has(hit.id)) {
+      found.order = `${a.name}, depois ${b.name}`;
+      found.effect = `soma ${hit.bonus}`;
+      found.benefit = `soma ${hit.bonus}`;
+      found.need = needOf(hit);
+    }
+  };
+
+  for (let i = 0; i < powers.length; i++) {
+    for (let j = 0; j < powers.length; j++) {
+      if (i === j) continue;
+      consider(reactionBetween(charId, powers[i], i, powers[j], j), powers[i], powers[j], i, j, true);
+    }
+  }
+  if (extra) {
+    for (let i = 0; i < powers.length; i++) {
+      consider(reactionBetween(charId, powers[i], i, extra, -1), powers[i], extra, i, -1, true);
+      consider(reactionBetween(charId, extra, -1, powers[i], i), extra, powers[i], -1, i, true);
+    }
+  }
+
+  if (!rows.some((row) => row.id === 'chill')) {
+    const ice = powers.findIndex((pw) => auraAfter(pw).frozen);
+    const plasma = STUDIO.find((row) => row.id === 'plasma');
+    if (ice >= 0 && plasma) {
+      const hit = reactionBetween(charId, powers[ice], ice, plasma, -1);
+      if (hit) {
+        rows.push({
+          id: hit.id,
+          name: hit.name,
+          effect: `soma ${hit.bonus}`,
+          benefit: `soma ${hit.bonus}`,
+          need: needOf(hit),
+          order: `${powers[ice].name}, depois ${plasma.name}`,
+          state: 'possible',
+          slots: [ice],
+          ends: [powers[ice].name, plasma.name],
+          powers: [powers[ice], plasma],
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+export interface SwapDelta {
+  removed: string;
+  added: string;
+  key: string;
+  gained: string[];
+  lost: string[];
+  limit: string;
+}
+
+/** O que muda no Z. Não grava o equipamento. */
+export function swapDelta(charId: string, prev: string | null, next: string | null): SwapDelta {
+  const before = listSynergies(charId, prev);
+  const after = listSynergies(charId, next);
+  const ids = new Set([...before.map((row) => row.id), ...after.map((row) => row.id)]);
+  const gained: string[] = [];
+  const lost: string[] = [];
+  for (const id of ids) {
+    const was = before.find((row) => row.id === id);
+    const now = after.find((row) => row.id === id);
+    const name = now?.name ?? was?.name ?? id;
+    const from = was ? RANK[was.state] : 0;
+    const to = now ? RANK[now.state] : 0;
+    if (to > from && now && (now.state === 'active' || now.state === 'possible')) gained.push(name);
+    if (from > to && was && was.state === 'active') lost.push(name);
+  }
+  return {
+    removed: prev ? (studioOf(prev)?.name ?? prev) : 'vazio',
+    added: next ? (studioOf(next)?.name ?? next) : 'vazio',
+    key: 'Z',
+    gained,
+    lost,
+    limit: 'Q, E, F e R não trocam. Só o Z aceita um extra.',
   };
 }
