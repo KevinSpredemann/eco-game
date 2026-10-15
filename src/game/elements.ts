@@ -210,8 +210,8 @@ export const STUDIO: StudioDef[] = [
   { id: 'staccato', name: 'Staccato', element: 'lightning', cd: 3.2, dmg: 6, range: 220, speed: 900, radius: 12, cost: 16, unlockMatches: 1, art: 'art/studio/powers/staccato.webp', category: 'attack' },
   { id: 'crescendo', name: 'Crescendo', element: 'fire', cd: 4.8, dmg: 10, range: 150, speed: 0, radius: 22, cost: 20, unlockMatches: 2, art: 'art/studio/powers/crescendo.webp', category: 'attack', act: 'dash' },
   { id: 'ostinato', name: 'Ostinato', element: 'wind', cd: 5, dmg: 8, range: 150, speed: 0, radius: 88, cost: 20, unlockMatches: 3, art: 'art/studio/powers/ostinato.webp', category: 'control' },
-  { id: 'prisma', name: 'Prisma', element: 'wind', cd: 6, dmg: 6, range: 70, speed: 0, radius: 18, cost: 18, unlockMatches: 4, art: 'art/studio/powers/prisma.webp', category: 'defense', act: 'decoy' },
-  { id: 'reverso', name: 'Reverso', element: 'ice', cd: 5.2, dmg: 8, range: 150, speed: 0, radius: 78, cost: 22, unlockMatches: 5, art: 'art/studio/powers/reverso.webp', category: 'control', yank: 70 },
+  { id: 'prisma', name: 'Prisma de Eco', element: 'wind', cd: 6, dmg: 6, range: 70, speed: 0, radius: 18, cost: 18, unlockMatches: 4, art: 'art/studio/powers/prisma.webp', category: 'defense', act: 'decoy' },
+  { id: 'reverso', name: 'Reverso Harmônico', element: 'ice', cd: 5.2, dmg: 8, range: 150, speed: 0, radius: 78, cost: 22, unlockMatches: 5, art: 'art/studio/powers/reverso.webp', category: 'control', yank: 70 },
 ];
 
 export function studioOf(id: string | null | undefined): StudioDef | null {
@@ -336,7 +336,7 @@ export const KITS: Record<string, Kit> = {
   },
   lyra: {
     powers: [
-      { name: 'Corda da Lyra', element: 'ice', cd: 3.4, dmg: 8, range: 270, speed: 680, radius: 14, category: 'control' },
+      { name: 'Corda Harmônica', element: 'ice', cd: 3.4, dmg: 8, range: 270, speed: 680, radius: 14, category: 'control' },
       { name: 'Sopro', element: 'wind', cd: 4.7, dmg: 8, range: 150, speed: 0, radius: 84, category: 'control' },
       { name: 'Labareda', element: 'fire', cd: 6.2, dmg: 14, range: 290, speed: 640, radius: 16, category: 'attack' },
       { name: 'Faísca', element: 'lightning', cd: 3.6, dmg: 9, range: 240, speed: 760, radius: 14, category: 'attack' },
@@ -347,7 +347,7 @@ export const KITS: Record<string, Kit> = {
   },
   metra: {
     powers: [
-      { name: 'Pulso da Metra', element: 'lightning', cd: 4.5, dmg: 10, range: 150, speed: 0, radius: 82, category: 'attack' },
+      { name: 'Pulso do Metrônomo', element: 'lightning', cd: 4.5, dmg: 10, range: 150, speed: 0, radius: 82, category: 'attack' },
       { name: 'Brasa', element: 'fire', cd: 3.4, dmg: 8, range: 240, speed: 700, radius: 14, category: 'attack' },
       { name: 'Geada', element: 'ice', cd: 6.5, dmg: 13, range: 280, speed: 620, radius: 16, category: 'attack' },
       { name: 'Rajada', element: 'wind', cd: 4.2, dmg: 8, range: 140, speed: 0, radius: 78, category: 'control' },
@@ -358,7 +358,7 @@ export const KITS: Record<string, Kit> = {
   },
   resona: {
     powers: [
-      { name: 'Pulso da Resona', element: 'wind', cd: 4.6, dmg: 9, range: 160, speed: 0, radius: 90, category: 'control' },
+      { name: 'Pulsar Sônico', element: 'wind', cd: 4.6, dmg: 9, range: 160, speed: 0, radius: 90, category: 'control' },
       { name: 'Geada', element: 'ice', cd: 3.5, dmg: 8, range: 250, speed: 700, radius: 14, category: 'attack' },
       { name: 'Descarga', element: 'lightning', cd: 6.8, dmg: 15, range: 310, speed: 600, radius: 18, category: 'attack' },
       { name: 'Brasa', element: 'fire', cd: 3.2, dmg: 8, range: 220, speed: 740, radius: 14, category: 'attack' },
@@ -380,7 +380,7 @@ export const KITS: Record<string, Kit> = {
   },
   solfa: {
     powers: [
-      { name: 'Escada da Solfa', element: 'ice', cd: 5, dmg: 8, range: 150, speed: 0, radius: 76, category: 'control' },
+      { name: 'Escada de Notas', element: 'ice', cd: 5, dmg: 8, range: 150, speed: 0, radius: 76, category: 'control' },
       { name: 'Nota', element: 'wind', cd: 3.4, dmg: 8, range: 250, speed: 720, radius: 14, category: 'attack' },
       { name: 'Labareda', element: 'fire', cd: 6.3, dmg: 14, range: 290, speed: 640, radius: 16, category: 'attack' },
       { name: 'Faísca', element: 'lightning', cd: 4.4, dmg: 9, range: 140, speed: 0, radius: 78, category: 'attack' },
@@ -391,7 +391,7 @@ export const KITS: Record<string, Kit> = {
   },
   vibra: {
     powers: [
-      { name: 'Vibrato', element: 'wind', cd: 4.4, dmg: 9, range: 150, speed: 0, radius: 86, category: 'control' },
+      { name: 'Campo Vibrato', element: 'wind', cd: 4.4, dmg: 9, range: 150, speed: 0, radius: 86, category: 'control' },
       { name: 'Geada', element: 'ice', cd: 3.5, dmg: 7, range: 240, speed: 700, radius: 14, category: 'attack' },
       { name: 'Estalo', element: 'lightning', cd: 6.6, dmg: 14, range: 300, speed: 620, radius: 16, category: 'attack' },
       { name: 'Brasa', element: 'fire', cd: 3.3, dmg: 8, range: 220, speed: 740, radius: 14, category: 'attack' },
@@ -402,7 +402,7 @@ export const KITS: Record<string, Kit> = {
   },
   sibilo: {
     powers: [
-      { name: 'Sussurro', element: 'wind', cd: 6, dmg: 6, range: 70, speed: 0, radius: 18, category: 'defense', act: 'decoy' },
+      { name: 'Sussurro Falso', element: 'wind', cd: 6, dmg: 6, range: 70, speed: 0, radius: 18, category: 'defense', act: 'decoy' },
       { name: 'Brasa', element: 'fire', cd: 3.4, dmg: 9, range: 240, speed: 720, radius: 14, category: 'attack' },
       { name: 'Estalo', element: 'lightning', cd: 6.5, dmg: 13, range: 280, speed: 640, radius: 16, category: 'attack' },
       { name: 'Orvalho', element: 'ice', cd: 4.8, dmg: 8, range: 140, speed: 0, radius: 76, category: 'control' },
@@ -413,7 +413,7 @@ export const KITS: Record<string, Kit> = {
   },
   sibilo2: {
     powers: [
-      { name: 'Sussurro Triplo', element: 'lightning', cd: 5.2, dmg: 8, range: 110, speed: 0, radius: 26, category: 'mobility', act: 'blink', step: 110 },
+      { name: 'Sussurro Falso', element: 'lightning', cd: 5.2, dmg: 8, range: 110, speed: 0, radius: 26, category: 'mobility', act: 'blink', step: 110 },
       { name: 'Nota', element: 'wind', cd: 3.6, dmg: 8, range: 230, speed: 700, radius: 14, category: 'attack' },
       { name: 'Labareda', element: 'fire', cd: 6.4, dmg: 14, range: 280, speed: 640, radius: 16, category: 'attack' },
       { name: 'Geada', element: 'ice', cd: 4.6, dmg: 7, range: 140, speed: 0, radius: 74, category: 'control' },

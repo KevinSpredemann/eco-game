@@ -105,7 +105,7 @@ export const STUDIO_ARENAS: ArenaDef[] = [
   },
   {
     id: 'camara',
-    name: 'Câmara Anecóica',
+    name: 'Câmara Anecoica',
     desc: 'Sala fechada com quatro blocos e pouco eco visual.',
     gimmick: 'Dá para jogar. As cabines de silêncio da ficha não cortam som nesta versão.',
     art: 'art/studio/maps/camara.webp',
