@@ -13,7 +13,7 @@ import { assignUniqueColors, assignUniqueNames } from '../game/colors';
 import { BOSS, COMBAT, DEFAULT_LOADOUT, Loadout, sanitizeLoadout } from '../game/balance';
 import { speedMul, type Element } from '../game/elements';
 import { tuneBody, tuneMove } from '../game/mapTune';
-import { CAST_KINDS, ENEMY_KINDS, ITEM_IDS, Snapshot, StartInfo, WALL_KINDS, WEAPON_IDS } from './protocol';
+import { CAST_KINDS, ENEMY_KINDS, ITEM_IDS, Snapshot, StartInfo, WALL_KINDS, WEAPON_IDS, EL_IDS } from './protocol';
 import type { EchoRecording } from '../shared/types';
 
 type Ev = { key: string; meta: EchoRecording } & Record<string, any>;
@@ -172,7 +172,7 @@ export class ClientGame {
     this.zones = s.Z;
 
     for (const row of s.P) {
-      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks, energy, plasmaCd, plasmaT, plasmaOn, basicCd, markedT, fieldT, fieldEl, reactCd, gustT, shockT] = row as any[];
+      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks, energy, plasmaCd, plasmaT, plasmaOn, basicCd, markedT, fieldT, fieldEl, reactCd, gustT, shockT, ctrlT, rootT2, stunT2] = row as any[];
       const p = this.players.find((q) => q.id === id);
       if (!p) continue;
       const wasAlive = p.alive;
@@ -217,6 +217,9 @@ export class ClientGame {
       p.reactCd = reactCd ?? 0;
       p.gustT = gustT ?? 0;
       p.shockT = shockT ?? 0;
+      p.ctrlT = ctrlT ?? 0;
+      if (typeof rootT2 === 'number') p.rootT = rootT2;
+      if (typeof stunT2 === 'number') p.stunT = stunT2;
       p.maxHp = maxHp ?? COMBAT.maxHp;
       p.skillCd = skillCd ?? 0;
       p.ultCharge = ult ?? 0;
@@ -301,7 +304,7 @@ export class ClientGame {
     this.powerups = s.W.map(([id, kind, x, y, age]) => ({ id: id as number, kind: kind as PowerId, x: x as number, y: y as number, age: age as number }));
     this.clones = s.C.map(([owner, x, y, dir, decoy]) => ({ owner, x, y, dir, t: 1, decoy: !!decoy }));
     this.groves = (s.GR ?? []).map(([id, x, y, r, t, heal]) => ({ id, owner: '', team: -1, x, y, r, t, acc: 0, heal }));
-    this.bullets = s.B.map(([id, x, y, vx, vy, wi, fe, life, en]) => ({ id, x, y, vx, vy, weapon: WEAPON_IDS[wi] ?? 'blaster', fromEcho: !!fe, life, owner: en ? 'enemy' : '' }));
+    this.bullets = (s.B as any[][]).map(([id, x, y, vx, vy, wi, fe, life, en, el, kind, owner]) => ({ id, x, y, vx, vy, weapon: WEAPON_IDS[wi] ?? 'blaster', fromEcho: !!fe, life, owner: en ? 'enemy' : owner ?? '', el: el >= 0 ? EL_IDS[el] : undefined, plasma: kind === 1, basic: kind === 2 }));
     this.bombs = s.BM.map(([id, x, y, tx, ty, t, pulse, ice]) => ({ id, x, y, tx, ty, t, sx: x, sy: y, pulse: !!pulse, ice: !!ice }));
     this.mines = s.M.map(([id, x, y, armed]) => ({ id, x, y, armT: armed ? 0 : 1 }));
     this.turrets = s.T.map(([id, owner, x, y, aim, hp]) => ({ id, owner, x, y, aim, t: 1, cd: 0, hp: hp ?? COMBAT.turret.hp }));
@@ -507,6 +510,7 @@ function blankPlayer(id: string, name: string, char: ReturnType<typeof getCharac
     fieldT: 0,
     fieldEl: '',
     reactCd: 0,
+    ctrlT: 0,
     plasmaOn: !!loadout.secondary,
     comboStacks: 0,
     hidden: false,

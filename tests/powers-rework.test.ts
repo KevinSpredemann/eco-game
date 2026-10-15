@@ -268,9 +268,9 @@ describe('equipamento do Z', () => {
     b.fieldT = 1.1;
     b.fieldEl = 'nature';
     const row = encodeSnapshot(g, false).P[1];
-    expect(row.at(-6)).toBe(2.4);
-    expect(row.at(-5)).toBe(1.1);
-    expect(row.at(-4)).toBe('nature');
+    expect(row.at(-9)).toBe(2.4);
+    expect(row.at(-8)).toBe(1.1);
+    expect(row.at(-7)).toBe('nature');
     const cg = new ClientGame({
       you: 'a',
       mode: 'duelo',

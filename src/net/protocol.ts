@@ -5,6 +5,7 @@ import type { Loadout } from '../game/balance';
 import type { PowerId } from '../game/powerups';
 import { WEAPONS, type WeaponId, type ItemId } from '../game/weapons';
 
+export const EL_IDS = ['fire', 'ice', 'lightning', 'wind', 'nature', 'shadow', 'plasma'] as const;
 export const WEAPON_IDS: WeaponId[] = Object.keys(WEAPONS) as WeaponId[];
 export const ENEMY_KINDS = ['drone', 'brute', 'boss', 'pylon', 'rastejador', 'carapaca', 'cuspidor', 'xama', 'semeador'] as const;
 export const ITEM_IDS: (ItemId | null)[] = [null, 'bomba', 'mina', 'gelo', 'kit', 'pulso'];
@@ -25,7 +26,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 10;
+export const PROTO = 11;
 
 export interface RoomInfo {
   code: string;
@@ -121,7 +122,7 @@ export interface Snapshot {
   LD?: EchoDigest[];
   RL?: RoundEchoLine[];
   Z: string;
-  B: number[][];
+  B: (number | string)[][];
   BM: number[][];
   M: number[][];
   T: (number | string)[][];
@@ -262,6 +263,9 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
       r1(p.reactCd),
       r1(p.gustT),
       r1(p.shockT),
+      r1(p.ctrlT),
+      r1(p.rootT),
+      r1(p.stunT),
     ]),
     F: g.fragments.map((f) => [f.id, r1(f.x), r1(f.y), f.golden ? 1 : 0]),
     W: g.powerups.map((w) => [w.id, w.kind, r1(w.x), r1(w.y), r1(w.age)]),
@@ -273,7 +277,8 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     LD: withRoutes && g.phase === 'rewind' ? g.lastDigests : undefined,
     RL: withRoutes && g.phase === 'rewind' ? g.roundEchoLines : undefined,
     Z: g.arena.zones.map((_, i) => ({ off: '0', warn: '1', on: '2' })[g.zoneState(i)]).join(''),
-    B: g.bullets.map((b) => [b.id, r1(b.x), r1(b.y), Math.round(b.vx), Math.round(b.vy), WEAPON_IDS.indexOf(b.weapon), b.fromEcho ? 1 : 0, r2(b.life), b.owner === 'enemy' ? 1 : 0]),
+    // el: elemento do poder (para o efeito certo também online); pl: 1 plasma, 2 ataque básico
+    B: g.bullets.map((b) => [b.id, r1(b.x), r1(b.y), Math.round(b.vx), Math.round(b.vy), WEAPON_IDS.indexOf(b.weapon), b.fromEcho ? 1 : 0, r2(b.life), b.owner === 'enemy' ? 1 : 0, b.el ? EL_IDS.indexOf(b.el) : -1, b.plasma ? 1 : b.basic ? 2 : 0, b.owner === 'enemy' ? '' : b.owner]),
     BM: g.bombs.map((b) => [b.id, r1(b.x), r1(b.y), r1(b.tx), r1(b.ty), r2(b.t), b.pulse ? 1 : 0, b.ice ? 1 : 0]),
     M: g.mines.map((m) => [m.id, r1(m.x), r1(m.y), m.armT <= 0 ? 1 : 0]),
     T: g.turrets.map((t) => [t.id, t.owner, r1(t.x), r1(t.y), r2(t.aim), Math.ceil(t.hp)]),

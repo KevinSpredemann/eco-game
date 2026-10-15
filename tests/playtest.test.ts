@@ -41,7 +41,7 @@ describe('conteúdo e feedback do playtest', () => {
       expect(weaponDps(WEAPONS[id])).toBeGreaterThan(24);
       expect(weaponDps(WEAPONS[id])).toBeLessThan(55);
     }
-    expect(PROTO).toBe(10);
+    expect(PROTO).toBe(11);
   });
 
   it('Q e E do 2x2 causam dano de poder, não de item', () => {
