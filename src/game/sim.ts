@@ -71,7 +71,7 @@ import {
   wallStun,
   type Element,
 } from './elements';
-import { FIELD_WINDOW, MARK_WINDOW, isElemental, resolveReaction } from './combos';
+import { CONTROL_GRACE, FIELD_WINDOW, MARK_WINDOW, isElemental, resolveReaction } from './combos';
 import { abilityTrace } from './abilityTrace';
 import { castFamily, chargeFactor, chargeRadius, chargeReach } from './aimMath';
 import { resolveCastAngle } from './aimService';
@@ -209,6 +209,12 @@ export interface Player {
   fieldEl: Element | '';
   /** a mesma raiz não dispara o bônus de área outra vez */
   reactCd: number;
+  /**
+   * Janela de "alvo controlado" para os combos de controle (Suprema no controle, Execução):
+   * dura o atordoamento/raiz MAIS uma folga. Antes só valia enquanto o alvo estava tonto (0,55 s),
+   * e o segundo golpe quase nunca chegava a tempo.
+   */
+  ctrlT: number;
   /** o espaço extra desta partida trouxe a Rajada de Plasma */
   plasmaOn: boolean;
   /** combos fechados nesta rodada (a ninja fica mais rápida) */
@@ -610,7 +616,7 @@ export type GameEvent =
   | { type: 'deliver'; x: number; y: number; pid: string; points: number; count: number }
   | { type: 'hit'; x: number; y: number; pid: string; by: 'echo' | 'own' | 'hazard' | 'fall' | 'pulse'; lost?: number; from?: string }
   | { type: 'eliminated'; x: number; y: number; pid: string }
-  | { type: 'dash'; x: number; y: number; pid: string }
+  | { type: 'dash'; x: number; y: number; pid: string; el?: string; ang?: number }
   | { type: 'ability'; x: number; y: number; pid: string; ability: string }
   | { type: 'portal'; x: number; y: number; pid: string }
   | { type: 'disrupt'; x: number; y: number }
@@ -666,7 +672,15 @@ export type GameEvent =
   | { type: 'minion'; x: number; y: number; kind: MinionKind }
   | { type: 'block'; x: number; y: number }
   | { type: 'stunned'; x: number; y: number; pid: string }
-  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string; vfx?: 'ult' | 'burst' | 'root' | 'element' }
+  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string; vfx?: 'ult' | 'burst' | 'root' | 'element'; id?: string }
+  /** poder acertou alguém (mesmo ponto do dano): efeito de impacto do elemento */
+  | { type: 'phit'; x: number; y: number; el: string; pid: string; aoe?: boolean }
+  /** projétil de poder acabou sem acertar (parede ou alcance): dissipa no lugar */
+  | { type: 'pend'; x: number; y: number; el: string; wall?: boolean }
+  /** começou o preparo de um poder (energia na mão) */
+  | { type: 'windup'; pid: string; x: number; y: number; el: string; t: number }
+  /** piscar: de onde saiu para onde chegou (posição real) */
+  | { type: 'blink'; pid: string; x0: number; y0: number; x1: number; y1: number; el: string }
   | { type: 'deny'; pid: string; msg: string; x?: number; y?: number };
 
 export type Phase = 'prep' | 'play' | 'rewind' | 'call' | 'results';
@@ -870,6 +884,7 @@ export class Game {
       fieldT: 0,
       fieldEl: '',
       reactCd: 0,
+      ctrlT: 0,
       plasmaOn: !!lo.secondary,
       comboStacks: 0,
       hidden: false,
@@ -1042,6 +1057,7 @@ export class Game {
         fieldT: 0,
         fieldEl: '',
         reactCd: 0,
+        ctrlT: 0,
         comboStacks: 0,
         tookDamage: false,
         tripleDone: false,
@@ -1518,6 +1534,7 @@ export class Game {
       p.fieldT = Math.max(0, p.fieldT - dt);
       if (p.fieldT <= 0) p.fieldEl = '';
       p.reactCd = Math.max(0, p.reactCd - dt);
+      p.ctrlT = Math.max(0, p.ctrlT - dt);
       p.basicCd = Math.max(0, p.basicCd - dt);
       p.rootT = Math.max(0, p.rootT - dt);
       p.rootResistT = Math.max(0, p.rootResistT - dt);
@@ -1835,6 +1852,7 @@ export class Game {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Conjuração interrompida', x: p.x, y: p.y });
     }
     p.ccResistT = p.stunT + COMBAT.ccResist;
+    p.ctrlT = Math.max(p.ctrlT, p.stunT + CONTROL_GRACE);
     this.events.push({ type: 'stunned', x: p.x, y: p.y, pid: p.id });
   }
   private slow(p: Player, t: number) {
@@ -2917,8 +2935,12 @@ export class Game {
     }
   }
 
-  private solidAlong(x0: number, y0: number, x1: number, y1: number, r: number) {
-    const rects = this.iceWalls.length ? [...this.arena.walls, ...this.iceWalls] : this.arena.walls;
+  /** passThrough: muralhas deste dono (e do time) não seguram os tiros dele — a muralha protege quem a ergueu */
+  private solidAlong(x0: number, y0: number, x1: number, y1: number, r: number, passThrough?: string) {
+    const team = passThrough ? this.teamOf(passThrough) : -1;
+    const own = (w: { owner: string }) => !!passThrough && (w.owner === passThrough || (team >= 0 && w.owner !== 'arena' && this.teamOf(w.owner) === team));
+    const walls = passThrough ? this.iceWalls.filter((w) => !own(w)) : this.iceWalls;
+    const rects = walls.length ? [...this.arena.walls, ...walls] : this.arena.walls;
     return sweepCircle(x0, y0, x1, y1, r, rects, this.arena.pillars, {
       minX: BORDER + r,
       minY: BORDER + r,
@@ -3010,6 +3032,7 @@ export class Game {
     p.fieldT = 0;
     p.fieldEl = '';
     p.reactCd = 0;
+    p.ctrlT = 0;
     p.plasmaT = 0;
     p.stunT = 0;
     p.slowT = 0;
@@ -3019,6 +3042,7 @@ export class Game {
     if (t <= 0 || p.rootResistT > 0 || p.dodgeT > 0 || p.boss) return;
     p.rootT = Math.max(p.rootT, t);
     p.rootResistT = p.rootT + ROOT_RESIST;
+    p.ctrlT = Math.max(p.ctrlT, p.rootT + CONTROL_GRACE);
     this.events.push({ type: 'trap', x: p.x, y: p.y, pid: p.id });
   }
 
@@ -3138,6 +3162,7 @@ export class Game {
     }
     p.pendingCast = { slot, ang, ca: inp?.ca, cr: inp?.cr, at: this.roundT + wind };
     p.castT = Math.max(p.castT, wind);
+    this.events.push({ type: 'windup', pid: p.id, x: p.x, y: p.y, el: def.element, t: wind });
     abilityTrace(p.id, 'windup', def.name);
   }
 
@@ -3241,12 +3266,13 @@ export class Game {
       p.dashEl = def.element;
       p.dashHit = [];
       p.flowT = Math.max(p.flowT, FLOW_TIME);
-      this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
+      this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id, el: def.element, ang });
     } else if (def.act === 'blink') {
       const ox = p.x;
       const oy = p.y;
       const reach = inp && typeof inp.cr === 'number' ? Math.min(step, Math.max(8, inp.cr)) : step;
       const moved = this.blinkTo(p, ang, reach);
+      this.events.push({ type: 'blink', pid: p.id, x0: ox, y0: oy, x1: p.x, y1: p.y, el: def.element });
       if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, dmg) });
       if (moved > 12) p.ambushT = AMBUSH_TIME;
       const foe = this.nearestHostile(p, 36);
@@ -3385,6 +3411,7 @@ export class Game {
   /** Marca de 4 s. O dano do projétil não passa do valor da habilidade. */
   private deliverPlasma(src: Player, dst: Player, damage: number) {
     if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
+    this.events.push({ type: 'phit', x: dst.x, y: dst.y, el: 'plasma', pid: src.id });
     this.hurt(dst, Math.min(PLASMA.dmg, Math.max(0, damage)), src.id, 'pulse');
     if (dst.alive) dst.plasmaT = PLASMA.mark;
   }
@@ -3393,6 +3420,7 @@ export class Game {
   private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number, aoe = false, cast?: { slot?: number; projectile?: boolean; mark?: boolean }) {
     if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
     if (tuneBlocks(this.arena, src.x, src.y, dst.x, dst.y, this.worldT)) return;
+    this.events.push({ type: 'phit', x: dst.x, y: dst.y, el: element, pid: src.id, aoe });
     const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT, marked: dst.markedT, field: dst.fieldT, fieldEl: dst.fieldEl, stun: dst.stunT };
     const extra = bonusDamage(src.char.id, aura, dst.stunT > 0);
     const move = this.mobilityBonus(src);
@@ -3411,6 +3439,7 @@ export class Game {
       stun: dst.stunT,
       reactCd: dst.reactCd,
       slow: dst.slowT,
+      ctrl: dst.ctrlT,
     });
     if (reaction?.clearFrozen) {
       dst.frozenT = 0;
@@ -3429,6 +3458,7 @@ export class Game {
       dst.fieldEl = '';
     }
     if (reaction?.reactLock) dst.reactCd = reaction.reactLock;
+    if (reaction?.clearCtrl) dst.ctrlT = 0;
     const bonus = reaction ? (reaction.id === 'root-aoe' ? Math.min(reaction.bonus, Math.max(0, EXTRA_CAP - move)) : reaction.bonus) : 0;
     const plasma = dst.plasmaT > 0;
     let burst = 0;
@@ -3465,7 +3495,7 @@ export class Game {
       }
     }
     if (bonus > 0 && reaction) {
-      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: reaction.name, bonus, pid: src.id, vfx: reaction.vfx });
+      this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: reaction.name, bonus, pid: src.id, vfx: reaction.vfx, id: reaction.id });
       src.comboStacks = Math.min(8, src.comboStacks + 1);
       if (isElemental(reaction.id)) {
         const refund = refundOnCombo(src.char.id);
@@ -3727,7 +3757,7 @@ export class Game {
           break;
         }
         if (!b.pierce) {
-          const wallT = this.solidAlong(ox, oy + GUN_Y, nx, ny + GUN_Y, 3);
+          const wallT = this.solidAlong(ox, oy + GUN_Y, nx, ny + GUN_Y, 3, b.fromEcho || enemyShot ? undefined : b.owner);
           const bodyT = this.earliestBody(b, ox, oy, nx, ny, enemyShot, ownerTeam);
           if (wallT !== null && (bodyT === null || wallT <= bodyT)) {
             const t = Math.max(0, Math.min(1, wallT));
@@ -3738,6 +3768,7 @@ export class Game {
             if ((b.el || b.basic || b.plasma) && b.hit.length === 0) {
               b.miss = 'wall';
               this.events.push({ type: 'deny', pid: b.owner, msg: 'Obstáculo', x: b.x, y: b.y });
+              this.events.push({ type: 'pend', x: b.x, y: b.y, el: b.plasma ? 'plasma' : b.el ?? 'basic', wall: true });
             }
             abilityTrace(b.owner, 'wall', `${Math.round(b.x)},${Math.round(b.y)}`);
             break;
@@ -3781,6 +3812,7 @@ export class Game {
             b.hit.push(o.id);
             const src = this.players.find((q) => q.id === b.owner);
             const move = src ? this.mobilityBonus(src) : 0;
+            this.events.push({ type: 'phit', x: o.x, y: o.y, el: 'basic', pid: b.owner });
             this.hurt(o, b.dmg + move, b.fromEcho ? null : b.owner, 'shot', Math.atan2(b.vy, b.vx));
             if (!b.pierce) {
               b.life = 0;
@@ -3866,6 +3898,7 @@ export class Game {
       if (b.life <= 0 && !b.miss && b.hit.length === 0 && (b.el || b.basic || b.plasma)) {
         b.miss = 'range';
         this.events.push({ type: 'deny', pid: b.owner, msg: 'Fora de alcance', x: b.x, y: b.y });
+        this.events.push({ type: 'pend', x: b.x, y: b.y, el: b.plasma ? 'plasma' : b.el ?? 'basic' });
       }
       // foguete e lança-granadas explodem ao bater ou no fim do alcance
       const bw = WEAPONS[b.weapon];

@@ -1,6 +1,8 @@
 // Uma reação por golpe. A simulação, o bot e a tela leem este módulo.
 import {
+  BURN_TIME,
   ELEMENT_FX,
+  FROZEN_TIME,
   MARK_TIME,
   ROOT_AOE_BONUS,
   ROOT_TIME,
@@ -34,6 +36,11 @@ export const COMBUST_AOE = 64;
 export const EXECUTE_BONUS = 8;
 /** A mesma raiz não fecha o bônus de área de novo. */
 export const REACT_LOCK = 1.6;
+/**
+ * Folga depois do atordoamento/raiz em que o alvo ainda conta como "controlado" para os combos
+ * de controle. O tonto dura ~0,55 s: sem folga, o segundo golpe (que ainda viaja) chegava tarde.
+ */
+export const CONTROL_GRACE = 1.2;
 
 const ELEMENTAL = new Set(['shatter', 'steam', 'cinder', 'storm', 'arc', 'thermal', 'chill']);
 
@@ -54,6 +61,8 @@ export interface HitQuery {
   reactCd: number;
   /** lentidão sem congelar. Ausente vale zero. */
   slow?: number;
+  /** alvo controlado agora ou há pouco (atordoado/preso + folga). Ausente: só o estado atual. */
+  ctrl?: number;
 }
 
 export interface Reaction {
@@ -68,6 +77,8 @@ export interface Reaction {
   clearMarked?: boolean;
   clearField?: boolean;
   rootAdd?: number;
+  /** gasta a janela de controle (não fecha outro combo de controle com o mesmo atordoamento) */
+  clearCtrl?: boolean;
   reactLock?: number;
   aoe?: number;
   vfx: 'ult' | 'burst' | 'root' | 'element';
@@ -84,13 +95,15 @@ export function fieldAccepts(field: Element | '', next: Element): boolean {
 /** No máximo uma reação. Combo elemental antigo ganha do campo, para não trocar o Estilhaçar. */
 export function resolveReaction(q: HitQuery): Reaction | null {
   const root = q.aura.root ?? 0;
+  const ctrl = Math.max(q.ctrl ?? 0, root, q.stun);
   const elemental = tuneCombo(q.charId, comboOf(q.aura, q.element));
-  if (q.slot === 2 && (root > 0 || q.stun > 0) && !elemental) {
+  if (q.slot === 2 && ctrl > 0 && !elemental) {
     return {
       id: 'ult-control',
       name: 'Suprema no controle',
       bonus: ULT_CONTROL_BONUS,
       clearRoot: true,
+      clearCtrl: true,
       reactLock: REACT_LOCK,
       vfx: 'ult',
     };
@@ -146,8 +159,8 @@ export function resolveReaction(q: HitQuery): Reaction | null {
       vfx: 'burst',
     };
   }
-  if ((root > 0 || q.stun > 0) && q.slot !== 2 && q.reactCd <= 0 && isOffense(q)) {
-    return { id: 'execute', name: 'Execução combinada', bonus: EXECUTE_BONUS, reactLock: REACT_LOCK, vfx: 'burst' };
+  if (ctrl > 0 && q.slot !== 2 && q.reactCd <= 0 && isOffense(q)) {
+    return { id: 'execute', name: 'Execução combinada', bonus: EXECUTE_BONUS, clearCtrl: true, reactLock: REACT_LOCK, vfx: 'burst' };
   }
   return null;
 }
@@ -180,8 +193,23 @@ function queryOf(charId: string, pw: PowerDef, slot: number, foe: Aura, distRead
     field: foe.field ?? 0,
     fieldEl: foe.fieldEl ?? '',
     stun: foe.stun ?? 0,
+    ctrl: foe.ctrl ?? 0,
     reactCd: distReady ? 0 : 1,
   };
+}
+
+/** quanto falta da janela que arma este combo (e o total), para a barra da tela */
+export function comboWindow(id: string, foe: Aura): { left: number; total: number } {
+  const pick = (left: number, total: number) => ({ left: Math.max(0, left), total });
+  if (id === 'shatter' || id === 'steam' || id === 'chill') return pick(foe.frozen, FROZEN_TIME);
+  if (id === 'cinder' || id === 'thermal') return pick(foe.burn, BURN_TIME);
+  if (id === 'storm') return pick(foe.gust, MARK_TIME);
+  if (id === 'arc') return pick(foe.shock, MARK_TIME);
+  if (id === 'mark-root') return pick(foe.marked ?? 0, MARK_WINDOW);
+  if (id === 'field-shot') return pick(foe.field ?? 0, FIELD_WINDOW);
+  if (id === 'combustao' || id === 'root-aoe') return pick(foe.root ?? 0, ROOT_TIME);
+  if (id === 'ult-control' || id === 'execute') return pick(Math.max(foe.ctrl ?? 0, foe.stun ?? 0, foe.root ?? 0), CONTROL_GRACE + 0.8);
+  return pick(0, 1);
 }
 
 /** O bot fecha a sinergia oficial que já está armada, com a mesma regra do jogador. */
@@ -197,13 +225,13 @@ export function officialSlot(charId: string, kit: Kit, cds: readonly number[], f
 }
 
 /** Combo que já está armado num rival e cabe num poder pronto. */
-export function comboReady(charId: string, cds: readonly number[], foes: readonly Aura[], labels: readonly string[] = SLOT_LABEL): { slot: number; key: string; name: string } | null {
+export function comboReady(charId: string, cds: readonly number[], foes: readonly Aura[], labels: readonly string[] = SLOT_LABEL): { slot: number; key: string; name: string; id: string; left: number; total: number } | null {
   const kit = kitOf(charId);
   for (const foe of foes) {
     for (let i = 0; i < 4; i++) {
       if ((cds[i] ?? 0) > 0) continue;
       const hit = resolveReaction(queryOf(charId, kit.powers[i], i, foe));
-      if (hit) return { slot: i, key: labels[i] ?? SLOT_LABEL[i], name: hit.name };
+      if (hit) return { slot: i, key: labels[i] ?? SLOT_LABEL[i], name: hit.name, id: hit.id, ...comboWindow(hit.id, foe) };
     }
   }
   return null;
@@ -407,7 +435,10 @@ function auraAfter(pw: PowerDef): Aura {
   const aoe = pw.act === 'wall' || (pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink');
   if (pw.element === 'fire') aura.burn = 1;
   else if (pw.element === 'ice') aura.frozen = 1;
-  else if (pw.element === 'lightning') aura.shock = 1;
+  else if (pw.element === 'lightning') {
+    aura.shock = 1;
+    aura.stun = 1;
+  }
   else if (pw.element === 'wind') aura.gust = 1;
   else if (pw.element === 'nature' && !pw.mark) aura.root = 1;
   if (pw.mark) aura.marked = 1;
@@ -502,6 +533,30 @@ export function listSynergies(charId: string, secondary: string | null): Synergy
       found.need = needOf(hit);
     }
   };
+
+  // A carta oficial só fica "ativa" se o combate REALMENTE resolve esse combo com aqueles poderes.
+  // (Antes a tela prometia "Descarga" em kits onde o jogo resolvia Estilhaçar no lugar.)
+  for (const row of rows) {
+    if (!official.has(row.id) || row.state !== 'active' || row.slots.length !== 2) continue;
+    const [a0, b0] = row.slots;
+    if (a0 >= 0 && b0 >= 0 && reactionBetween(charId, powers[a0], a0, powers[b0], b0)?.id === row.id) continue;
+    let fixed = false;
+    for (let i = 0; i < powers.length && !fixed; i++)
+      for (let j = 0; j < powers.length && !fixed; j++) {
+        if (i === j || reactionBetween(charId, powers[i], i, powers[j], j)?.id !== row.id) continue;
+        row.slots = [i, j];
+        row.ends = [powers[i].name, powers[j].name];
+        row.powers = [powers[i], powers[j]];
+        row.order = `${powers[i].name}, depois ${powers[j].name}`;
+        fixed = true;
+      }
+    if (!fixed) {
+      const real = a0 >= 0 && b0 >= 0 ? reactionBetween(charId, powers[a0], a0, powers[b0], b0) : null;
+      row.state = 'locked';
+      row.slots = [];
+      if (real) row.need = `${row.need} · com estes poderes sai ${real.name}`;
+    }
+  }
 
   for (let i = 0; i < powers.length; i++) {
     for (let j = 0; j < powers.length; j++) {

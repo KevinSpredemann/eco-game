@@ -14,6 +14,8 @@ export interface Aura {
   field?: number;
   fieldEl?: Element | '';
   stun?: number;
+  /** alvo controlado agora ou há pouco (janela dos combos de controle) */
+  ctrl?: number;
 }
 
 export type PowerCategory = 'attack' | 'defense' | 'mobility' | 'control' | 'support';

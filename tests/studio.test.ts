@@ -65,11 +65,12 @@ describe('estúdio', () => {
     b.y = 360;
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     expect(g.iceWalls.length).toBeGreaterThan(0);
-    const hp = b.hp;
-    a.ultCharge = 100;
-    g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0 }, b: idle });
+    // segura o tiro do RIVAL (o da própria Clave passa: a muralha protege quem a ergueu)
+    const hp = a.hp;
+    b.ultCharge = 100;
+    g.step(STEP, { a: idle, b: { ...idle, ult: true, aim: Math.PI, ca: Math.PI } });
     for (let i = 0; i < 90; i++) g.step(STEP, { a: idle, b: idle });
-    expect(b.hp).toBe(hp);
+    expect(a.hp).toBe(hp);
   });
 
   it('a Fuga pisca e deixa uma ilusão no ponto de saída', () => {
