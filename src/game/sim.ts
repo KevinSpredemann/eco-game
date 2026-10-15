@@ -205,6 +205,8 @@ export interface Player {
   plasmaCd: number;
   /** marca de plasma neste jogador (segundos) */
   plasmaT: number;
+  /** disparo de plasma do kit: a onda seguinte fecha a cadeia (segundos) */
+  plasmaPrimeT: number;
   /** marca de sinergia (Semente). Não é o marcador que aumenta dano. */
   markedT: number;
   /** campo elemental neste alvo, para o projétil compatível */
@@ -907,6 +909,7 @@ export class Game {
       energy: ENERGY_MAX,
       plasmaCd: 0,
       plasmaT: 0,
+      plasmaPrimeT: 0,
       markedT: 0,
       fieldT: 0,
       fieldEl: '',
@@ -1082,6 +1085,7 @@ export class Game {
         energy: ENERGY_MAX,
         plasmaCd: 0,
         plasmaT: 0,
+        plasmaPrimeT: 0,
         markedT: 0,
         fieldT: 0,
         fieldEl: '',
@@ -1561,6 +1565,7 @@ export class Game {
       for (let i = 0; i < 4; i++) p.powerCd[i] = Math.max(0, p.powerCd[i] - dt);
       p.plasmaCd = Math.max(0, p.plasmaCd - dt);
       p.plasmaT = Math.max(0, p.plasmaT - dt);
+      p.plasmaPrimeT = Math.max(0, p.plasmaPrimeT - dt);
       p.markedT = Math.max(0, p.markedT - dt);
       p.fieldT = Math.max(0, p.fieldT - dt);
       if (p.fieldT <= 0) p.fieldEl = '';
@@ -3068,6 +3073,7 @@ export class Game {
     p.ctrlT = 0;
     p.iceT = 0;
     p.plasmaT = 0;
+    p.plasmaPrimeT = 0;
     p.stunT = 0;
     p.slowT = 0;
   }
@@ -3404,9 +3410,9 @@ export class Game {
       const moved = this.blinkTo(p, ang, reach);
       this.events.push({ type: 'blink', pid: p.id, x0: ox, y0: oy, x1: p.x, y1: p.y, el: def.element });
       if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, dmg) });
-      if (moved > 12) p.ambushT = AMBUSH_TIME;
       const foe = this.nearestHostile(p, 36);
       if (foe) this.deliverPower(p, foe, def.element, dmg, 0, false, { slot, projectile: false, mark: !!def.mark });
+      if (moved > 12) p.ambushT = AMBUSH_TIME;
     } else if (def.act === 'decoy') {
       const ox = p.x + Math.cos(ang) * 48;
       const oy = p.y + Math.sin(ang) * 48;
@@ -3559,7 +3565,7 @@ export class Game {
     if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
     if (tuneBlocks(this.arena, src.x, src.y, dst.x, dst.y, this.worldT)) return;
     this.events.push({ type: 'phit', x: dst.x, y: dst.y, el: element, pid: src.id, aoe });
-    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT, marked: dst.markedT, field: dst.fieldT, fieldEl: dst.fieldEl, stun: dst.stunT };
+    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT, marked: dst.markedT, field: dst.fieldT, fieldEl: dst.fieldEl, stun: dst.stunT, plasma: dst.plasmaPrimeT };
     const extra = bonusDamage(src.char.id, aura, dst.stunT > 0);
     const move = this.mobilityBonus(src);
     const reaction = resolveReaction({
@@ -3595,6 +3601,7 @@ export class Game {
       dst.fieldT = 0;
       dst.fieldEl = '';
     }
+    if (reaction?.clearPlasma) dst.plasmaPrimeT = 0;
     if (reaction?.reactLock) dst.reactCd = reaction.reactLock;
     if (reaction?.clearCtrl) dst.ctrlT = 0;
     const frozeNow = !!reaction?.hold;
@@ -3638,6 +3645,7 @@ export class Game {
         dst.fieldT = FIELD_WINDOW;
         dst.fieldEl = element;
       }
+      if (element === 'plasma' && cast?.projectile && !aoe && (cast.slot ?? -1) !== 2 && !reaction?.clearPlasma) dst.plasmaPrimeT = MARK_TIME;
     }
     if (bonus > 0 && reaction) {
       this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: reaction.name, bonus, pid: src.id, vfx: reaction.vfx, id: reaction.id });

@@ -2022,7 +2022,7 @@ function comboState(g: AnyGame): { key: string; name: string; frac: number; need
   if (!me.alive) return null;
   const foes = g.players
     .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
+    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT, plasma: o.plasmaPrimeT ?? 0 }));
   const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
   const cds = me.powerCd ?? [0, 0, 0, 0];
   // "pronto" só se dá para usar agora: sem recarga, com energia (ou a suprema carregada)
@@ -2048,7 +2048,7 @@ function comboLine(g: AnyGame): string {
   if (!me.alive) return '';
   const foes = g.players
     .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
+    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT, plasma: o.plasmaPrimeT ?? 0 }));
   const plasma = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
   if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return 'COMBO DISPONÍVEL: Explosão de Plasma';
   const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
@@ -2071,7 +2071,7 @@ function buildSlots(g: AnyGame): SlotView[] {
     const labels = [K('ability'), K('skill'), K('ult'), K('bonus')];
     const foes = g.players
       .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-      .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
+      .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT, plasma: o.plasmaPrimeT ?? 0 }));
     const ready = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
     const plasmaUp = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
     // Barra: Q, E, F, R e depois o Z. O índice do kit não muda (R continua no espaço 2).

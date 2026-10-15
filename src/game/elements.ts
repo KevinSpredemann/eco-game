@@ -16,6 +16,8 @@ export interface Aura {
   stun?: number;
   /** alvo controlado agora ou há pouco (janela dos combos de controle) */
   ctrl?: number;
+  /** disparo de plasma recente. A onda do kit consome uma vez. */
+  plasma?: number;
 }
 
 export type PowerCategory = 'attack' | 'defense' | 'mobility' | 'control' | 'support';
@@ -339,7 +341,7 @@ export const KITS: Record<string, Kit> = {
   },
   vexa: {
     powers: [
-      { name: 'Corte', element: 'shadow', cd: 3.2, dmg: 9, range: 220, speed: 740, radius: 14, category: 'attack' },
+      { name: 'Corte', element: 'shadow', cd: 3.2, dmg: 9, range: 220, speed: 740, radius: 14, category: 'attack', mark: true },
       { name: 'Passo Sombrio', element: 'shadow', cd: 4.2, dmg: 6, range: 100, speed: 0, radius: 28, category: 'mobility', act: 'blink', step: BLINK_STEP },
       { name: 'Emboscada', element: 'shadow', cd: 7, dmg: 12, range: 200, speed: 700, radius: 14, category: 'attack' },
       { name: 'Ilusão', element: 'shadow', cd: 6, dmg: 6, range: 70, speed: 0, radius: 18, category: 'defense', act: 'decoy' },
@@ -471,6 +473,29 @@ export function kitOf(id: string): Kit {
  */
 export const MAIN_ELEMENTS: readonly Element[] = ['fire', 'ice', 'nature', 'wind'];
 
+/**
+ * Elemento que pinta a tela e a luz do personagem.
+ * O Q define, se for Fogo, Água, Terra ou Ar. Plasma, Sombra e Raio entram quando o kit não tem nenhum dos quatro.
+ */
+export function mainElementOf(charId: string): Element {
+  const powers = kitOf(charId).powers;
+  const lead = powers[0]?.element;
+  if (lead && (MAIN_ELEMENTS as readonly Element[]).includes(lead)) return lead;
+  const count = new Map<Element, number>();
+  for (const pw of powers) count.set(pw.element, (count.get(pw.element) ?? 0) + 1);
+  let best: Element | null = null;
+  let n = 0;
+  for (const el of MAIN_ELEMENTS) {
+    const c = count.get(el) ?? 0;
+    if (c > n) {
+      n = c;
+      best = el;
+    }
+  }
+  if (best) return best;
+  return lead ?? 'wind';
+}
+
 export const ELEMENT_NAME: Record<Element, string> = {
   fire: 'Fogo',
   ice: 'Água',
@@ -497,7 +522,7 @@ export const ELEMENT_FX: Record<Element, string> = {
   lightning: 'deixa tonto',
   wind: 'empurra para trás',
   nature: 'prende no chão por um instante',
-  shadow: 'não marca o alvo; o piscar prepara a emboscada',
+  shadow: 'o corte marca o alvo; o piscar prepara o próximo golpe',
   plasma: 'empurra com a onda',
 };
 

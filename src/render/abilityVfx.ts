@@ -134,6 +134,8 @@ const COMBO_COLORS: Record<string, [string, string]> = {
   freeze: ['#bfeaff', '#2f9bff'],
   vortex: ['#2f9bff', '#7dffe0'],
   shards: ['#b07a34', '#7dffe0'],
+  cascade: ['#d24cff', '#ffe9ff'],
+  ambush: ['#8a7cff', '#c4b6ff'],
 };
 
 /** número "aleatório" estável por semente (raio que não treme demais) */
@@ -679,8 +681,9 @@ export class AbilityVfx {
       this.addFx({ kind: 'bolt', x, y, r: 46, el, t: 0, max: 0.22 });
       this.burst(x, y, 'lightning', Math.round(12 * n), 260, 0.25, 'spark', 0);
     } else if (el === 'wind') {
-      this.addFx({ kind: 'shock', x, y, r: 34, el, t: 0, max: 0.35 });
-      this.burst(x, y, 'wind', Math.round(10 * n), 220, 0.35, 'dot', 0);
+      this.addFx({ kind: 'shock', x, y, r: 34, el, t: 0, max: 0.28 });
+      this.addFx({ kind: 'ripple', x, y: y + BODY, r: 48, el, t: 0, max: 0.45 });
+      this.burst(x, y, 'wind', Math.round(10 * n), 260, 0.35, 'dot', 0);
     } else if (el === 'nature') {
       // pedra estoura em lascas + poeira; espinhos saem do chão no ponto
       this.addFx({ kind: 'shock', x, y, r: 22, el, t: 0, max: 0.3 });
@@ -692,8 +695,10 @@ export class AbilityVfx {
       this.addFx({ kind: 'flash', x, y, r: 26, el, t: 0, max: 0.14 });
       this.burst(x, y, 'plasma', Math.round(14 * n), 240, 0.45, 'dot', 0);
     } else if (el === 'shadow') {
-      this.addFx({ kind: 'shock', x, y, r: 26, el, t: 0, max: 0.35 });
-      this.burst(x, y, 'smoke', Math.round(8 * n), 80, 0.7, 'smoke', -20);
+      this.addFx({ kind: 'flash', x, y, r: 22, el, t: 0, max: 0.16 });
+      this.addFx({ kind: 'shock', x, y, r: 18, el, t: 0, max: 0.28 });
+      this.burst(x, y, '#8a7cff', Math.round(8 * n), 180, 0.4, 'spark', 0);
+      this.burst(x, y, 'smoke', Math.round(6 * n), 50, 0.7, 'smoke', -20);
     } else {
       this.burst(x, y, 'basic', 5, 120, 0.25, 'spark', 0);
     }
@@ -719,6 +724,14 @@ export class AbilityVfx {
     if (id === 'combustao') {
       this.addFx({ kind: 'spikes', x, y: y + BODY, r: 60, el: 'fire', t: 0, max: 0.6 });
       this.burst(x, y, 'fire', 14, 260, 0.6, 'ember', -40);
+    }
+    if (id === 'cascade') {
+      this.addFx({ kind: 'shock', x, y, r: 72, el: 'plasma', t: 0, max: 0.45 });
+      this.burst(x, y, '#e9a8ff', 16, 280, 0.5, 'spark', 0);
+    }
+    if (id === 'ambush') {
+      this.addFx({ kind: 'flash', x, y, r: 36, el: 'shadow', t: 0, max: 0.2 });
+      this.burst(x, y, '#8a7cff', 12, 240, 0.45, 'spark', 0);
     }
   }
 

@@ -4,7 +4,7 @@
 import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, STANDARD_PRIMARIES, SkillId, ULTS, UltId, gearPrice, sanitizeLoadout, stageSecondary } from '../game/balance';
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
-import { ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, ULT_LAND, ULT_WINDUP, kitOf, studioOf, type PowerCategory, type PowerDef } from '../game/elements';
+import { ELEMENT_COLOR, ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, ULT_LAND, ULT_WINDUP, kitOf, mainElementOf, studioOf, type PowerCategory, type PowerDef } from '../game/elements';
 import { aimLine, categoryLabel, listSynergies, powerRole, relevantFacts, swapDelta, targetLine, trainLine, useLine, type SynergyRow } from '../game/combos';
 import { previewEmpty, previewHtml } from './powerPreview';
 import { drawGear, GearKind } from './gearArt';
@@ -142,7 +142,15 @@ export class LoadoutScreen {
     this.root.querySelector('.lo-sub')!.textContent = opts.subtitle;
     this.root.querySelectorAll<HTMLElement>('[data-lo-confirm]').forEach((b) => (b.textContent = opts.confirmText));
     const title = this.root.querySelector('h2');
-    if (title) title.textContent = 'Poderes';
+    if (title) title.childNodes[0].textContent = 'Poderes ';
+    const badge = this.root.querySelector('.lo-el') as HTMLElement | null;
+    if (badge) {
+      const el = mainElementOf(this.charId);
+      badge.hidden = false;
+      badge.textContent = ELEMENT_NAME[el];
+      badge.dataset.el = el;
+      badge.style.setProperty('--el', ELEMENT_COLOR[el]);
+    }
     this.renderPowers();
   }
 

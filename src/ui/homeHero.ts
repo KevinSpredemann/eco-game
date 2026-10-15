@@ -5,20 +5,9 @@ import { WEAPONS, loadoutPrimary } from '../game/weapons';
 import { drawCharacter } from '../render/chars';
 import { accessoryBehind, drawAccessory } from '../render/accessories';
 import { dpr, hexA, studioSprite } from './portraits';
-import { ELEMENT_COLOR, MAIN_ELEMENTS, kitOf, type Element } from '../game/elements';
+import { ELEMENT_COLOR, mainElementOf, type Element } from '../game/elements';
 
-/** Elemento que mais aparece no kit (só Fogo, Água, Terra e Ar). Dá o tom da luz da tela inicial. */
-export function mainElementOf(charId: string): Element {
-  const count = new Map<Element, number>();
-  for (const pw of kitOf(charId).powers) if (MAIN_ELEMENTS.includes(pw.element)) count.set(pw.element, (count.get(pw.element) ?? 0) + 1);
-  let best: Element = 'wind';
-  let n = -1;
-  for (const el of MAIN_ELEMENTS) if ((count.get(el) ?? 0) > n) {
-    n = count.get(el) ?? 0;
-    best = el;
-  }
-  return best;
-}
+export { mainElementOf };
 
 interface Mote {
   x: number;

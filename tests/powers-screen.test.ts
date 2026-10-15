@@ -18,6 +18,7 @@ function namesFromRules(): Set<string> {
     { burn: 0, frozen: 0, gust: 0, shock: 0, root: 0, marked: 0, field: 1, fieldEl: 'nature' as const, stun: 0 },
     { burn: 0, frozen: 0, gust: 0, shock: 0, root: 0, marked: 0, field: 1, fieldEl: 'ice' as const, stun: 0 },
     { burn: 0, frozen: 0, gust: 0, shock: 0, root: 0, marked: 0, field: 0, fieldEl: '' as const, stun: 1 },
+    { burn: 0, frozen: 0, gust: 0, shock: 0, root: 0, marked: 0, field: 0, fieldEl: '' as const, stun: 0, plasma: 1 },
   ];
   const powers = [...Object.values(KITS).flatMap((kit) => kit.powers), ...STUDIO];
   for (const charId of Object.keys(KITS)) {

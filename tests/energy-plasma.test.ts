@@ -180,10 +180,11 @@ describe('energia, recusa e Rajada de Plasma', () => {
     a.energy = 64;
     b.plasmaT = 3.2;
     const row = encodeSnapshot(g, false).P[0];
-    expect(row.at(-15)).toBe(64);
-    expect(row.at(-12)).toBe(1);
-    expect(row.at(-11)).toBe(0);
+    expect(row.at(-16)).toBe(64);
+    expect(row.at(-13)).toBe(1);
+    expect(row.at(-12)).toBe(0);
     const foe = encodeSnapshot(g, false).P[1];
-    expect(foe.at(-13)).toBe(3.2);
+    expect(foe.at(-14)).toBe(3.2);
+    expect(foe.at(-1)).toBe(0);
   });
 });

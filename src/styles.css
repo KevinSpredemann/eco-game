@@ -7154,3 +7154,19 @@ canvas.stage,
 #hud-combo.wait { border-color: rgba(255, 225, 74, 0.35); box-shadow: none; color: #d8c890; opacity: 0.85; }
 #hud-combo.wait .cb-tag { color: #d8c890; }
 #screen-loadout .pw-ult { margin: 0; font-size: 0.8rem; line-height: 1.35; color: #ffe2a0; } #screen-loadout .pw-ult b { color: #ffd23e; }
+#screen-loadout .lo-el {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--el, #7dffe0);
+  border-radius: 999px;
+  color: var(--el, #7dffe0);
+  font-family: var(--ui);
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  vertical-align: middle;
+}

@@ -269,6 +269,7 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
       r1(p.rootT),
       r1(p.stunT),
       r1(p.iceT),
+      r1(p.plasmaPrimeT),
     ]),
     F: g.fragments.map((f) => [f.id, r1(f.x), r1(f.y), f.golden ? 1 : 0]),
     W: g.powerups.map((w) => [w.id, w.kind, r1(w.x), r1(w.y), r1(w.age)]),

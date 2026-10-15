@@ -37,6 +37,11 @@ export const SHARDS_BONUS = 10;
 export const SHARDS_AOE = 90;
 /** Golpe ofensivo logo depois de um controle, uma vez na janela. */
 export const EXECUTE_BONUS = 8;
+/** Plasma: o disparo marca, a onda do kit estoura a cadeia uma vez. */
+export const CASCADE_BONUS = 10;
+export const CASCADE_AOE = 72;
+/** Sombra: o corte marca, o próximo golpe (que não é a suprema) fecha a tocaia. */
+export const TOCAIA_BONUS = 10;
 /** A mesma raiz não fecha o bônus de área de novo. */
 export const REACT_LOCK = 1.6;
 /**
@@ -79,6 +84,7 @@ export interface Reaction {
   clearRoot?: boolean;
   clearMarked?: boolean;
   clearField?: boolean;
+  clearPlasma?: boolean;
   rootAdd?: number;
   /** gasta a janela de controle (não fecha outro combo de controle com o mesmo atordoamento) */
   clearCtrl?: boolean;
@@ -128,6 +134,16 @@ export function resolveReaction(q: HitQuery): Reaction | null {
       vfx: 'root',
     };
   }
+  if (q.marked > 0 && q.element === 'shadow' && !q.roots && !q.appliesMark && q.slot !== 2 && q.reactCd <= 0) {
+    return {
+      id: 'ambush',
+      name: 'Tocaia',
+      bonus: TOCAIA_BONUS,
+      clearMarked: true,
+      reactLock: REACT_LOCK,
+      vfx: 'burst',
+    };
+  }
   if (elemental) {
     const rupture = elemental.id === 'chill';
     return {
@@ -148,6 +164,9 @@ export function resolveReaction(q: HitQuery): Reaction | null {
   }
   if (q.element === 'plasma' && (q.slow ?? 0) > 0 && q.reactCd <= 0) {
     return { id: 'chill', name: 'Ruptura', bonus: 8, reactLock: REACT_LOCK, vfx: 'element' };
+  }
+  if ((q.aura.plasma ?? 0) > 0 && q.element === 'plasma' && q.aoe && q.slot !== 2 && q.reactCd <= 0) {
+    return { id: 'cascade', name: 'Cadeia de Plasma', bonus: CASCADE_BONUS, aoe: CASCADE_AOE, clearPlasma: true, reactLock: REACT_LOCK, vfx: 'burst' };
   }
   // Terra + Fogo: a fissura da raiz solta calor e explode no lugar
   if (q.element === 'fire' && root > 0 && q.reactCd <= 0) {
@@ -222,7 +241,8 @@ export function comboWindow(id: string, foe: Aura): { left: number; total: numbe
   if (id === 'cinder' || id === 'thermal') return pick(foe.burn, BURN_TIME);
   if (id === 'storm') return pick(foe.gust, MARK_TIME);
   if (id === 'arc') return pick(foe.shock, MARK_TIME);
-  if (id === 'mark-root') return pick(foe.marked ?? 0, MARK_WINDOW);
+  if (id === 'mark-root' || id === 'ambush') return pick(foe.marked ?? 0, MARK_WINDOW);
+  if (id === 'cascade') return pick(foe.plasma ?? 0, MARK_TIME);
   if (id === 'field-shot') return pick(foe.field ?? 0, FIELD_WINDOW);
   if (id === 'combustao' || id === 'root-aoe' || id === 'shards') return pick(foe.root ?? 0, ROOT_TIME);
   if (id === 'ult-control' || id === 'execute') return pick(Math.max(foe.ctrl ?? 0, foe.stun ?? 0, foe.root ?? 0), CONTROL_GRACE + 0.8);
@@ -446,8 +466,8 @@ function delivers(pw: PowerDef): boolean {
 }
 
 /** O que o golpe deixa num alvo limpo, do mesmo jeito que o combate grava. */
-function auraAfter(pw: PowerDef): Aura {
-  const aura: Aura = { burn: 0, frozen: 0, gust: 0, shock: 0, root: 0, marked: 0, field: 0, fieldEl: '', stun: 0 };
+function auraAfter(pw: PowerDef, slot = -1): Aura {
+  const aura: Aura = { burn: 0, frozen: 0, gust: 0, shock: 0, root: 0, marked: 0, field: 0, fieldEl: '', stun: 0, plasma: 0 };
   if (!delivers(pw)) return aura;
   const aoe = pw.act === 'wall' || (pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink');
   if (pw.element === 'fire') aura.burn = 1;
@@ -463,12 +483,14 @@ function auraAfter(pw: PowerDef): Aura {
     aura.field = 1;
     aura.fieldEl = pw.element;
   }
+  // Só o disparo do kit (Q/E/F). A Rajada do Z usa a outra marca (Explosão de Plasma).
+  if (pw.element === 'plasma' && pw.speed > 0 && !pw.act && slot >= 0 && slot !== 2) aura.plasma = 1;
   return aura;
 }
 
 function reactionBetween(charId: string, first: PowerDef, firstSlot: number, second: PowerDef, secondSlot: number): Reaction | null {
   if (!delivers(first) || !delivers(second)) return null;
-  return resolveReaction(queryOf(charId, second, secondSlot, auraAfter(first)));
+  return resolveReaction(queryOf(charId, second, secondSlot, auraAfter(first, firstSlot)));
 }
 
 function needOf(hit: Reaction): string {
@@ -479,7 +501,8 @@ function needOf(hit: Reaction): string {
   if (hit.id === 'storm') return 'alvo no vento';
   if (hit.id === 'arc') return 'alvo no raio';
   if (hit.id === 'field-shot') return `campo de ${FIELD_WINDOW}s no alvo`;
-  if (hit.id === 'mark-root') return `marca de ${MARK_WINDOW}s no mesmo alvo`;
+  if (hit.id === 'mark-root' || hit.id === 'ambush') return `marca de ${MARK_WINDOW}s no mesmo alvo`;
+  if (hit.id === 'cascade') return 'disparo de plasma ainda no alvo';
   if (hit.id === 'ult-control') return 'alvo preso ou tonto';
   if (hit.id === 'combustao') return 'alvo preso na terra';
   if (hit.id === 'execute') return 'alvo preso ou tonto';
@@ -494,6 +517,8 @@ export function effectOf(hit: Reaction): string {
   if (hit.id === 'cinder') return `o fogo gira e pega em volta, ${tail}`;
   if (hit.id === 'combustao') return `explode no lugar, ${tail}`;
   if (hit.id === 'shards') return `estilhaços em volta, ${tail}`;
+  if (hit.id === 'cascade') return `a onda fecha a cadeia e ${tail}`;
+  if (hit.id === 'ambush') return `sai da marca e ${tail}`;
   if (hit.id === 'steam') return `vapor em volta, ${tail}`;
   if (hit.id === 'shatter') return `choque na água, ${tail}`;
   return tail;
