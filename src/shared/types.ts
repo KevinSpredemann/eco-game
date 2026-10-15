@@ -33,6 +33,10 @@ export type EchoRecording = {
   events: RecordedEvent[];
   /** instante (ms) em que a gravação terminou (fim da rodada ou eliminação) */
   endT: number;
+  /** worldT em que a rodada começou, para o disco girar a rota junto */
+  spinOrigin?: number;
+  /** virada de página que já espelhou esta rota */
+  pagePulse?: string;
 };
 
 export type EchoSample = {

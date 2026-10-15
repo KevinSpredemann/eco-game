@@ -32,13 +32,13 @@ function hall(walls: Rect[], pillars: Circle[]): Pick<ArenaDef, 'walls' | 'pilla
   return { walls, pillars, spawns, cores, zones, grip: 1 };
 }
 
-/** Arenas jogáveis do estúdio. O chão da partida é o da colisão. O truque musical da ficha não roda. */
+/** Arenas jogáveis do estúdio. O truque de cada ficha roda em mapTune, no mesmo relógio da partida. */
 export const STUDIO_ARENAS: ArenaDef[] = [
   {
     id: 'anfiteatro',
     name: 'Anfiteatro Harmônico',
     desc: 'Anel de colunas e dois blocos no centro.',
-    gimmick: 'Dá para jogar. Os anéis de ressonância da ficha não pulsam nesta versão.',
+    gimmick: 'Anel dourado: mais grip. Fora dele, o passo abafa. O magenta avisa.',
     art: 'art/studio/maps/anfiteatro.webp',
     palette: {
       bg: '#1a1030',
@@ -72,7 +72,7 @@ export const STUDIO_ARENAS: ArenaDef[] = [
     id: 'biblioteca',
     name: 'Biblioteca de Partituras',
     desc: 'Corredores de estantes e um vão no meio.',
-    gimmick: 'Dá para jogar. A página que vira sozinha não existe nesta versão.',
+    gimmick: 'A página vira: saia do livro. A fita vermelha avisa.',
     art: 'art/studio/maps/biblioteca.webp',
     palette: {
       bg: '#140e08',
@@ -107,7 +107,7 @@ export const STUDIO_ARENAS: ArenaDef[] = [
     id: 'camara',
     name: 'Câmara Anecoica',
     desc: 'Sala fechada com quatro blocos e pouco eco visual.',
-    gimmick: 'Dá para jogar. As cabines de silêncio da ficha não cortam som nesta versão.',
+    gimmick: 'Cabine coral vai fechar: o som não entra nem sai.',
     art: 'art/studio/maps/camara.webp',
     palette: {
       bg: '#07080c',
@@ -137,7 +137,7 @@ export const STUDIO_ARENAS: ArenaDef[] = [
     id: 'caverna',
     name: 'Caverna Ressonante',
     desc: 'Pilares de pedra e uma passagem no centro.',
-    gimmick: 'Dá para jogar. Os gongos da ficha não soltam pulso nesta versão.',
+    gimmick: 'Gongo magenta avisa o pulso. Atrás do pilar, o anel corta.',
     art: 'art/studio/maps/caverna.webp',
     palette: {
       bg: '#100c08',
@@ -172,7 +172,7 @@ export const STUDIO_ARENAS: ArenaDef[] = [
     id: 'jardim',
     name: 'Jardim dos Diapasões',
     desc: 'Canteiros que bloqueiam e um caminho em cruz.',
-    gimmick: 'Dá para jogar. Os diapasões da ficha não vibram nesta versão.',
+    gimmick: 'Diapasão rosa avisa. No pulso, você anda mais rápido.',
     art: 'art/studio/maps/jardim.webp',
     palette: {
       bg: '#0c1810',
@@ -208,7 +208,7 @@ export const STUDIO_ARENAS: ArenaDef[] = [
     id: 'vinil',
     name: 'Pista do Vinil',
     desc: 'Pista com uma esteira no meio e caixas nas bordas.',
-    gimmick: 'A esteira empurra para um lado. O disco que gira e a agulha da ficha não existem nesta versão.',
+    gimmick: 'O disco gira. A agulha empurra na volta. O LED vermelho avisa.',
     art: 'art/studio/maps/vinil.webp',
     palette: {
       bg: '#120818',
@@ -233,14 +233,14 @@ export const STUDIO_ARENAS: ArenaDef[] = [
         { x: 640, y: 540, r: 26 },
       ],
     ),
-    conveyors: [{ x: 340, y: 330, w: 600, h: 60, vx: 150, vy: 0 }],
+    conveyors: [],
     music: { root: 52, scale: MINOR, bpm: 118 },
   },
   {
     id: 'recife',
     name: 'Recife da Maré',
     desc: 'Ilhas e pontes que acendem e apagam.',
-    gimmick: 'As pontes somem em ciclo, como a maré abrindo caminho. Submergir o eco inteiro não acontece nesta versão.',
+    gimmick: 'O sino avisa a maré. No banco alagado, você anda mais devagar.',
     art: 'art/studio/maps/recife.webp',
     palette: {
       bg: '#0a3048',
@@ -268,10 +268,10 @@ export const STUDIO_ARENAS: ArenaDef[] = [
       { x: 500, y: 210, w: 280, h: 300 },
     ],
     bridges: [
-      { x: 398, y: 236, w: 104, h: 56, period: 0, phase: 0 },
+      { x: 398, y: 236, w: 104, h: 56, period: 0, phase: 0, tide: true },
       { x: 778, y: 236, w: 104, h: 56, period: 0, phase: 0 },
       { x: 398, y: 428, w: 104, h: 56, period: 0, phase: 0 },
-      { x: 778, y: 428, w: 104, h: 56, period: 0, phase: 0 },
+      { x: 778, y: 428, w: 104, h: 56, period: 0, phase: 0, tide: true },
       { x: 398, y: 90, w: 484, h: 52, period: 12, phase: 1 },
       { x: 398, y: 578, w: 484, h: 52, period: 12, phase: 7 },
       { x: 190, y: 298, w: 64, h: 124, period: 10, phase: 3, vertical: true },
@@ -308,7 +308,7 @@ export const STUDIO_ARENAS: ArenaDef[] = [
     id: 'metronomo',
     name: 'Torre do Metrônomo',
     desc: 'Torre com andares de parede e um vão vertical.',
-    gimmick: 'Dá para jogar. O pêndulo da ficha não varre a sala nesta versão.',
+    gimmick: 'O pêndulo empurra. A marca de ouro dá um passo mais firme.',
     art: 'art/studio/maps/metronomo.webp',
     palette: {
       bg: '#10141c',

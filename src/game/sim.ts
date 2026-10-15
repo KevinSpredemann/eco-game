@@ -29,6 +29,7 @@ import { PowerId, getPower, randomPower } from './powerups';
 import { BOMB_DAMAGE, BOMB_FUSE, BOMB_RADIUS, ECHO_DAMAGE_MULT, GUN_Y, ICE_DAMAGE, ICE_RADIUS, ITEMS, ItemId, KIT_HEAL, MINE_DAMAGE, MINE_RADIUS, PULSE_DAMAGE, PULSE_FUSE, PULSE_RADIUS, WEAPONS, WeaponId, isPrimary, loadoutPrimary } from './weapons';
 import { withSkin } from './characters';
 import { choosePortalExit, portalPairAt } from './portals';
+import { mirrorRest, spinEcho, tuneBlocks, tuneBody, tuneClock, tuneEchoDrag, tuneHides, tuneMove, tuneNeedle, tunePendulumHits, tunePush, tuneTouch } from './mapTune';
 import { DUEL, duelTiebreak, type DuelReason } from './duel';
 import {
   AMBUSH_BONUS,
@@ -596,6 +597,12 @@ export interface EchoView {
   warnKind?: number;
   /** segundos até voltar a funcionar (desativado por escudo/investida/explosão) */
   offLeft?: number;
+  /** a agulha adiantou a rota, uma vez */
+  skipMs?: number;
+  /** a maré alta atrasou a rota */
+  dragMs?: number;
+  /** o pêndulo já quantizou esta batida */
+  pendPulse?: string;
 }
 
 export type GameEvent =
@@ -751,6 +758,14 @@ export class Game {
   private duelClosedRound = 0;
   roundT = 0; // segundos de rodada ativa
   worldT = 0; // relógio contínuo para pontes/pistões/feixes
+  /** worldT no instante em que a rodada entrou em jogo (o disco usa isso) */
+  roundOrigin = 0;
+  /** pulso de mapa que já empurrou ou marcou este jogador */
+  tuneOnce = new Set<string>();
+  /** pressa ou lentidão de um pulso, sem acumular */
+  tuneHold = new Map<string, { until: number; speed: number; pulse: string }>();
+  private tuneSilent = new Set<string>();
+  private tunePhase = '';
   core: Pt = { x: 640, y: 360 };
   coreNext: Pt | null = null;
   coreMoveAt = -1;
@@ -1139,7 +1154,9 @@ export class Game {
     const recs: EchoRecording[] = [];
     for (const p of this.players) {
       if (!p.playing || !p.recorder) continue;
-      recs.push(p.recorder.finish(this.roundDur * 1000, p.x, p.y, p.dir));
+      const rec = p.recorder.finish(this.roundDur * 1000, p.x, p.y, p.dir);
+      rec.spinOrigin = this.roundOrigin;
+      recs.push(rec);
     }
     this.lastRecordings = recs;
     this.lastDigests = recs.filter((r) => r.frames.length > 1).map((r) => digestRecording(r));
@@ -1219,6 +1236,10 @@ export class Game {
       if (this.phaseT >= C.PREP_TIME) {
         this.phase = 'play';
         this.phaseT = 0;
+        this.roundOrigin = this.worldT;
+        this.tuneOnce.clear();
+        this.tuneHold.clear();
+        this.tuneSilent.clear();
         this.lastTick = -1;
         if (this.combat) for (const p of this.players) p.invulnT = 1 + COMBAT.spawnProtect;
         this.events.push({ type: 'phase', phase: 'play' });
@@ -1276,7 +1297,15 @@ export class Game {
         this.checkPowerups(p);
         this.checkAbilityOrbs(p);
       }
-      p.recorder?.sample(tms, p.x, p.y, p.dir, p.moving);
+      if (tuneHides(this.arena, p.x, p.y, this.worldT)) {
+        if (!this.tuneSilent.has(p.id)) {
+          p.recorder?.markJump();
+          this.tuneSilent.add(p.id);
+        }
+      } else {
+        if (this.tuneSilent.delete(p.id)) p.recorder?.markJump();
+        p.recorder?.sample(tms, p.x, p.y, p.dir, p.moving);
+      }
     }
     this.updateClones(dt);
     this.updateGroves(dt);
@@ -1409,6 +1438,12 @@ export class Game {
     }
     for (const tr of this.arena.trains ?? []) {
       if (trainState(tr, this.worldT - this.lastDt()).phase === 'idle' && trainState(tr, this.worldT).phase === 'warn') this.events.push({ type: 'trainWarn', y: tr.y + tr.h / 2 });
+    }
+    const tune = tuneClock(this.arena, this.worldT);
+    if (tune.hint && tune.phase !== this.tunePhase) {
+      if (tune.phase === 'warn') this.events.push({ type: 'hazardWarn', x: this.core.x, y: this.core.y });
+      if (tune.phase === 'on' && this.tunePhase === 'warn') this.events.push({ type: 'hazardOn', x: this.core.x, y: this.core.y });
+      this.tunePhase = tune.phase;
     }
     if (this.combat) return;
     // núcleo muda de lugar (rodadas 3+)
@@ -1570,6 +1605,9 @@ export class Game {
     const inBush = (this.arena.bushes ?? []).some((b) => dist(p.x, p.y, b.x, b.y) < b.r);
     const sand = (this.arena.sand ?? []).find((c) => dist(p.x, p.y, c.x, c.y) < c.r);
     const onIce = (this.arena.ice ?? []).some((r) => inRect(p.x, p.y, r));
+    const tune = tuneMove(this.arena, p.x, p.y, this.worldT);
+    const hold = this.tuneHold.get(p.id);
+    const holdSpeed = hold && this.worldT < hold.until ? hold.speed : 1;
     const carrying = this.flags.some((f) => f.carrier === p.id);
     p.hidden = inBush || p.phaseT > 0 || p.cloakT > 0;
     // lentidões não se multiplicam sem limite: a mais forte vale, e há uma velocidade mínima
@@ -1577,6 +1615,7 @@ export class Game {
     let speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * Math.max(COMBAT.minSpeed, slowK) * (p.boss ? BOSS.speedMul * (p.exhaustT > 0 ? 0.5 : 1) : 1);
     if (this.mode === 'duelo' || this.mode === 'dupla') speed *= speedMul(p.char.id, p.comboStacks);
     if (p.isBot) speed *= p.brain!.speedMul;
+    speed *= tune.speed * holdSpeed;
 
     if (p.chargeT > 0) {
       // investida: avança reto e derruba quem estiver na frente
@@ -1605,7 +1644,7 @@ export class Game {
         p.dashEl = null;
       }
     } else {
-      const grip = onIce ? 0.12 : this.arena.grip;
+      const grip = onIce ? 0.12 : this.arena.grip * tune.grip;
       const k = 1 - Math.exp(-12 * grip * dt);
       p.vx += (mx * speed - p.vx) * k;
       p.vy += (my * speed - p.vy) * k;
@@ -1651,7 +1690,13 @@ export class Game {
         p.y += cv.vy * dt;
       }
     }
+    p.x += tune.vx * dt;
+    p.y += tune.vy * dt;
+    this.applyTunePulse(p);
     this.collideWorld(p);
+    const body = tuneBody(this.arena, p.x, p.y, C.PLAYER_R, this.worldT);
+    p.x = body.x;
+    p.y = body.y;
     // o Chefe é alto: não encosta na parede de cima (o corpo ficaria fora da arena)
     p.moving = moving || p.dashT > 0;
     if (p.moving) p.walkPhase += dt * (p.turboT > 0 ? 16 : 11);
@@ -2317,6 +2362,29 @@ export class Game {
           this.rescue(b);
         }
       }
+  }
+
+  /** Empurrão, onda e agulha. Cada pulso marca a pessoa uma vez e não tira vida. */
+  private applyTunePulse(p: Player) {
+    const touch = tuneTouch(this.arena, p.x, p.y, this.worldT);
+    if (touch && !this.tuneOnce.has(`${p.id}:${touch.pulse}`)) {
+      this.tuneOnce.add(`${p.id}:${touch.pulse}`);
+      this.tuneHold.set(p.id, { until: this.worldT + 1.5, speed: touch.speed, pulse: touch.pulse });
+    }
+    const push = tunePush(this.arena, p.x, p.y, this.worldT);
+    if (push && !this.tuneOnce.has(`${p.id}:${push.pulse}`)) {
+      this.tuneOnce.add(`${p.id}:${push.pulse}`);
+      if (push.pulse.startsWith('pagina')) {
+        p.x = push.x;
+        p.y = push.y;
+      } else {
+        p.x += push.vx * 0.08;
+        p.y += push.vy * 0.08;
+      }
+      p.vx = push.vx;
+      p.vy = push.vy;
+      p.recorder?.markJump();
+    }
   }
 
   // ------------------------------------------------------------------ perigos
@@ -3324,6 +3392,7 @@ export class Game {
   /** Uma reação por golpe. O bônus entra no mesmo dano, uma vez. */
   private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number, aoe = false, cast?: { slot?: number; projectile?: boolean; mark?: boolean }) {
     if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
+    if (tuneBlocks(this.arena, src.x, src.y, dst.x, dst.y, this.worldT)) return;
     const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT, marked: dst.markedT, field: dst.fieldT, fieldEl: dst.fieldEl, stun: dst.stunT };
     const extra = bonusDamage(src.char.id, aura, dst.stunT > 0);
     const move = this.mobilityBonus(src);
@@ -3650,6 +3719,13 @@ export class Game {
         const oy = b.y;
         const nx = ox + (b.vx * dt) / steps;
         const ny = oy + (b.vy * dt) / steps;
+        if (!b.pierce && tuneBlocks(this.arena, ox, oy, nx, ny, this.worldT)) {
+          b.x = ox;
+          b.y = oy;
+          b.life = 0;
+          b.miss = 'wall';
+          break;
+        }
         if (!b.pierce) {
           const wallT = this.solidAlong(ox, oy + GUN_Y, nx, ny + GUN_Y, 3);
           const bodyT = this.earliestBody(b, ox, oy, nx, ny, enemyShot, ownerTeam);
@@ -4273,12 +4349,28 @@ export class Game {
 
   private updateEchoViews(tms: number) {
     for (const e of this.echoViews) {
-      const s = sampleRecording(e.rec, tms);
-      e.x = s.x;
-      e.y = s.y;
-      e.dir = s.direction;
-      e.moving = s.moving;
-      e.active = s.active;
+      const clock = tuneClock(this.arena, this.worldT);
+      if (this.arena.id === 'biblioteca' && clock.phase === 'on') mirrorRest(e.rec, tms, clock.pulse);
+      if (this.arena.id === 'vinil' && tuneNeedle(this.arena, e.x, e.y, this.worldT) && !this.tuneOnce.has(`eco:${e.key}:${clock.pulse}`)) {
+        this.tuneOnce.add(`eco:${e.key}:${clock.pulse}`);
+        e.skipMs = (e.skipMs ?? 0) + 1000;
+      }
+      if (this.arena.id === 'metronomo' && tunePendulumHits(e.x, e.y, this.worldT) && e.pendPulse !== clock.pulse) {
+        const ahead = e.rec.frames.find((f) => f.t > tms && f.t < tms + 800);
+        if (ahead) {
+          e.skipMs = (e.skipMs ?? 0) + (ahead.t - tms);
+          e.pendPulse = clock.pulse;
+        }
+      }
+      if (tuneEchoDrag(this.arena, e.x, e.y, this.worldT)) e.dragMs = (e.dragMs ?? 0) + this._dt * 300;
+      const sampleAt = Math.max(0, tms + (e.skipMs ?? 0) - (e.dragMs ?? 0));
+      const s0 = sampleRecording(e.rec, sampleAt);
+      const spun = this.arena.id === 'vinil' ? spinEcho(s0.x, s0.y, e.rec.spinOrigin, sampleAt, this.worldT) : s0;
+      e.x = spun.x;
+      e.y = spun.y;
+      e.dir = s0.direction;
+      e.moving = s0.moving;
+      e.active = s0.active && !tuneHides(this.arena, e.x, e.y, this.worldT);
       const until = this.disrupted.get(e.key) ?? 0;
       e.disrupted = this.roundT < until;
       e.iced = this.roundT < this.iceUntil;
@@ -4292,7 +4384,7 @@ export class Game {
       e.warnAng = m ? m[4] : 0;
       e.warnKind = m ? (m[1] === 0 ? 0 : m[1] === 1 ? 1 : 2) : 0;
       if (tms > 0 && e.active) {
-        e.trail.push({ x: s.x, y: s.y });
+        e.trail.push({ x: e.x, y: e.y });
         if (e.trail.length > 14) e.trail.shift();
       }
     }

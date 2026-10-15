@@ -107,7 +107,7 @@ describe('estúdio', () => {
   it('os mapas novos abrem e a maré tem ilha', () => {
     expect(getArena('recife').islands?.length).toBeGreaterThan(0);
     expect(getArena('recife').bridges?.some((b) => b.period > 0)).toBe(true);
-    expect(getArena('vinil').conveyors?.length).toBe(1);
+    expect(getArena('vinil').conveyors?.length).toBe(0);
     const g = new Game({
       arena: getArena('anfiteatro'),
       humanChar: 'lyra',

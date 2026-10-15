@@ -1,4 +1,5 @@
 import { ArenaDef, BORDER, WORLD_H, WORLD_W, beamAngle, bridgeState, laserX, pistonState, tornadoPos, trainState, windState } from '../game/arenas';
+import { tuneGlow, tuneHides, tuneShapes, type TuneShape } from '../game/mapTune';
 import { CHARACTERS, getCharacter } from '../game/characters';
 import * as C from '../game/constants';
 import { ENEMY_STATS, TEAM_COLORS } from '../game/sim';
@@ -1633,6 +1634,8 @@ export class Renderer {
       ctx.stroke();
     }
 
+    this.drawTune(a, t, 'floor');
+
     // núcleo (só no modo Núcleo)
     if (!game.combat) this.drawCore(game, time);
 
@@ -1779,9 +1782,47 @@ export class Renderer {
     }
   }
 
+  private drawTune(a: ArenaDef, t: number, layer: 'floor' | 'air') {
+    const ctx = this.ctx;
+    for (const s of tuneShapes(a, t, this.reducedEffects)) {
+      if (s.layer !== layer) continue;
+      this.paintTune(s);
+    }
+  }
+
+  private paintTune(s: TuneShape) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalAlpha = s.alpha;
+    ctx.strokeStyle = s.color;
+    ctx.fillStyle = s.color;
+    ctx.lineWidth = s.line ?? (s.dash ? 3 : 4);
+    if (s.dash) ctx.setLineDash([8, 6]);
+    if (s.kind === 'ring' && s.r) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (s.kind === 'rect') {
+      ctx.strokeRect(s.x, s.y, s.w ?? 0, s.h ?? 0);
+      ctx.globalAlpha = s.alpha * 0.35;
+      ctx.fillRect(s.x, s.y, s.w ?? 0, s.h ?? 0);
+    } else if (s.kind === 'seg') {
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x2 ?? s.x, s.y2 ?? s.y);
+      ctx.stroke();
+    } else if (s.kind === 'dot') {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r ?? 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   private drawHazardsTop(game: Game, t: number, time: number) {
     const ctx = this.ctx;
     const a = game.arena;
+    this.drawTune(a, t, 'air');
     // trens
     for (const tr of a.trains ?? []) {
       const st = trainState(tr, t);
@@ -2037,7 +2078,7 @@ export class Renderer {
     }
     for (const e of game.echoViews) {
       const was = this.echoWasActive.get(e.key);
-      if (was && !e.active && game.phase === 'play') this.burst(e.x, e.y, e.rec.color, 12, 120);
+      if (was && !e.active && game.phase === 'play' && !tuneHides(game.arena, e.x, e.y, game.worldT)) this.burst(e.x, e.y, e.rec.color, 12, 120);
       this.echoWasActive.set(e.key, e.active);
       // voltou a funcionar depois de desativado
       const wasOff = this.echoWasOff.get(e.key) ?? false;
@@ -2047,6 +2088,13 @@ export class Renderer {
       }
       this.echoWasOff.set(e.key, e.disrupted);
       if (!e.active) continue;
+      if (tuneGlow(game.arena, e.x, e.y, game.worldT)) {
+        ctx.strokeStyle = hexA('#fff6c2', this.reducedEffects ? 0.45 : 0.85);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y - 16, this.reducedEffects ? 18 : 26, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       const ch = getCharacter(e.rec.characterId);
       const harms = this.echoHarmsMe(game, e);
       const baseAlpha = [0.85, 0.62, 0.42][Math.min(2, e.age)] ?? 0.4;
@@ -2209,6 +2257,7 @@ export class Renderer {
     if (p.cloakT > 0 && !human && game.hostile(game.human, p)) alpha = 0.06;
     else if (p.cloakT > 0) alpha = Math.min(alpha, 0.45);
     if (p.phaseT > 0) alpha = 0.3 + 0.15 * Math.sin(time * 30);
+    if (tuneHides(game.arena, p.x, p.y, game.worldT) && !human && game.hostile(game.human, p)) alpha = 0.08;
     if (p.invulnT > 0 && Math.sin(time * 30) > 0.3) alpha *= 0.45;
 
     // sombra + anel de cor

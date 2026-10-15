@@ -13,6 +13,8 @@ export interface Bridge extends Rect {
   period: number;
   phase: number;
   vertical?: boolean;
+  /** banco de areia do Recife: alaga no ciclo da maré, sem abrir um buraco */
+  tide?: boolean;
 }
 export interface Conveyor extends Rect {
   vx: number;

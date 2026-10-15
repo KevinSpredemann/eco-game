@@ -1,4 +1,5 @@
 import { ArenaDef, BORDER, WORLD_H, WORLD_W, bridgeState, inRect } from './arenas';
+import { tuneSteer } from './mapTune';
 import { GUN_Y, isPrimary } from './weapons';
 import { BOSS } from './balance';
 import type { Difficulty, Game, Input, Player } from './sim';
@@ -314,6 +315,7 @@ export function botThink(game: Game, p: Player, dt: number): Input {
         const x = p.x + Math.cos(ang) * step;
         const y = p.y + Math.sin(ang) * step;
         if (p.phaseT <= 0 && game.hazardAt(x, y, C.PLAYER_R, t2, b.avoid > 0.7)) return true;
+        if (tuneSteer(game.arena, x, y, t2).avoid) return true;
         if (game.arena.islands && !game.nav.walkableAt(x, y, game.worldT)) return true;
       }
       return false;
@@ -344,6 +346,15 @@ export function botThink(game: Game, p: Player, dt: number): Input {
     if (d < z.r + C.PLAYER_R && d > 0.1 && Math.random() > b.sloppy) {
       dx = (p.x - z.x) / d;
       dy = (p.y - z.y) / d;
+    }
+  }
+
+  const seek = tuneSteer(game.arena, p.x, p.y, game.worldT).seek;
+  if (seek && threat < 0.35 && Math.random() > b.sloppy) {
+    const sd = Math.hypot(seek.x - p.x, seek.y - p.y);
+    if (sd > 28 && sd < 240) {
+      dx += ((seek.x - p.x) / sd) * 0.45;
+      dy += ((seek.y - p.y) / sd) * 0.45;
     }
   }
 
@@ -614,6 +625,7 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
         const x = p.x + Math.cos(ang) * step;
         const y = p.y + Math.sin(ang) * step;
         if (game.hazardAt(x, y, C.PLAYER_R, t2, true)) return true;
+        if (tuneSteer(game.arena, x, y, t2).avoid) return true;
         if (game.arena.islands && !game.nav.walkableAt(x, y, game.worldT)) return true;
       }
       return false;

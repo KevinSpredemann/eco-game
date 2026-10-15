@@ -12,6 +12,7 @@ import type { EchoDigest, RoundEchoLine } from '../systems/echo/digest';
 import { assignUniqueColors, assignUniqueNames } from '../game/colors';
 import { BOSS, COMBAT, DEFAULT_LOADOUT, Loadout, sanitizeLoadout } from '../game/balance';
 import { speedMul, type Element } from '../game/elements';
+import { tuneBody, tuneMove } from '../game/mapTune';
 import { CAST_KINDS, ENEMY_KINDS, ITEM_IDS, Snapshot, StartInfo, WALL_KINDS, WEAPON_IDS } from './protocol';
 import type { EchoRecording } from '../shared/types';
 
@@ -364,9 +365,10 @@ export class ClientGame {
           my /= m;
         }
         const onIce = (this.arena.ice ?? []).some((r) => inRect(this.pred!.x, this.pred!.y, r));
-        const grip = onIce ? 0.12 : this.arena.grip;
+        const tune = tuneMove(this.arena, this.pred!.x, this.pred!.y, this.worldT);
+        const grip = onIce ? 0.12 : this.arena.grip * tune.grip;
         const kIce = 1 - Math.exp(-12 * grip * dt);
-        const speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * (p.slowT > 0 ? 0.6 : 1) * (p.castT > 0 ? COMBAT.castMove : 1) * (p.boss ? BOSS.speedMul : 1) * (p.stunT > 0 ? 0 : 1) * speedMul(p.char.id, p.comboStacks);
+        const speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * (p.slowT > 0 ? 0.6 : 1) * (p.castT > 0 ? COMBAT.castMove : 1) * (p.boss ? BOSS.speedMul : 1) * (p.stunT > 0 ? 0 : 1) * speedMul(p.char.id, p.comboStacks) * tune.speed;
         this.predV.x += (mx * speed - this.predV.x) * kIce;
         this.predV.y += (my * speed - this.predV.y) * kIce;
         this.pred.x += this.predV.x * dt;
@@ -375,7 +377,12 @@ export class ClientGame {
           const w = windState(this.arena.wind, this.worldT);
           if (w.phase === 'blow') this.pred.x += w.dir * this.arena.wind.force * dt;
         }
+        this.pred.x += tune.vx * dt;
+        this.pred.y += tune.vy * dt;
         collideWorld.call(this as any, this.pred);
+        const body = tuneBody(this.arena, this.pred.x, this.pred.y, C.PLAYER_R, this.worldT);
+        this.pred.x = body.x;
+        this.pred.y = body.y;
         if ((p.portalCd ?? 0) <= 0) {
           const gate = portalPairAt(this.arena.portals, this.pred.x, this.pred.y);
           if (gate) {

@@ -1,6 +1,7 @@
 import './styles.css';
 import { audio } from './audio/audio';
 import { ARENAS, BORDER, WORLD_H, WORLD_W, getArena } from './game/arenas';
+import { tuneHint } from './game/mapTune';
 import { CHARACTERS, getCharacter, withLevel, withSkin } from './game/characters';
 import * as C from './game/constants';
 import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, acceptedLoadout, canEquipWeapon, coinText, itemView, missingCoinsText, owns, upgradePrice } from './game/economy';
@@ -2369,6 +2370,9 @@ function updateHud() {
   const obj = objectiveHud(g);
   setText('#hud-objective', obj);
   $('#hud-objective').hidden = !obj;
+  const tune = tuneHint(g.arena.id);
+  setText('#hud-tune', tune);
+  $('#hud-tune').hidden = !tune || g.phase === 'results';
   const combo = powersMatch(g) ? comboLine(g) : '';
   const comboEl = $('#hud-combo');
   comboEl.hidden = !combo;
