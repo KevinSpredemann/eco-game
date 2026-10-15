@@ -197,6 +197,8 @@ export interface AimPreview {
   label: string;
   /** o traço bateu numa parede antes do alcance */
   blocked?: boolean;
+  /** o cursor passou do alcance: o ponto fica no limite */
+  outOfRange?: boolean;
   /** 0–1 enquanto o poder cresce */
   charge?: number;
   /** inimigos que a área pegaria (ok) ou que a parede esconde */
@@ -215,7 +217,7 @@ export function drawAimPreview(ctx: Ctx, a: AimPreview, time: number) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
-  const end = a.blocked ? '#ff5a6a' : col;
+  const end = a.blocked || a.outOfRange ? '#ff5a6a' : col;
   if (a.shape === 'line') {
     const len = Math.max(8, Math.min(a.range, a.dist || a.range));
     ctx.save();

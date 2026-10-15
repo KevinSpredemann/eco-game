@@ -73,6 +73,7 @@ import {
 import { FIELD_WINDOW, MARK_WINDOW, isElemental, resolveReaction } from './combos';
 import { abilityTrace } from './abilityTrace';
 import { castFamily, chargeFactor, chargeRadius, chargeReach } from './aimMath';
+import { resolveCastAngle } from './aimService';
 import { sweepCapsule, sweepCircle } from './sweep';
 
 export type Difficulty = 'facil' | 'normal' | 'dificil';
@@ -1532,7 +1533,7 @@ export class Game {
     if (moving && p.dashT <= 0 && p.chargeT <= 0) p.dir = Math.atan2(my, mx);
     if (this.combat) p.aim = typeof inp.aim === 'number' && isFinite(inp.aim) ? inp.aim : this.autoAim(p);
     // direção das habilidades: a mira escolhida; senão para onde anda; senão a mira automática
-    const castAng = typeof inp.ca === 'number' && isFinite(inp.ca) ? inp.ca : moving ? Math.atan2(my, mx) : this.combat ? p.aim : p.dir;
+    const castAng = resolveCastAngle({ ca: inp.ca, aim: inp.aim, mx, my, dir: p.dir, bot: p.isBot });
     if (p.pendingCast && (p.stunT > 0 || !p.alive)) {
       p.pendingCast = null;
       p.castT = 0;
@@ -1546,7 +1547,10 @@ export class Game {
     const free = p.stunT <= 0 && p.castT <= 0;
 
     if (inp.dash && p.dashCd <= 0 && free && p.stasisT <= 0 && p.rootT <= 0) {
-        p.dashT = C.DASH_TIME;
+        if (!p.isBot && typeof inp.ca === 'number' && isFinite(inp.ca)) p.dir = inp.ca;
+        const full = C.DASH_SPEED * C.DASH_TIME;
+        const aimedDash = !p.isBot && typeof inp.cr === 'number';
+        p.dashT = (aimedDash ? Math.max(16, Math.min(full, inp.cr as number)) : full) / C.DASH_SPEED;
         p.dashCd = C.DASH_CD;
         p.dashHit = [];
         if (this.mode === 'duelo' || this.mode === 'dupla') p.flowT = Math.max(p.flowT, FLOW_TIME);
@@ -3160,7 +3164,9 @@ export class Game {
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: radius });
     if (def.act === 'dash') {
       p.dir = ang;
-      p.dashT = C.DASH_TIME;
+      const full = C.DASH_SPEED * C.DASH_TIME;
+      const want = inp && typeof inp.cr === 'number' ? Math.max(16, Math.min(full, inp.cr)) : full;
+      p.dashT = want / C.DASH_SPEED;
       p.dashDmg = dmg;
       p.dashEl = def.element;
       p.dashHit = [];
@@ -3169,7 +3175,8 @@ export class Game {
     } else if (def.act === 'blink') {
       const ox = p.x;
       const oy = p.y;
-      const moved = this.blinkTo(p, ang, step);
+      const reach = inp && typeof inp.cr === 'number' ? Math.min(step, Math.max(8, inp.cr)) : step;
+      const moved = this.blinkTo(p, ang, reach);
       if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, dmg) });
       if (moved > 12) p.ambushT = AMBUSH_TIME;
       const foe = this.nearestHostile(p, 36);
@@ -3180,9 +3187,11 @@ export class Game {
       const spot = this.isFree(ox, oy, 12) ? { x: ox, y: oy } : { x: p.x, y: p.y };
       this.clones.push({ owner: p.id, x: spot.x, y: spot.y, dir: ang, t: 3.2, decoy: true, absorb: 1, pop: dmg });
     } else if (def.act === 'wall') {
+      const placed = inp && typeof inp.cr === 'number';
+      const spot = placed ? this.castPoint(p, inp, ang, Math.max(range, 1)) : null;
       const reach = Math.min(78, Math.max(48, range));
-      const cx = p.x + Math.cos(ang) * reach;
-      const cy = p.y + Math.sin(ang) * reach;
+      const cx = spot ? spot.x : p.x + Math.cos(ang) * reach;
+      const cy = spot ? spot.y : p.y + Math.sin(ang) * reach;
       this.raiseWall(p.id, cx, cy, ang, 92, 16, 3.2, 'barreira');
       for (const o of this.players) {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;

@@ -15,6 +15,7 @@ import { digestAt, type EchoDigest } from '../systems/echo/digest';
 import { drawCrate, drawMinion, drawPools, drawResSpot, isMinion } from './minions';
 import { corpsePose, gritSpecks } from './visuals';
 import { AimPreview, drawAimPreview, drawBossOver, drawBossUnder, drawCastsGround, drawPylon, drawStatus, drawTraps } from './combatFx';
+import { screenToWorld, viewFromLetterbox, type WorldView } from '../game/aimService';
 import { Expr, SpriteCache, WALK_FRAMES, drawCharacter, drawSymbol, facingOf, rr } from './sprites';
 
 type Particle = {
@@ -77,6 +78,9 @@ export class Renderer {
   private sprites = new SpriteCache();
   private particles: Particle[] = [];
   private shake = 0;
+  /** tremor já aplicado no quadro, para o clique cair no mesmo lugar desenhado */
+  private drawnShakeX = 0;
+  private drawnShakeY = 0;
   private flash = 0;
   private flashColor = '#fff';
   private echoWasActive = new Map<string, boolean>();
@@ -146,9 +150,27 @@ export class Renderer {
     this.buildBase(a);
   }
 
-  /** converte coordenadas de tela (css px) para o mundo */
+  /** A mesma vista do quadro: retângulo do canvas, letterbox, zoom e tremor. */
+  worldView(): WorldView {
+    const rect = this.canvas.getBoundingClientRect();
+    const cssW = this.cssW || rect.width || this.canvas.clientWidth || 1;
+    const cssH = this.cssH || rect.height || this.canvas.clientHeight || 1;
+    return viewFromLetterbox({
+      left: rect.left,
+      top: rect.top,
+      cssW,
+      cssH,
+      bufW: this.canvas.width,
+      bufH: this.canvas.height,
+      ox: this.ox + this.drawnShakeX,
+      oy: this.oy + this.drawnShakeY,
+      scale: this.scale || 1,
+    });
+  }
+
+  /** converte coordenadas de tela (css px do viewport) para o mundo */
   toWorld(x: number, y: number) {
-    return { x: (x - this.ox) / this.scale, y: (y - this.oy) / this.scale };
+    return screenToWorld(x, y, this.worldView());
   }
 
   // ======================================================== camada estática
@@ -1418,6 +1440,8 @@ export class Renderer {
       sx = (Math.random() - 0.5) * this.shake;
       sy = (Math.random() - 0.5) * this.shake;
     }
+    this.drawnShakeX = sx;
+    this.drawnShakeY = sy;
     this.shake = Math.max(0, this.shake - dt * 40);
     const k = this.scale * this.dpr;
     ctx.setTransform(k, 0, 0, k, (this.ox + sx) * this.dpr, (this.oy + sy) * this.dpr);

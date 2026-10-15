@@ -332,6 +332,8 @@ export class InputManager {
   kbAim = 0;
   /** 0–1 da habilidade carregada que acabou de soltar. null = golpe cheio. */
   private pendingCharge: number | null = null;
+  /** cursor de tela no instante do clique rápido ou da soltura da mira */
+  private castScreen: { x: number; y: number } | null = null;
   private holdAt = 0;
   /** este espaço cresce enquanto segura */
   charged: (slot: Slot) => boolean = () => false;
@@ -716,6 +718,7 @@ export class InputManager {
     }
     const style = this.styleOf(slot, kind);
     if (queuesOnPress(style)) {
+      this.castScreen = { x: this.mouse.x, y: this.mouse.y };
       this.queued.add(slot);
       this.pendingCharge = this.charged(slot) ? 1 : null;
       return;
@@ -732,6 +735,7 @@ export class InputManager {
       const max = Math.max(0.2, this.chargeSeconds(this.aiming.slot)) * 1000;
       this.pendingCharge = Math.max(0, Math.min(1, (performance.now() - this.holdAt) / max));
     } else this.pendingCharge = null;
+    this.castScreen = { x: this.mouse.x, y: this.mouse.y };
     this.queued.add(this.aiming.slot);
     this.touchCast = null;
     this.aiming = null;
@@ -781,7 +785,7 @@ export class InputManager {
   }
 
   /** Lê o estado do passo atual (habilidades são "um toque" e se consomem). */
-  read(): Input & { touchCast?: { ang: number; ratio: number } | null } {
+  read(): Input & { touchCast?: { ang: number; ratio: number } | null; castScreen?: { x: number; y: number } | null } {
     const k = this.keys;
     const bound = new Set(Object.values(this.binds));
     const held = (code: string) => k.has(code) && !bound.has(code);
@@ -824,10 +828,12 @@ export class InputManager {
       aim: null as number | null,
       ch: q.size ? this.pendingCharge : null,
       touchCast: q.size ? this.touchCast : null,
+      castScreen: q.size ? this.castScreen : null,
     };
     if (q.size) {
       this.touchCast = null;
       this.pendingCharge = null;
+      this.castScreen = null;
     }
     q.clear();
     return out;
@@ -839,6 +845,7 @@ export class InputManager {
     this.aiming = null;
     this.touchCast = null;
     this.pendingCharge = null;
+    this.castScreen = null;
     this.lastAim = null;
     this.fireLatch = false;
     this.lockOn = false;

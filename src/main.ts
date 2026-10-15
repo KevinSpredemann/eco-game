@@ -30,10 +30,12 @@ import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLA
 import { comboReady } from './game/combos';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
+import { solveAim, type AimShape } from './game/aimService';
 import { ACTION_LABEL, Action, MoveScheme, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
 import { SkillBar, SlotView, drawSlotArt, slotReady } from './ui/skillbar';
+import { markHtml, previewEmpty, previewHtml, uiTint } from './ui/powerPreview';
 import type { AimPreview } from './render/combatFx';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
@@ -2014,6 +2016,11 @@ function comboLine(g: AnyGame): string {
   return hit ? `COMBO DISPONÍVEL ${hit.key}: ${hit.name}` : '';
 }
 
+function aimMark(on: boolean): 'ok' | 'bad' | undefined {
+  if (!on) return undefined;
+  return renderer.aimPreview?.blocked ? 'bad' : 'ok';
+}
+
 function buildSlots(g: AnyGame): SlotView[] {
   const me = g.human;
   const K = (a: Action) => keyLabel(settings.keys[a]);
@@ -2037,19 +2044,24 @@ function buildSlots(g: AnyGame): SlotView[] {
       const low = !ult && left <= 0 && (me.energy ?? ENERGY_MAX) < SLOT_COST[i];
       const charging = ult && left <= 0 && charge < 100;
       const ultReady = ult && left <= 0 && charge >= 100;
+      const tint = uiTint(pw.element);
+      const aiming = input.aiming?.slot === ids[i];
       slots.push({
         id: ids[i],
         key: labels[i],
-        name: pw.name.toUpperCase(),
-        art: { kind: 'symbol', id: me.char.id, color: ELEMENT_COLOR[pw.element] },
-        color: ult ? '#ffd23e' : ELEMENT_COLOR[pw.element],
+        name: pw.name,
+        art: { kind: 'symbol', id: me.char.id, color: tint },
+        icon: previewHtml(pw, 'sm'),
+        color: ult ? '#ffd23e' : tint,
         cd: left / cd,
         secs: left,
         charge: ult ? charge : undefined,
-        off: left <= 0 && (low || charging),
-        note: low ? 'SEM ENERGIA' : ultReady ? 'SUPREMA PRONTA' : charging ? `${Math.floor(charge)}%` : undefined,
+        dry: low,
+        off: false,
+        note: low ? 'SEM ENERGIA' : ultReady ? 'PRONTA' : charging ? `${Math.floor(charge)}%` : undefined,
         cost: ult ? undefined : SLOT_COST[i],
-        aiming: input.aiming?.slot === ids[i],
+        aiming,
+        aim: aimMark(aiming),
         desc: `${describePower({ ...pw, cd }, labels[i], SLOT_COST[i], i)} ${ELEMENT_FX[pw.element]}.`,
         hot: ready?.slot === i || (!ready && plasmaUp && left <= 0 && !ult),
       });
@@ -2061,18 +2073,22 @@ function buildSlots(g: AnyGame): SlotView[] {
     const extraCost = extra?.cost ?? PLASMA.cost;
     const extraColor = extra ? ELEMENT_COLOR[extra.element] : PLASMA_COLOR;
     const plasmaLow = plasmaOn && plasmaLeft <= 0 && (me.energy ?? ENERGY_MAX) < extraCost;
+    const plasmaAim = input.aiming?.slot === 'plasma';
     slots.push({
       id: 'plasma',
       key: K('plasma'),
-      name: (extra?.name ?? 'EXTRA').toUpperCase(),
-      art: { kind: 'symbol', id: me.char.id, color: extraColor },
-      color: extraColor,
+      name: extra?.name ?? 'Extra',
+      art: { kind: 'symbol', id: me.char.id, color: extra ? uiTint(extra.element) : extraColor },
+      icon: extra ? previewHtml(extra, 'sm') : previewEmpty('sm'),
+      color: extra ? uiTint(extra.element) : extraColor,
       cd: plasmaOn ? plasmaLeft / extraCd : 1,
       secs: plasmaOn ? plasmaLeft : 0,
-      off: !plasmaOn || plasmaLow,
+      dry: plasmaLow,
+      off: !plasmaOn,
       note: !plasmaOn ? 'VAZIO' : plasmaLow ? 'SEM ENERGIA' : undefined,
       cost: plasmaOn ? extraCost : undefined,
-      aiming: input.aiming?.slot === 'plasma',
+      aiming: plasmaAim,
+      aim: aimMark(plasmaAim && plasmaOn),
       desc: extra
         ? `${describePower(extra, K('plasma'), extra.cost)} ${ELEMENT_FX[extra.element]}.`
         : 'Escolha um poder extra na tela de poderes. Trancado não entra.',
@@ -2082,16 +2098,19 @@ function buildSlots(g: AnyGame): SlotView[] {
     slots.push({
       id: 'fire',
       key: 'Clique',
-      name: 'BÁSICO',
+      name: 'Básico',
       art: { kind: 'symbol', id: me.char.id, color: '#d7e2ff' },
+      icon: markHtml('basic', '#d7e2ff'),
       color: '#d7e2ff',
       cd: basicLeft / BASIC.cd,
       secs: basicLeft,
-      off: basicLow,
+      dry: basicLow,
+      off: false,
       note: basicLow ? 'SEM ENERGIA' : undefined,
+      cost: BASIC.cost,
       desc: `Clique esquerdo — ${BASIC.name}: dano ${BASIC.dmg}, alcance ${BASIC.range}, recarga ${BASIC.cd}s, energia ${BASIC.cost}. Não marca elemento e não gasta a marca de plasma. Para na parede.`,
     });
-    slots.push({ id: 'dash', key: K('dash'), name: 'Impulso', art: { kind: 'dash', id: 'dash', color: '#9ad8ff' }, color: '#9ad8ff', cd: me.dashCd / C.DASH_CD, secs: me.dashCd, off: me.stasisT > 0 || me.rootT > 0, note: me.rootT > 0 ? 'PRESO' : me.stasisT > 0 ? 'BLOQUEADO' : undefined, desc: 'Arrancada curta. Para na parede. O próximo golpe logo depois ganha um bônus pequeno.' });
+    slots.push({ id: 'dash', key: K('dash'), name: 'Impulso', art: { kind: 'dash', id: 'dash', color: '#9ad8ff' }, icon: markHtml('impulse', '#9ad8ff'), color: '#9ad8ff', cd: me.dashCd / C.DASH_CD, secs: me.dashCd, off: me.stasisT > 0 || me.rootT > 0, note: me.rootT > 0 ? 'PRESO' : me.stasisT > 0 ? 'BLOQUEADO' : undefined, aiming: input.aiming?.slot === 'dash', aim: aimMark(input.aiming?.slot === 'dash'), desc: 'Arrancada curta até o ponto. Para na parede.' });
     return slots;
   }
   // arma (tiro): primeiro espaço — clique do mouse. Cinza quando não dá para atirar (tonto, caído, fora da rodada)
@@ -2894,13 +2913,14 @@ function aimFoes(g: AnyGame) {
 function readInput(): Input {
   const i = input.read();
   const notebook = input.control === 'notebook' && !input.touchMode;
-  const mouseFresh = !input.touchMode && performance.now() - input.mouse.at < 4000;
-  const mouseOk = mouseFresh && !input.arrowsDown && !input.keyboardAim;
-  if (game && game.combat && (input.arrowsDown || input.keyboardAim || (input.aiming && !mouseFresh))) i.aim = input.kbAim;
-  if (game && game.combat && mouseOk) {
-    const w = renderer.toWorld(input.mouse.x, input.mouse.y);
+  const stickAim = input.manualAim();
+  const keyAim = input.keyboardAim || input.arrowsDown || stickAim !== null;
+  const cursorLive = !input.touchMode && input.mouse.at > 0 && !keyAim;
+  if (game && game.combat && keyAim) i.aim = stickAim ?? input.kbAim;
+  else if (game && game.combat && cursorLive) {
     const me = game.human;
-    let ang = Math.atan2(w.y - (me.y - GUN_Y), w.x - me.x);
+    const cursor = renderer.toWorld(input.mouse.x, input.mouse.y);
+    let ang = Math.atan2(cursor.y - (me.y - GUN_Y), cursor.x - me.x);
     if (notebook) {
       ang = input.smoothAim(ang);
       const foes = aimFoes(game);
@@ -2911,39 +2931,63 @@ function readInput(): Input {
     }
     i.aim = ang;
   }
-  // celular: o analógico direito mira (independente do movimento); solto, a última direção continua
-  const stickAim = input.manualAim();
-  if (game && game.combat && stickAim !== null) i.aim = stickAim;
-  // mira das habilidades: mouse (computador) ou arrasto do botão (toque)
   const pressed = (['ability', 'skill', 'ult', 'bonus', 'dash', 'item', 'plasma'] as Slot[]).find((k) => (i as any)[k]);
   if (game && pressed) {
-    const me = game.human;
     if (i.touchCast) {
       i.ca = i.touchCast.ang;
       i.cr = i.touchCast.ratio * slotRange(pressed);
-    } else if (notebook && game.combat) {
-      const info = slotInfo(pressed);
-      if (info.kind === 'direction') {
-        const aim = typeof i.aim === 'number' ? i.aim : me.aim;
-        i.ca = aim;
-        i.cr = (info.range || 200) * 0.72;
-      } else if (mouseOk) {
-        const w = renderer.toWorld(input.mouse.x, input.mouse.y);
-        i.ca = Math.atan2(w.y - me.y, w.x - me.x);
-        i.cr = Math.hypot(w.x - me.x, w.y - me.y);
+    } else if (keyAim || !cursorLive) {
+      i.ca = stickAim ?? input.kbAim;
+      // O impulso do teclado continua na distância cheia. O mouse é que encurta até o clique.
+      if (pressed !== 'dash') i.cr = slotRange(pressed) * (input.precision ? 0.55 : 0.85);
+    } else {
+      const screen = i.castScreen ?? { x: input.mouse.x, y: input.mouse.y };
+      const shot = pointerShot(pressed, screen.x, screen.y, true);
+      if (shot) {
+        i.ca = shot.ang;
+        i.cr = shot.dist;
+        i.aim = shot.ang;
       }
-    } else if ((input.arrowsDown || input.keyboardAim || !mouseFresh) && game.combat) {
-      i.ca = input.kbAim;
-      i.cr = slotRange(pressed) * (input.precision ? 0.55 : 0.85);
-    } else if (mouseOk && game.combat) {
-      const w = renderer.toWorld(input.mouse.x, input.mouse.y);
-      const oy = castOriginY(pressed, me.y);
-      i.ca = Math.atan2(w.y - oy, w.x - me.x);
-      i.cr = Math.hypot(w.x - me.x, w.y - oy);
     }
   }
   delete i.touchCast;
+  delete i.castScreen;
   return i;
+}
+
+/** Cursor de tela → ponto do golpe. O corpo só entra quando não há cursor. */
+function pointerShot(slot: Slot, screenX: number, screenY: number, forCast: boolean) {
+  if (!game) return null;
+  const me = game.human;
+  const info = slotInfo(slot);
+  const oy = castOriginY(slot, me.y);
+  const cursor = renderer.toWorld(screenX, screenY);
+  const pw = powerForSlot(slot);
+  const kind: AimShape = info.kind === 'instant' || info.shape === 'self' ? 'self' : info.shape === 'line' ? 'dash' : info.shape === 'circle' || info.shape === 'wall' ? 'point' : 'projectile';
+  const solids = solidsOf(game);
+  return solveAim({
+    ox: me.x,
+    oy,
+    cursorX: cursor.x,
+    cursorY: cursor.y,
+    range: info.range || (forCast ? 200 : 0),
+    kind,
+    passThrough: !!pw?.pass,
+    placeThrough: kind === 'point',
+    radius: kind === 'dash' ? 14 : 3,
+    solids,
+    facing: me.dir,
+    hasCursor: true,
+  });
+}
+
+function powerForSlot(slot: Slot) {
+  if (!game) return null;
+  const me = game.human;
+  if (slot === 'plasma') return studioOf(me.loadout.secondary);
+  const i = powerSlotIndex(slot);
+  if (i === null || (game.mode !== 'duelo' && game.mode !== 'dupla')) return null;
+  return kitOf(me.char.id).powers[i];
 }
 
 // ------------------------------------------------------------------ habilidades: tipo de mira, alcance e prévia
@@ -2958,6 +3002,10 @@ function slotInfo(slot: Slot): { kind: 'instant' | 'direction' | 'point'; range:
     if (slot === 'dash') return { kind: 'direction', range: S.avanco.range ?? 330, r: 0, w: 64, shape: 'line', name: S.avanco.name, color: '#ff3b3b' };
     if (slot === 'ability') return { ...none, r: S.impacto.radius ?? 175, name: S.impacto.name, color: '#ff3b3b' };
     return none;
+  }
+  if (slot === 'dash') {
+    const reach = C.DASH_SPEED * C.DASH_TIME;
+    return { kind: 'direction', range: reach, r: 18, w: 28, shape: 'line', name: 'Impulso', color: '#9ad8ff' };
   }
   if (slot === 'plasma') {
     const extra = studioOf(me.loadout.secondary);
@@ -3099,17 +3147,20 @@ function updateAimPreview() {
       dist = Math.min(1, len / 90) * info.range;
     }
   } else {
-    const w = renderer.toWorld(input.mouse.x, input.mouse.y);
-    ang = Math.atan2(w.y - oy, w.x - me.x);
-    dist = Math.hypot(w.x - me.x, w.y - oy);
+    const shot = pointerShot(a.slot, input.mouse.x, input.mouse.y, true);
+    if (shot && !shot.fromFacing) {
+      ang = shot.ang;
+      dist = shot.dist;
+    }
   }
-  const capped = info.shape === 'wall' && info.kind === 'direction' ? Math.max(50, Math.min(info.range, 70)) : Math.min(dist, info.range || dist);
-  const along = info.kind === 'instant' ? null : clipAim(me.x, info.kind === 'direction' ? oy + GUN_Y : me.y, ang, capped, game);
+  const shotNow = a.touch ? null : pointerShot(a.slot, input.mouse.x, input.mouse.y, true);
+  const capped = shotNow && !shotNow.fromFacing ? shotNow.dist : Math.min(dist, info.range || dist);
+  const along = info.kind === 'instant' ? null : shotNow && !shotNow.fromFacing ? shotNow : clipAim(me.x, info.kind === 'direction' ? oy + GUN_Y : me.y, ang, capped, game);
   const reach = along ? along.dist : capped;
   const how = input.castMode === 'manual' || input.manualSlots.has(a.slot) ? 'clique para usar' : 'solte para usar';
   const solids = solidsOf(game);
-  const ex = me.x + Math.cos(ang) * reach;
-  const ey = (info.kind === 'direction' ? oy + GUN_Y : me.y) + Math.sin(ang) * reach;
+  const ex = shotNow && !a.touch ? shotNow.x : me.x + Math.cos(ang) * reach;
+  const ey = shotNow && !a.touch ? shotNow.y : oy + Math.sin(ang) * reach;
   const hits =
     info.shape === 'circle' || info.shape === 'self'
       ? game.players
@@ -3133,6 +3184,7 @@ function updateAimPreview() {
     color: info.color,
     label: `${info.name} · ${how}`,
     blocked: !!along?.blocked,
+    outOfRange: !!shotNow?.outOfRange,
     charge: charge === null ? undefined : charge,
     hits,
   };

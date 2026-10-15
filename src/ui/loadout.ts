@@ -138,6 +138,8 @@ export class LoadoutScreen {
           linked: linked.has(i),
           ult: i === 2,
           attrs: `data-kit="${i}"`,
+          slot: i,
+          cost: SLOT_COST[i],
         });
       })
       .join('');
@@ -152,6 +154,8 @@ export class LoadoutScreen {
           ult: false,
           attrs: 'data-slot="z"',
           extra: ' z',
+          slot: -1,
+          cost: current.cost,
         })
       : `<button type="button" class="pw-card z empty${this.focusKind === 'extra' && !this.focusExtra ? ' focus' : ''}" data-slot="z">${previewEmpty('sm')}<span class="pw-copy"><b>Vazio</b><small>${plasmaKey} · extra</small><em class="pw-state">Disponível</em></span></button>`;
     slots.innerHTML = `<div class="pw-equip">${kitHtml}${zCard}</div>`;
@@ -195,6 +199,8 @@ export class LoadoutScreen {
           linked: equipped && linked.has(-1),
           ult: false,
           attrs: `data-sec="${s.id}"`,
+          slot: -1,
+          cost: s.cost,
         });
       })
       .join('');
@@ -264,15 +270,21 @@ export class LoadoutScreen {
     return s.unlockMatches > 0 ? `Depois de ${s.unlockMatches} partida${s.unlockMatches === 1 ? '' : 's'}.` : 'Ainda não liberado.';
   }
 
+  private chips(pw: PowerDef, slot: number, cost: number) {
+    return relevantFacts(pw, slot, cost)
+      .map((f) => `<i class="pw-chip"><span>${f.label}</span> ${f.value}</i>`)
+      .join('');
+  }
+
   private abilityCard(
     pw: PowerDef,
-    opts: { key: string; state: 'equipped' | 'available' | 'locked' | 'unavailable'; why: string; selected: boolean; linked: boolean; ult: boolean; attrs: string; extra?: string },
+    opts: { key: string; state: 'equipped' | 'available' | 'locked' | 'unavailable'; why: string; selected: boolean; linked: boolean; ult: boolean; attrs: string; extra?: string; slot: number; cost: number },
   ) {
     const label = opts.state === 'equipped' ? 'Equipado' : opts.state === 'locked' ? 'Bloqueado' : opts.state === 'unavailable' ? 'Indisponível' : 'Disponível';
     const cls = ['pw-card', opts.state, opts.selected ? 'focus' : '', opts.linked ? 'syn-on' : '', opts.ult ? 'ult' : '', opts.extra ?? ''].filter(Boolean).join(' ');
     const line = opts.why || powerRole(pw);
     const badge = opts.linked ? '<em class="pw-badge">Sinergia</em>' : '';
-    return `<button type="button" class="${cls}" ${opts.attrs} data-state="${opts.state}">${previewHtml(pw, 'sm')}<span class="pw-copy"><b title="${pw.name}">${pw.name}</b><small>${opts.key} · ${categoryLabel(pw)}</small><em class="pw-line">${line}</em><em class="pw-state">${label}</em>${badge}</span></button>`;
+    return `<button type="button" class="${cls}" ${opts.attrs} data-state="${opts.state}" data-el="${pw.element}">${previewHtml(pw, 'sm')}<span class="pw-copy"><b>${pw.name}</b><small>${opts.key} · ${categoryLabel(pw)} · ${ELEMENT_NAME[pw.element]}</small><em class="pw-line">${line}</em><span class="pw-chips">${this.chips(pw, opts.slot, opts.cost)}</span><em class="pw-state">${label}</em>${badge}</span></button>`;
   }
 
   private shownRows(synergies: SynergyRow[], pw: PowerDef, slot: number): SynergyRow[] {
@@ -311,13 +323,13 @@ export class LoadoutScreen {
       const label = equipped ? 'Tirar do Z' : current ? 'Substituir' : 'Equipar';
       action = `<button type="button" class="btn small primary" data-equip>${label}</button>`;
     }
-    return `<div class="pw-sheet">${previewHtml(picked, 'lg')}<p class="pw-kicker">${categoryLabel(picked)} · ${key} · ${ELEMENT_NAME[picked.element]}</p><h3>${picked.name}</h3><p class="pw-role">${powerRole(picked)}</p><ul class="pw-facts">${facts.map((f) => `<li><span>${f.label}</span><b>${f.value}</b></li>`).join('')}</ul><p class="pw-use">${useLine(picked)} Mira: ${aimLine(picked)} No alvo: ${targetLine(picked)}</p>${action}<p class="pw-saved">Salvo: ${saved?.name ?? 'vazio'}. Agora: ${current?.name ?? 'vazio'}. Voltar mantém o salvo.</p><h4>Sinergias</h4><ul class="pw-syn">${syn}</ul><button type="button" class="btn small" data-train>Treinar combo</button></div>`;
+    return `<div class="pw-sheet" data-el="${picked.element}">${previewHtml(picked, 'lg')}<p class="pw-kicker">${categoryLabel(picked)} · ${key} · ${ELEMENT_NAME[picked.element]}</p><h3>${picked.name}</h3><p class="pw-role">${powerRole(picked)}</p><ul class="pw-facts">${facts.map((f) => `<li><span>${f.label}</span><b>${f.value}</b></li>`).join('')}</ul><p class="pw-use">${useLine(picked)} Mira: ${aimLine(picked)}</p>${action}<details class="pw-more"><summary>Avançado</summary><p>${targetLine(picked)} Salvo: ${saved?.name ?? 'vazio'}. Agora: ${current?.name ?? 'vazio'}. Voltar mantém o salvo.</p></details><h4>Sinergias</h4><ul class="pw-syn">${syn}</ul><button type="button" class="btn small" data-train>Treinar combo</button></div>`;
   }
 
   private synergyRow(row: SynergyRow) {
     const badge = row.state === 'active' ? '✓ Ativa' : row.state === 'possible' ? '◇ Possível' : row.state === 'locked' ? '⊘ Bloqueada' : '— Nenhuma';
-    const text = `${row.order}. ${row.effect}. ${row.need}.`;
-    return `<li class="syn-row ${row.state}"><span class="syn-pair">${previewHtml(row.powers[0], 'xs')}<span class="syn-link" aria-hidden="true">+</span>${previewHtml(row.powers[1], 'xs')}</span><span class="syn-copy"><b>${row.name}</b><small title="${text}">${text}</small></span><em class="syn-badge">${badge}</em></li>`;
+    const link = '<svg class="syn-link" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12h6M8 8H6a4 4 0 0 0 0 8h2M16 8h2a4 4 0 0 1 0 8h-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    return `<li class="syn-row ${row.state}"><span class="syn-pair">${previewHtml(row.powers[0], 'xs')}${link}${previewHtml(row.powers[1], 'xs')}</span><span class="syn-copy"><b>${row.name}</b><small>${row.effect}</small><details><summary>Como ativa</summary><p>${row.order}. ${row.need}.</p></details></span><em class="syn-badge">${badge}</em></li>`;
   }
 
   private swapSummary(prev: string | null, next: string | null) {

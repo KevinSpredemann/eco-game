@@ -33,6 +33,12 @@ export interface SlotView {
   cost?: number;
   /** este espaço está sendo mirado */
   aiming?: boolean;
+  /** desenho vetorial do poder (o mesmo da tela de poderes) */
+  icon?: string;
+  /** sem energia para este golpe */
+  dry?: boolean;
+  /** mira aberta: o ponto serve ou está bloqueado */
+  aim?: 'ok' | 'bad';
 }
 
 export function drawSlotArt(cv: HTMLCanvasElement, a: SlotArt) {
@@ -114,16 +120,34 @@ export function drawSlotArt(cv: HTMLCanvasElement, a: SlotArt) {
 
 /** pronta para usar? (mesma regra na barra do computador e nos botões do celular) */
 export function slotReady(s: SlotView) {
-  if (s.off) return false;
+  if (s.off || s.dry) return false;
   if (s.secs > 0) return false;
   if (s.charge !== undefined && s.charge < 100) return false;
   return true;
+}
+
+/** Classes visuais da carta. A barra e os testes usam a mesma regra. */
+export function slotFlags(s: SlotView) {
+  const ready = slotReady(s);
+  return {
+    ready,
+    cool: !ready,
+    dry: !!s.dry,
+    aiming: !!s.aiming,
+    aimOk: s.aim === 'ok',
+    aimBad: s.aim === 'bad',
+    ult: s.charge !== undefined,
+    charged: (s.charge ?? 0) >= 100,
+    combo: !!s.hot,
+  };
 }
 
 export class SkillBar {
   private sig = '';
   /** estado anterior (para o pulso no instante em que fica pronta) */
   private wasReady = new Map<string, boolean>();
+  private wasSecs = new Map<string, number>();
+  private wasAiming = new Map<string, boolean>();
   private els = new Map<string, HTMLElement>();
   private tip: HTMLElement;
   private bannerEl: HTMLElement;
@@ -144,13 +168,13 @@ export class SkillBar {
   }
 
   render(slots: SlotView[]) {
-    const sig = slots.map((s) => `${s.id}|${s.key}|${s.name}|${s.art.kind}:${s.art.id}|${s.color}`).join(';');
+    const sig = slots.map((s) => `${s.id}|${s.key}|${s.name}|${s.icon ? 'ico:' + (s.icon.match(/data-kind="([^"]+)"/)?.[1] ?? 'x') : s.art.kind + ':' + s.art.id}|${s.color}`).join(';');
     if (sig !== this.sig) {
       this.sig = sig;
       this.root.innerHTML = slots
         .map(
           (s) =>
-            `<div class="sk" data-sk="${s.id}" style="--c:${s.color}"><canvas class="sk-art"></canvas><span class="sk-key">${s.key}</span><span class="sk-name">${s.name}</span><span class="sk-cost"></span><span class="sk-num"></span><i class="sk-cd"></i><span class="sk-why"></span></div>`,
+            `<div class="sk${s.icon ? ' has-icon' : ''}" data-sk="${s.id}" style="--c:${s.color}">${s.icon ? `<span class="sk-ico">${s.icon}</span>` : '<canvas class="sk-art"></canvas>'}<span class="sk-key">${s.key}</span><span class="sk-name">${s.name}</span><span class="sk-cost"></span><span class="sk-num"></span><i class="sk-cd"></i><span class="sk-why"></span></div>`,
         )
         .join('');
       this.els.clear();
@@ -159,7 +183,13 @@ export class SkillBar {
         e.addEventListener('mouseenter', () => this.showTip(e));
         e.addEventListener('mouseleave', () => (this.tip.hidden = true));
       });
-      requestAnimationFrame(() => slots.forEach((s) => this.els.get(s.id) && drawSlotArt(this.els.get(s.id)!.querySelector('canvas')!, s.art)));
+      requestAnimationFrame(() =>
+        slots.forEach((s) => {
+          if (s.icon) return;
+          const cv = this.els.get(s.id)?.querySelector('canvas');
+          if (cv) drawSlotArt(cv, s.art);
+        }),
+      );
     }
     for (const s of slots) {
       const e = this.els.get(s.id);
@@ -167,20 +197,27 @@ export class SkillBar {
       e.dataset.desc = s.desc;
       e.dataset.title = `${s.name} · ${s.key}`;
       const charge = s.charge !== undefined;
-      const ready = slotReady(s);
+      const flags = slotFlags(s);
+      const ready = flags.ready;
       // acabou de ficar pronta: pulso de luz (como no LoL)
       const before = this.wasReady.get(s.id);
-      if (ready && before === false) {
-        e.classList.remove('just-ready');
-        void e.offsetWidth;
-        e.classList.add('just-ready');
-      }
+      if (ready && before === false) this.flash(e, 'just-ready');
       this.wasReady.set(s.id, ready);
+      const prevSecs = this.wasSecs.get(s.id) ?? 0;
+      if (prevSecs <= 0.05 && s.secs > 0.05) this.flash(e, 'cast');
+      this.wasSecs.set(s.id, s.secs);
+      if (s.aiming && this.wasAiming.get(s.id) === false) this.flash(e, 'pressed');
+      this.wasAiming.set(s.id, !!s.aiming);
       e.classList.toggle('ready', ready);
-      e.classList.toggle('cool', !ready);
+      e.classList.toggle('cool', flags.cool);
       e.classList.toggle('off', !!s.off);
-      e.classList.toggle('combo', !!s.hot);
-      e.classList.toggle('aiming', !!s.aiming);
+      e.classList.toggle('dry', flags.dry);
+      e.classList.toggle('combo', flags.combo);
+      e.classList.toggle('aiming', flags.aiming);
+      e.classList.toggle('aim-ok', flags.aimOk);
+      e.classList.toggle('aim-bad', flags.aimBad);
+      e.classList.toggle('ult', flags.ult);
+      e.classList.toggle('charged', flags.charged);
       const cost = e.querySelector('.sk-cost')!;
       const costText = s.cost && !s.off ? String(s.cost) : '';
       if (cost.textContent !== costText) cost.textContent = costText;
@@ -189,6 +226,12 @@ export class SkillBar {
       const t = s.note ?? (s.secs > 0 ? `${Math.ceil(s.secs)}s` : charge ? (ready ? 'PRONTA' : `${Math.floor(s.charge ?? 0)}%`) : '');
       if (num.textContent !== t) num.textContent = t;
     }
+  }
+
+  private flash(e: HTMLElement, cls: string) {
+    e.classList.remove(cls);
+    void e.offsetWidth;
+    e.classList.add(cls);
   }
 
   private showTip(e: HTMLElement) {
