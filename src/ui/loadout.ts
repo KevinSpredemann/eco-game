@@ -5,6 +5,8 @@ import { KITS, KitId, Loadout, PRIMARY_PRICE, ROLE_COLOR, ROLE_LABEL, SKILLS, ST
 import { CATEGORY_LABEL, WEAPONS, WeaponDef, WeaponId, primaryOf, weaponDps } from '../game/weapons';
 import { getCharacter } from '../game/characters';
 import { ELEMENT_COLOR, ELEMENT_NAME, SLOT_COST, STUDIO, StudioDef, ULT_LAND, ULT_WINDUP, kitOf, mainElementOf, studioOf, type PowerCategory, type PowerDef } from '../game/elements';
+import { CINEMATIC, cinematicOf, cinematicPower, fits, type CinematicUlt } from '../game/cinematic';
+import { PICK_SLOTS, type PickSlot } from '../game/slotPower';
 import { aimLine, categoryLabel, listSynergies, powerRole, relevantFacts, swapDelta, targetLine, trainLine, useLine, type SynergyRow } from '../game/combos';
 import { previewEmpty, previewHtml } from './powerPreview';
 import { drawGear, GearKind } from './gearArt';
@@ -27,6 +29,7 @@ export interface LoadoutDeps {
   click: () => void;
   train?: (charId: string, loadout: Loadout, line: string) => void;
   keyOf: (slot: 'ability' | 'skill' | 'ult' | 'bonus' | 'item' | 'plasma' | 'dash') => string;
+  rebind?: (slot: 'ability' | 'skill' | 'ult' | 'bonus' | 'plasma') => void;
 }
 
 const AIM_LABEL = { instant: 'Uso na hora', direction: 'Mira em direção', point: 'Mira em um ponto' } as const;
@@ -117,6 +120,8 @@ export class LoadoutScreen {
   private filter: PowerFilter = 'all';
   /** Troca do Z ainda não confirmada. Voltar e Começar ignoram isto. */
   private pending: { next: string | null } | null = null;
+  /** espaço que recebe o próximo poder da lista. -1 = Z. */
+  private slotFocus = 0;
 
   constructor(
     private root: HTMLElement,
@@ -134,6 +139,7 @@ export class LoadoutScreen {
     this.openedSecondary = this.l.secondary ?? null;
     this.focusKind = 'kit';
     this.focusIndex = 0;
+    this.slotFocus = 0;
     this.pending = null;
     this.onConfirm = opts.onConfirm;
     this.tab = 'primary';
@@ -175,10 +181,18 @@ export class LoadoutScreen {
     const plasmaKey = this.deps.keyOf('plasma');
     const slots = this.root.querySelector('.lo-slots')!;
     const current = studioOf(this.l.secondary);
+    const shown = (i: number): PowerDef => {
+      const id = this.l.picks?.[slotOf[i]];
+      if (i === 2) {
+        const cine = cinematicOf(id);
+        if (cine) return cinematicPower(cine);
+      }
+      return studioOf(id) ?? kit.powers[i];
+    };
     const kitHtml = order
       .map((i) => {
         const selected = this.focusKind === 'kit' && this.focusIndex === i;
-        return this.abilityCard(kit.powers[i], {
+        return this.abilityCard(shown(i), {
           key: this.deps.keyOf(slotOf[i]),
           state: 'equipped',
           why: '',
@@ -216,6 +230,7 @@ export class LoadoutScreen {
         this.pending = null;
         this.focusKind = 'kit';
         this.focusIndex = Number(el.dataset.kit);
+        this.slotFocus = this.focusIndex;
         this.renderPowers();
       });
     });
@@ -224,6 +239,7 @@ export class LoadoutScreen {
       this.pending = null;
       this.focusKind = 'extra';
       this.focusExtra = current?.id ?? '';
+      this.slotFocus = -1;
       this.renderPowers();
     });
     const filters: { id: PowerFilter; name: string }[] = [
@@ -236,6 +252,25 @@ export class LoadoutScreen {
       { id: 'area', name: 'Área' },
     ];
     const rows = STUDIO.filter((s) => this.passes(s));
+    const cineCards =
+      this.filter === 'all' || this.filter === 'attack'
+        ? CINEMATIC.map((c) => {
+            const equipped = this.l.picks?.ult === c.id;
+            const who = getCharacter(c.char).name;
+            return this.abilityCard(cinematicPower(c), {
+              key: this.deps.keyOf('ult'),
+              state: equipped ? 'equipped' : 'available',
+              why: fits(this.charId, c.id) ? `Combina com ${who}` : `Sugerida para ${who}`,
+              selected: this.focusKind === 'extra' && this.focusExtra === c.id,
+              linked: false,
+              ult: true,
+              attrs: `data-cine="${c.id}"`,
+              slot: 2,
+              cost: c.cost,
+              line: fits(this.charId, c.id) ? `Combina com ${who}` : `Sugerida para ${who}`,
+            });
+          }).join('')
+        : '';
     const cards = rows
       .map((s) => {
         const owned = this.deps.owns('power:' + s.id);
@@ -256,7 +291,7 @@ export class LoadoutScreen {
       .join('');
     const list = this.root.querySelector<HTMLElement>('.lo-list')!;
     list.hidden = false;
-    list.innerHTML = `<div class="pw-filters">${filters.map((f) => `<button type="button" class="pw-filter${this.filter === f.id ? ' on' : ''}" data-filter="${f.id}">${f.name}</button>`).join('')}</div><div class="pw-grid">${cards}</div>`;
+    list.innerHTML = `<div class="pw-filters">${filters.map((f) => `<button type="button" class="pw-filter${this.filter === f.id ? ' on' : ''}" data-filter="${f.id}">${f.name}</button>`).join('')}</div><div class="pw-grid">${cards}${cineCards}</div>`;
     const grid = list.querySelector<HTMLElement>('.pw-grid');
     if (grid) grid.scrollTop = keep;
     list.querySelectorAll<HTMLElement>('[data-filter]').forEach((el) => {
@@ -275,8 +310,44 @@ export class LoadoutScreen {
         this.renderPowers();
       });
     });
+    list.querySelectorAll<HTMLElement>('[data-cine]').forEach((el) => {
+      el.addEventListener('click', () => {
+        this.deps.click();
+        this.pending = null;
+        this.focusKind = 'extra';
+        this.focusExtra = el.dataset.cine || this.focusExtra;
+        this.renderPowers();
+      });
+    });
     const det = this.root.querySelector('.lo-detail')!;
     det.innerHTML = this.powerDetail(synergies, plasmaKey, current);
+    det.querySelector('[data-equip-slot]')?.addEventListener('click', () => {
+      this.deps.click();
+      const id = this.focusExtra;
+      const slot = this.slotFocus >= 0 ? this.slotFocus : 2;
+      this.assignPick(slot, id);
+    });
+    det.querySelector('[data-equip-cine]')?.addEventListener('click', () => {
+      this.deps.click();
+      this.assignPick(2, this.focusExtra);
+      this.focusIndex = 2;
+      this.slotFocus = 2;
+      this.renderPowers();
+    });
+    det.querySelector('[data-clear-pick]')?.addEventListener('click', () => {
+      this.deps.click();
+      const key = PICK_SLOTS[this.focusIndex] as PickSlot | undefined;
+      if (!key || key === 'plasma') return;
+      const picks = { ...(this.l.picks ?? {}) };
+      delete picks[key];
+      this.l = sanitizeLoadout({ ...this.l, picks }, this.deps.owns);
+      this.renderPowers();
+    });
+    det.querySelector('[data-rebind]')?.addEventListener('click', () => {
+      this.deps.click();
+      const key = this.slotFocus < 0 ? 'plasma' : PICK_SLOTS[this.slotFocus];
+      if (key && key !== undefined) this.deps.rebind?.(key);
+    });
     det.querySelector('[data-equip]')?.addEventListener('click', () => {
       this.deps.click();
       const id = this.focusExtra;
@@ -294,7 +365,10 @@ export class LoadoutScreen {
         this.deps.toast(staged.reason);
         return;
       }
-      this.l = { ...this.l, secondary: staged.secondary };
+      const picks = { ...(this.l.picks ?? {}) };
+      if (staged.secondary) picks.plasma = staged.secondary;
+      else delete picks.plasma;
+      this.l = sanitizeLoadout({ ...this.l, secondary: staged.secondary, picks }, this.deps.owns);
       this.pending = null;
       if (this.l.secondary) this.focusExtra = this.l.secondary;
       this.renderPowers();
@@ -334,8 +408,39 @@ export class LoadoutScreen {
     return locked.length ? locked : [];
   }
 
+  private assignPick(slot: number, id: string) {
+    const key = PICK_SLOTS[slot];
+    if (!key) return;
+    if (cinematicOf(id)) {
+      if (key !== 'ult') {
+        this.deps.toast('Essa suprema entra na tecla da ultimate.');
+        return;
+      }
+    } else if (!studioOf(id) || !this.deps.owns('power:' + id)) {
+      this.deps.toast('Ainda não liberado.');
+      return;
+    }
+    const picks = { ...(this.l.picks ?? {}), [key]: id };
+    const secondary = key === 'plasma' ? id : this.l.secondary;
+    this.l = sanitizeLoadout({ ...this.l, picks, secondary }, this.deps.owns);
+    const name = cinematicOf(id)?.name ?? studioOf(id)?.name ?? id;
+    this.deps.toast(`${name} em ${this.deps.keyOf(key)}`);
+    this.renderPowers();
+  }
+
+  private cinematicSheet(cine: CinematicUlt) {
+    const pw = cinematicPower(cine);
+    const who = getCharacter(cine.char).name;
+    const key = this.deps.keyOf('ult');
+    const equipped = this.l.picks?.ult === cine.id;
+    const hint = fits(this.charId, cine.id) ? `Combina com ${who}.` : `Sugerida para ${who}.`;
+    return `<div class="pw-sheet" data-el="${pw.element}"><div class="pw-hero">${previewHtml(pw, 'lg')}<div class="pw-id"><h3>${pw.name}</h3><p class="pw-kicker">Suprema · ${ELEMENT_NAME[pw.element]}</p></div></div><div class="pw-scroll"><p class="pw-role">${hint} Preparo ${cine.windup.toString().replace('.', ',')}s com aviso no chão. Até ${cine.cap} alvos. Dano ${cine.dmg}. Quem sair do círculo não leva o golpe.</p></div><div class="pw-actions"><button type="button" class="btn small primary" data-equip-cine>${equipped ? `Já está em ${key}` : `Colocar em ${key}`}</button><button type="button" class="btn small" data-rebind>Trocar tecla</button><button type="button" class="btn small" data-train>Treinar combo</button></div></div>`;
+  }
+
   private powerDetail(synergies: SynergyRow[], plasmaKey: string, current: StudioDef | null) {
     const extra = this.focusKind === 'extra';
+    const cineFocus = extra ? cinematicOf(this.focusExtra) : null;
+    if (cineFocus) return this.cinematicSheet(cineFocus);
     if (extra && !this.focusExtra) {
       return `<div class="pw-sheet"><div class="pw-hero">${previewEmpty('lg')}<div class="pw-id"><h3>Vazio</h3><p class="pw-kicker">Extra</p></div></div><div class="pw-scroll"><p class="pw-role">Escolha um poder na lista.</p><p class="pw-why">Q, E, F e R não trocam. Só o Z aceita um extra.</p></div><div class="pw-syn-box"><h4>Sinergias</h4><ul class="pw-syn"><li class="syn-row none"><span class="syn-copy"><b>Nenhuma</b><small>O Z está vazio.</small></span><em class="syn-badge">— Nenhuma</em></li></ul></div><div class="pw-actions"><button type="button" class="btn small" data-train>Treinar combo</button></div></div>`;
     }
@@ -361,11 +466,16 @@ export class LoadoutScreen {
     let primary = '';
     if (!extra) {
       const land = ULT_LAND[picked.element];
-      note = slot === 2 && land
-        ? `<p class="pw-ult"><b>${land.name}</b> — ${land.desc} Prepara ${ULT_WINDUP.toString().replace('.', ',')}s com aviso no chão; tonto cancela.</p><p class="pw-why">Q, E, F e R não trocam. Só o Z aceita um extra.</p>`
-        : `<p class="pw-why">Poder do personagem. Q, E, F e R não trocam. Só o Z aceita um extra.</p>`;
+      const pickedId = this.l.picks?.[PICK_SLOTS[this.focusIndex]];
+      note = slot === 2 && land && !pickedId
+        ? `<p class="pw-ult"><b>${land.name}</b> — ${land.desc} Prepara ${ULT_WINDUP.toString().replace('.', ',')}s com aviso no chão; tonto cancela.</p><p class="pw-why">Sem escolha, esta tecla fica com o kit. A lista troca o golpe. A suprema cinematográfica entra aqui.</p>`
+        : `<p class="pw-why">Sem escolha, esta tecla fica com o kit. Escolha um poder na lista para colocar nesta tecla.</p>`;
+      primary = `<button type="button" class="btn small" data-clear-pick>Voltar ao kit</button><button type="button" class="btn small" data-rebind>Trocar tecla</button>`;
     } else if (!owned) {
       note = `<p class="pw-why">${this.lockReason(picked as StudioDef)}</p>`;
+    } else if (this.slotFocus >= 0) {
+      const keyName = this.deps.keyOf(PICK_SLOTS[this.slotFocus]);
+      primary = `<button type="button" class="btn small primary" data-equip-slot>Colocar em ${keyName}</button><button type="button" class="btn small" data-rebind>Trocar tecla</button>`;
     } else if (pending) {
       note = this.swapFacts(this.l.secondary ?? null, this.pending!.next);
       primary = `<button type="button" class="btn small primary" data-swap-ok>Confirmar troca</button><button type="button" class="btn small ghost" data-swap-no>Manter</button>`;

@@ -236,7 +236,7 @@ export function spriteKey(c: CharacterDef): string {
 // ================================================================== corpo
 /**
  * Poses do desenho 2D. Não há esqueleto 3D.
- * 'cast' e 'windup' só mudam o braço na vista lateral.
+ * 'cast' levanta um braço. 'windup' puxa os dois para cima, de lado e de frente.
  */
 export type Pose = 'normal' | 'cast' | 'windup' | 'hurt' | 'dodge';
 
@@ -345,7 +345,16 @@ export function drawCharacter(ctx0: CanvasRenderingContext2D, c: CharacterDef, f
   else if (side && pose === 'windup') armAt(ctx, c, L, 1.5, -40, -8, -34, -1, -30, false, true, 1);
   else if (side && pose === 'dodge') armAt(ctx, c, L, 1.5, -40, 2, -28, 6, -24, false, true, 1);
   else if (side) drawArm(ctx, c, L, 1.5, -40, armSwing, false, side);
-  else {
+  else if (pose === 'cast') {
+    armAt(ctx, c, L, -12.5 * B, -40, -16 * B, -54, -6 * B, -64, false, false, -1);
+    drawArm(ctx, c, L, 12.5 * B, -40, -armSwing, false, side);
+  } else if (pose === 'windup') {
+    armAt(ctx, c, L, -12.5 * B, -40, -8 * B, -56, -2 * B, -68, false, false, -1);
+    armAt(ctx, c, L, 12.5 * B, -40, 8 * B, -56, 2 * B, -68, false, false, 1);
+  } else if (pose === 'dodge') {
+    armAt(ctx, c, L, -12.5 * B, -40, -18 * B, -28, -22 * B, -18, false, false, -1);
+    armAt(ctx, c, L, 12.5 * B, -40, 18 * B, -28, 22 * B, -18, false, false, 1);
+  } else {
     drawArm(ctx, c, L, -12.5 * B, -40, armSwing, false, side);
     drawArm(ctx, c, L, 12.5 * B, -40, -armSwing, false, side);
   }

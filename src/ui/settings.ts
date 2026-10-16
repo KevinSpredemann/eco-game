@@ -66,6 +66,8 @@ export interface Settings {
   moveScheme: MoveScheme;
   /** equipamento escolhido */
   loadout: Loadout;
+  /** pontuação de combo. O dano não muda. */
+  comboScore: boolean;
   /** Caça ao Chefe contra bots: papel preferido */
   chefeRole: 'cacador' | 'chefe' | 'sorteio';
   /** rodízio do Chefe nas partidas contra bots */
@@ -108,6 +110,7 @@ export const DEFAULTS: Settings = {
   cancelAim: 'both',
   moveScheme: 'wasd',
   loadout: { ...DEFAULT_LOADOUT },
+  comboScore: false,
   chefeRole: 'sorteio',
   bossTurns: 0,
   // aparelhos modestos começam na qualidade média
@@ -172,6 +175,7 @@ export function loadSettings(): Settings {
         moveScheme: scheme,
         keys,
         loadout: { ...DEFAULT_LOADOUT, ...(v.loadout ?? {}) },
+        comboScore: v.comboScore === true,
       };
       if (migrated || itemMoved) saveSettings(next);
       return next;

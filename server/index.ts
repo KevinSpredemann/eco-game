@@ -205,6 +205,7 @@ interface Room {
   /** votos de revanche do X1 (só os dois jogadores conectados) */
   rematchVotes: Map<string, RematchVote>;
   rematchAt: number;
+  comboScore?: boolean;
 }
 
 const clients = new Map<string, Client>();
@@ -316,7 +317,7 @@ function resumeSeat(c: Client) {
       p.brain = null;
     }
     if (p) {
-      sendTo(c, { t: 'start', info: { you: c.id, mode: r.mode, arena: r.arena, roster: r.roster } });
+      sendTo(c, { t: 'start', info: { you: c.id, mode: r.mode, arena: r.arena, roster: r.roster, comboScore: r.comboScore === true } });
       r.echoSig = ''; // manda de novo os caminhos dos ecos para quem voltou
     }
   }
@@ -381,6 +382,7 @@ function startGame(r: Room, fill = false) {
     training: false,
     mode: r.mode,
     roster,
+    comboScore: r.comboScore === true,
   });
   r.game = game;
   r.roster = roster;
@@ -399,7 +401,7 @@ function startGame(r: Room, fill = false) {
   r.rematchAt = 0;
   for (const m of humans) m.input = { mx: 0, my: 0, dash: false, ability: false };
   for (const m of r.members) {
-    const info: StartInfo = { you: m.id, mode: r.mode, arena: r.arena, roster };
+    const info: StartInfo = { you: m.id, mode: r.mode, arena: r.arena, roster, comboScore: r.comboScore === true };
     sendTo(m, { t: 'start', info });
   }
   broadcastRoom(r);
@@ -621,7 +623,7 @@ wss.on('connection', (ws) => {
         leaveRoom(c);
         const mode: GameMode = validMode(m.mode) ? m.mode : 'duelo';
         const arena = ARENAS.some((a) => a.id === m.arena) ? m.arena : 'lab';
-        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: mode === 'todos' ? 0 : Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [], rematchVotes: new Map(), rematchAt: 0 };
+        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: mode === 'todos' ? 0 : Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [], rematchVotes: new Map(), rematchAt: 0, comboScore: m.comboScore === true };
         rooms.set(r.code, r);
         c.room = r;
         c.ready = false;

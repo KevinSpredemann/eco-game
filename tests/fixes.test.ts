@@ -45,7 +45,8 @@ describe('portais, gelo, morte e colisão', () => {
     pb.y = a.y;
     pa.vx = pb.vx = 40;
     pa.vy = pb.vy = 10;
-    g.step(STEP, { a: idle, b: idle });
+    const go = { ...idle, interact: true };
+    g.step(STEP, { a: go, b: go });
     for (const p of [pa, pb]) {
       expect(p.hp).toBe(p === pa ? ha : hb);
       expect(p.hearts).toBe(3);
@@ -67,14 +68,15 @@ describe('portais, gelo, morte e colisão', () => {
     p.x = a.x;
     p.y = a.y;
     p.dir = 0.4;
-    g.step(STEP, { a: idle, b: idle });
+    const go = { ...idle, interact: true };
+    g.step(STEP, { a: go, b: idle });
     expect(p.portalCd).toBeGreaterThan(0);
     p.portalCd = 0;
     const back = g.arena.portals![0][1];
     p.x = back.x;
     p.y = back.y;
     const hp = p.hp;
-    g.step(STEP, { a: idle, b: idle });
+    g.step(STEP, { a: go, b: idle });
     expect(p.hp).toBe(hp);
     expect(portalPairAt(g.arena.portals, p.x, p.y)).toBeNull();
     expect(g.isFree(p.x, p.y, C.PLAYER_R)).toBe(true);

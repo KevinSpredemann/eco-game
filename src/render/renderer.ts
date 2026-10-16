@@ -1673,6 +1673,17 @@ export class Renderer {
       ctx.setLineDash([]);
     }
 
+    for (const lever of game.levers ?? []) {
+      ctx.fillStyle = lever.open ? '#5dff8a' : '#ffd23e';
+      ctx.beginPath();
+      ctx.arc(lever.x, lever.y, 8, 0, Math.PI * 2);
+      ctx.fill();
+      if (!lever.open) {
+        ctx.fillStyle = 'rgba(255,210,62,0.35)';
+        ctx.fillRect(lever.door.x, lever.door.y, lever.door.w, lever.door.h);
+      }
+    }
+
     // poço gravitacional
     for (const w of a.wells ?? []) {
       const gr = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, w.range);

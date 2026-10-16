@@ -14,9 +14,12 @@ describe('portais', () => {
     while (g.phase !== 'play') g.step(STEP, {});
     const me = g.human;
     const idle = { mx: 0, my: 0 } as Input;
+    const go = { ...idle, interact: true } as Input;
     me.x = a.x;
     me.y = a.y;
     g.step(STEP, idle);
+    expect(Math.hypot(me.x - a.x, me.y - a.y)).toBeLessThan(5);
+    g.step(STEP, go);
     expect(Math.hypot(me.x - b.x, me.y - b.y)).toBeLessThan(60);
     expect(me.portalCd).toBeGreaterThan(C.PORTAL_CD - 0.1);
     // volta para o portal na hora: não teleporta
@@ -31,7 +34,7 @@ describe('portais', () => {
     expect(me.portalCd).toBe(0);
     me.x = b.x;
     me.y = b.y;
-    g.step(STEP, idle);
+    g.step(STEP, go);
     expect(Math.hypot(me.x - a.x, me.y - a.y)).toBeLessThan(60);
   });
 });

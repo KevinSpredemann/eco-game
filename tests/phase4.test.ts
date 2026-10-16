@@ -86,7 +86,7 @@ describe('fase 4 — mapas, times e alcance', () => {
     expect(rangeTier(600)).toBe('extreme');
   });
 
-  it('vento e raio de aliados acendem o indicador sem somar dano', () => {
+  it('vento e raio de aliados confirmam o combo e o dano extra', () => {
     expect(teamComboName('wind', 'lightning')).toBe('Tempestade elétrica');
     const roster = [
       { id: 'a', char: 'kai', isBot: false },
@@ -124,7 +124,7 @@ describe('fase 4 — mapas, times e alcance', () => {
     });
     const team = g.events.find((e) => e.type === 'combo' && e.team);
     expect(team && team.type === 'combo' ? team.name : '').toBe('Tempestade elétrica');
-    expect(team && team.type === 'combo' ? team.bonus : 1).toBe(0);
+    expect(team && team.type === 'combo' ? team.bonus : 0).toBe(6);
     expect(team && team.type === 'combo' ? team.confirmed : false).toBe(true);
     expect(b.hp).toBe(b.maxHp);
     expect(c.hp).toBeLessThanOrEqual(before);

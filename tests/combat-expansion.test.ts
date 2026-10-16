@@ -38,10 +38,10 @@ function press(g: Game, who: 'a' | 'b', extra: Partial<Input>, frames = 1) {
 }
 
 describe('catálogo de combate', () => {
-  it('as 15 habilidades entram na biblioteca e no Z', () => {
-    expect(CATALOG).toHaveLength(15);
+  it('as habilidades do catálogo entram na biblioteca e no Z', () => {
+    expect(CATALOG.length).toBeGreaterThanOrEqual(18);
     const names = new Set(CATALOG.map((s) => s.name));
-    expect(names.size).toBe(15);
+    expect(names.size).toBe(CATALOG.length);
     for (const s of CATALOG) {
       expect(STUDIO.some((row) => row.id === s.id)).toBe(true);
       expect(s.trick).toBeTruthy();

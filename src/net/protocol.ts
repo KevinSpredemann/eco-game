@@ -49,6 +49,8 @@ export interface StartInfo {
   mode: GameMode;
   arena: string;
   roster: { id: string; char: string; skin: string; trail: string; name: string; isBot: boolean; lv?: number; loadout?: Loadout; boss?: boolean }[];
+  /** pontuação de combo. Ausente = desligada. */
+  comboScore?: boolean;
 }
 
 export interface EndInfo {
@@ -62,7 +64,7 @@ export interface EndInfo {
 export type ClientMsg =
   | { t: 'hello'; name: string; token?: string | null; sid?: string; v?: number }
   | { t: 'nick'; name: string }
-  | { t: 'create'; mode: GameMode; arena: string; bots: number }
+  | { t: 'create'; mode: GameMode; arena: string; bots: number; comboScore?: boolean }
   | { t: 'join'; code: string }
   | { t: 'set'; char: string; skin: string; trail: string }
   | { t: 'config'; mode: GameMode; arena: string; bots: number }
@@ -154,6 +156,10 @@ export interface Snapshot {
   PA?: (number | string)[][];
   /** orbes de energia. Ausente no servidor antigo. */
   EO?: number[][];
+  /** alavancas abertas (índice, 1 = aberta). Ausente no servidor antigo. PROTO segue 12. */
+  LV?: number[][];
+  /** multiplicador da pontuação de combo. Ausente = modo desligado. */
+  cm?: number;
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -315,6 +321,8 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     RS: g.resSpots.map((r) => [r1(r.x), r1(r.y)]),
     PA: (g.patches ?? []).map((z) => [z.id, z.owner, z.kind, r1(z.x), r1(z.y), z.r, r1(z.t), z.dmg, z.el ? EL_IDS.indexOf(z.el) : -1]),
     EO: (g.energyOrbs ?? []).map((o) => [o.id, r1(o.x), r1(o.y)]),
+    LV: (g.levers ?? []).map((l, i) => [i, l.open ? 1 : 0]),
+    cm: g.comboScoreOn ? g.comboMul : 0,
   };
 }
 

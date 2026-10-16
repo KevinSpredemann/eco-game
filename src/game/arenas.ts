@@ -103,6 +103,8 @@ export interface ArenaDef {
   cores: Pt[];
   zones: Circle[];
   portals?: [Pt, Pt][];
+  /** alavanca de um uso. Enquanto fechada, `door` bloqueia. */
+  levers?: { id: string; x: number; y: number; door: Rect }[];
   islands?: Rect[];
   bridges?: Bridge[];
   conveyors?: Conveyor[];
@@ -168,6 +170,10 @@ const ALL_ARENAS: ArenaDef[] = [
       { x: 780, y: 300, r: 22 },
       { x: 500, y: 420, r: 22 },
       { x: 780, y: 420, r: 22 },
+    ],
+    levers: [
+      // canto norte, fora do corredor y=360 e longe dos portais
+      { id: 'lab-norte', x: 400, y: 110, door: { x: 380, y: 130, w: 50, h: 18 } },
     ],
     portals: [
       [
@@ -826,6 +832,10 @@ function scaleArena(raw: ArenaDef): ArenaDef {
   for (const pair of a.portals ?? []) {
     pt(pair[0]);
     pt(pair[1]);
+  }
+  for (const lever of a.levers ?? []) {
+    pt(lever);
+    rect(lever.door);
   }
   for (const i of a.islands ?? []) rect(i);
   for (const b of a.bridges ?? []) rect(b);

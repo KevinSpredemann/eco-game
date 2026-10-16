@@ -62,6 +62,9 @@ export type PreviewKind = (typeof PREVIEW_KINDS)[number];
 export type PreviewSize = 'xs' | 'sm' | 'lg';
 
 export function previewOf(pw: PowerDef): { kind: string; element: Element } {
+  if (pw.trick === 'horizon') return { kind: 'lance', element: pw.element };
+  if (pw.trick === 'echo-bolt') return { kind: 'bolt', element: pw.element };
+  if (pw.trick === 'vacuum') return { kind: 'pull', element: pw.element };
   if (pw.trick) return { kind: pw.trick === 'roots' ? 'rootbed' : pw.trick, element: pw.element };
   const step = pw.step ?? pw.range;
   if (pw.mark && pw.speed > 0) return { kind: 'seed', element: pw.element };

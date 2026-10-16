@@ -40,6 +40,9 @@ export class ClientGame {
   enemies: any[] = [];
   abilityOrbs: any[] = [];
   energyOrbs: { id: number; x: number; y: number }[] = [];
+  levers: { id: string; x: number; y: number; open: boolean; door: { x: number; y: number; w: number; h: number } }[] = [];
+  comboMul = 1;
+  comboScoreOn = false;
   iceWalls: any[] = [];
   pools: { id: number; x: number; y: number; r: number; armT: number; t: number }[] = [];
   resSpots: { x: number; y: number }[] = [];
@@ -98,6 +101,8 @@ export class ClientGame {
 
   constructor(info: StartInfo) {
     this.arena = getArena(info.arena);
+    this.levers = (this.arena.levers ?? []).map((l) => ({ id: l.id, x: l.x, y: l.y, open: false, door: { ...l.door } }));
+    this.comboScoreOn = info.comboScore === true;
     this.mode = info.mode;
     this.localId = info.you;
     this.rules = MODE_RULES[this.mode];
@@ -350,6 +355,13 @@ export class ClientGame {
     this.smokes = (s.SM ?? []).map(([id, x, y, t, r]) => ({ id, x, y, t, r, owner: '' }));
     this.abilityOrbs = (s.AO ?? []).map(([id, ab, x, y, age]) => ({ id, ab, x, y, age }));
     this.energyOrbs = (s.EO ?? []).map(([id, x, y]) => ({ id, x, y }));
+    if (s.LV) {
+      for (const [i, open] of s.LV) {
+        const row = this.levers[i];
+        if (row) row.open = open === 1;
+      }
+    }
+    if (this.comboScoreOn && typeof s.cm === 'number' && s.cm > 0) this.comboMul = s.cm;
     this.hooks = (s.HK ?? []).map(([id, owner, x, y]) => ({ id, owner, x, y }));
     for (const e of ev) {
       const evn = e as GameEvent;
@@ -399,7 +411,7 @@ export class ClientGame {
         const body = tuneBody(this.arena, this.pred.x, this.pred.y, C.PLAYER_R, this.worldT);
         this.pred.x = body.x;
         this.pred.y = body.y;
-        if ((p.portalCd ?? 0) <= 0) {
+        if ((p.portalCd ?? 0) <= 0 && input.interact) {
           const gate = portalPairAt(this.arena.portals, this.pred.x, this.pred.y);
           if (gate) {
             const dir = Math.hypot(this.predV.x, this.predV.y) > 30 ? Math.atan2(this.predV.y, this.predV.x) : p.dir;

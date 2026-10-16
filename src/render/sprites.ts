@@ -207,6 +207,11 @@ export const ORIGIN_X = 40;
 export const ORIGIN_Y = 86;
 export const WALK_FRAMES = 8;
 
+/** A pose entra no cache em qualquer vista, inclusive de frente. */
+export function poseForSprite(_facing: Facing, pose: Pose): Pose {
+  return pose;
+}
+
 export class SpriteCache {
   private cache = new Map<string, HTMLCanvasElement>();
   private px = 1;
@@ -229,7 +234,7 @@ export class SpriteCache {
 
   get(c: CharacterDef, facing: Facing, frame: number, moving: boolean, ghost: string | null, expr: Expr = 'neutral', pose: Pose = 'normal'): HTMLCanvasElement {
     if (ghost) expr = 'neutral';
-    if (facing !== 'side' && (pose === 'cast' || pose === 'windup')) pose = 'normal';
+    pose = poseForSprite(facing, pose);
     const key = `${c.id}:${c.skinId ?? ''}|${facing}|${moving ? 'm' : 'i'}${frame}|${ghost ?? ''}|${expr}|${pose}`;
     let cv = this.cache.get(key);
     if (cv) return cv;

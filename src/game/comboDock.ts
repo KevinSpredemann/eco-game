@@ -12,6 +12,8 @@ export interface ComboDock {
   aEl: string;
   bEl: string;
   need?: string;
+  /** passos da sequência, na ordem das teclas */
+  steps?: string[];
 }
 
 export interface ComboDone {
@@ -70,15 +72,19 @@ export function comboDockState(
   const usable = [0, 1, 2, 3].map((i) => (why(i) ? 9 : 0));
   const rows = listSynergies(me.char.id, me.loadout?.secondary ?? null).filter((row) => row.state === 'active' && row.slots.length === 2);
   const recipe = pickComboRecipe(rows);
+  const stepLine = (keys: string[]) => keys.filter(Boolean).map((k, i) => `${i + 1}. ${k}`);
   const pairOf = (row: { slots: number[]; powers: { element: string }[]; name: string }) => {
     const a = row.slots[0] ?? 0;
     const b = row.slots[1] ?? 1;
+    const aKey = labels[a] ?? '';
+    const bKey = labels[b] ?? '';
     return {
-      aKey: labels[a] ?? '',
-      bKey: labels[b] ?? '',
+      aKey,
+      bKey,
       aEl: row.powers[0]?.element ?? 'fire',
       bEl: row.powers[1]?.element ?? 'lightning',
       name: row.name,
+      steps: stepLine([aKey, bKey]),
     };
   };
   if (o.done && o.now < o.done.until) {
@@ -99,6 +105,7 @@ export function comboDockState(
       aEl: 'lightning',
       bEl: kitOf(me.char.id).powers[slot].element,
       need: ready ? `Marca aplicada ✓ → ${key}: habilidade compatível` : why(slot),
+      steps: stepLine([o.plasmaKey, key]),
     };
   }
   const hit = comboReady(me.char.id, usable, foes, labels);
@@ -123,7 +130,7 @@ export function comboDockState(
   }
   const plasma = g.players.find((p) => p.alive && p.id !== me.id && g.hostile(me, p) && p.plasmaT > 0);
   if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) {
-    return { phase: 'armed', key: '', name: 'Explosão de Plasma', frac: Math.min(1, plasma.plasmaT / 4), aKey: '', bKey: o.plasmaKey, aEl: 'plasma', bEl: 'plasma' };
+    return { phase: 'armed', key: '', name: 'Explosão de Plasma', frac: Math.min(1, plasma.plasmaT / 4), aKey: '', bKey: o.plasmaKey, aEl: 'plasma', bEl: 'plasma', steps: stepLine([o.plasmaKey]) };
   }
   if (recipe) {
     const base = pairOf(recipe);

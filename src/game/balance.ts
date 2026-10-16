@@ -2,6 +2,7 @@
 // Mude números aqui (não espalhados pelo código): vida, controle, escudo, habilidades,
 // equipamentos, ultimates e o Chefe do modo Caça ao Chefe.
 import type { AbilityId } from './characters';
+import { cinematicOf } from './cinematic';
 import { studioOf } from './elements';
 
 export type Role = 'dano' | 'mobilidade' | 'defesa' | 'controle' | 'suporte';
@@ -214,6 +215,11 @@ export interface Loadout {
   ult: UltId;
   /** um poder extra. null = espaço vazio. Só um id do estúdio, e só se estiver liberado. */
   secondary?: string | null;
+  /**
+   * Poder escolhido em cada tecla. Vazio = kit do personagem (Z = secondary).
+   * Id do estúdio, ou uma suprema cinematográfica no espaço ult.
+   */
+  picks?: Partial<Record<'ability' | 'skill' | 'ult' | 'bonus' | 'plasma', string>>;
 }
 export const DEFAULT_LOADOUT: Loadout = { primary: 'assinatura', kit: 'bomba', skill: 'rolamento', ult: 'meteoro', secondary: null };
 
@@ -227,6 +233,23 @@ export function sanitizeLoadout(l: Partial<Loadout> | undefined | null, owns: (k
   if (l.ult && l.ult in ULTS && (ULTS[l.ult].price === 0 || owns('gear:' + l.ult))) out.ult = l.ult;
   const extra = studioOf(typeof l.secondary === 'string' ? l.secondary : null);
   out.secondary = extra && owns('power:' + extra.id) ? extra.id : null;
+  const slots = ['ability', 'skill', 'ult', 'bonus', 'plasma'] as const;
+  const raw = l.picks;
+  const picks: NonNullable<Loadout['picks']> = {};
+  if (raw && typeof raw === 'object') {
+    for (const slot of slots) {
+      const id = typeof raw[slot] === 'string' ? raw[slot] : '';
+      if (!id) continue;
+      if (cinematicOf(id)) {
+        if (slot === 'ult') picks.ult = id;
+        continue;
+      }
+      const row = studioOf(id);
+      if (row && owns('power:' + row.id)) picks[slot] = row.id;
+    }
+  }
+  if (picks.plasma) out.secondary = picks.plasma;
+  if (Object.keys(picks).length) out.picks = picks;
   return out;
 }
 

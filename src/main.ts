@@ -33,6 +33,8 @@ import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLA
 import { comboReady } from './game/combos';
 import { comboDockState, comboDockTag } from './game/comboDock';
 import { nearestOrbPrompt } from './game/orbs';
+import { portalPairAt, PORTAL_RADIUS } from './game/portals';
+import { leverPrompt, portalPrompt } from './game/interactPrompt';
 import { playFinisher } from './game/finisher';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
@@ -948,7 +950,18 @@ function closeMundo() {
 }
 
 function fillModeLists(grid: HTMLElement) {
-  grid.replaceChildren(...PLAY_MODES.map(modeCard));
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'mode-card';
+  toggle.dataset.comboScore = settings.comboScore ? 'on' : 'off';
+  toggle.innerHTML = `<span class="mbody"><span class="mtag">Pontuação</span><span class="mt">Combo ${settings.comboScore ? 'ligado' : 'desligado'}</span><span class="md">Os combos somam pontos (x1 a x4) por cerca de 4 minutos. O dano dos golpes não muda.</span></span>`;
+  toggle.addEventListener('click', () => {
+    settings.comboScore = !settings.comboScore;
+    saveSettings(settings);
+    audio.click();
+    fillModeLists(grid);
+  });
+  grid.replaceChildren(...PLAY_MODES.map(modeCard), toggle);
 }
 
 function openModes() {
@@ -1746,6 +1759,25 @@ const loadoutScreen = new LoadoutScreen($('#screen-loadout'), {
     startMatch();
   },
   keyOf: (slot) => keyLabel(settings.keys[slot]),
+  rebind: (slot) => {
+    toast('Pressione a nova tecla');
+    input.capture = (code) => {
+      input.capture = null;
+      if (code === 'Escape') return loadoutScreen.relabel();
+      const why = reservedKeyMessage(code, settings.moveScheme);
+      if (why) {
+        toast(why);
+        return loadoutScreen.relabel();
+      }
+      if (settings.keys[slot] === code) return loadoutScreen.relabel();
+      const other = bindOwner(settings.keys, slot, code);
+      if (other) {
+        toast(`${keyLabel(code)} está em ${ACTION_LABEL[other]}`);
+        return loadoutScreen.relabel();
+      }
+      applyKey(slot, code);
+    };
+  },
 });
 function openLoadout(ctx: 'pre' | 'pause' | 'lobby') {
   loadoutCtx = ctx;
@@ -1829,7 +1861,7 @@ document.querySelectorAll<HTMLElement>('#online-modes .pill').forEach((p) =>
 async function createRoom() {
   try {
     const n = await ensureNet();
-    n.send({ t: 'create', mode: onlineMode, arena: settings.arena, bots: onlineMode === 'duelo' || onlineMode === 'todos' ? 0 : 3 });
+    n.send({ t: 'create', mode: onlineMode, arena: settings.arena, bots: onlineMode === 'duelo' || onlineMode === 'todos' ? 0 : 3, comboScore: settings.comboScore === true });
   } catch (e) {
     showOnlineError((e as Error).message, true);
   }
@@ -2066,6 +2098,7 @@ function startMatch() {
     dummy: hint.length > 0,
     mode: matchMode,
     roster: localRoster(),
+    comboScore: settings.comboScore === true,
   });
   beginMatchView(g);
   if (hint) showTip(hint, 6);
@@ -2707,12 +2740,19 @@ function updateHud() {
   $('#hud-timer').classList.toggle('low', g.phase === 'play' && g.timeLeft() <= (suddenOn ? 10 : 5));
   syncRoundCall();
   const obj = objectiveHud(g);
-  setText('#hud-objective', obj);
-  $('#hud-objective').hidden = !obj;
+  const scored = g.comboScoreOn ? `${obj ? `${obj} · ` : ''}Combo ×${g.comboMul}` : obj;
+  setText('#hud-objective', scored);
+  $('#hud-objective').hidden = !scored;
   const tune = tuneHint(g.arena.id);
   setText('#hud-tune', tune);
   $('#hud-tune').hidden = !tune || g.phase === 'results';
-  const orb = g.phase === 'play' ? nearestOrbPrompt(g.human.x, g.human.y, g.energyOrbs ?? [], keyLabel(settings.interactKey)) : null;
+  const interactLabel = keyLabel(settings.interactKey);
+  let orb = g.phase === 'play' ? nearestOrbPrompt(g.human.x, g.human.y, g.energyOrbs ?? [], interactLabel) : null;
+  if (!orb && g.phase === 'play' && (g.human.portalCd ?? 0) <= 0 && portalPairAt(g.arena.portals, g.human.x, g.human.y, PORTAL_RADIUS + 64)) orb = portalPrompt(interactLabel);
+  if (!orb && g.phase === 'play') {
+    const lever = (g.levers ?? []).find((l) => !l.open && Math.hypot(g.human.x - l.x, g.human.y - l.y) <= C.PLAYER_R + 48);
+    if (lever) orb = leverPrompt(interactLabel);
+  }
   const orbEl = $('#orb-prompt');
   if (orbEl) {
     orbEl.hidden = !orb;
@@ -2729,7 +2769,7 @@ function updateHud() {
   const comboEl = $('#hud-combo');
   comboEl.hidden = !cs;
   if (cs) {
-    const sig = `${cs.phase}|${cs.aKey}|${cs.bKey}|${cs.name}|${cs.need ?? ''}`;
+    const sig = `${cs.phase}|${cs.aKey}|${cs.bKey}|${cs.name}|${cs.need ?? ''}|${(cs.steps ?? []).join('>')}`;
     comboEl.classList.toggle('wait', cs.phase === 'wait');
     comboEl.classList.toggle('ready', cs.phase === 'ready');
     comboEl.classList.toggle('armed', cs.phase === 'armed');
@@ -2738,7 +2778,8 @@ function updateHud() {
       comboEl.dataset.sig = sig;
       const ico = (el: string) => `<i class="cb-el" data-el="${escapeHtml(el)}" style="--el:${ELEMENT_COLOR[el as keyof typeof ELEMENT_COLOR] ?? '#fff'}">${EL_TAG[el] ?? '•'}</i>`;
       const tag = comboDockTag(cs);
-      comboEl.innerHTML = `<span class="cb-tag">${tag}</span><span class="cb-pair">${ico(cs.aEl)}<em>+</em>${ico(cs.bEl)}</span><span class="cb-go">→</span><b>${escapeHtml(cs.name)}</b>${cs.aKey ? `<kbd>${escapeHtml(cs.aKey)}</kbd>` : ''}${cs.bKey ? `<kbd class="cb-fin">${escapeHtml(cs.bKey)}</kbd>` : ''}<small class="cb-need"></small><i class="cb-bar"><i></i></i>`;
+      const steps = (cs.steps ?? []).map((s) => escapeHtml(s)).join(' → ');
+      comboEl.innerHTML = `<span class="cb-tag">${tag}</span><span class="cb-pair">${ico(cs.aEl)}<em>+</em>${ico(cs.bEl)}</span><span class="cb-go">→</span><b>${escapeHtml(cs.name)}</b>${cs.aKey ? `<kbd>${escapeHtml(cs.aKey)}</kbd>` : ''}${cs.bKey ? `<kbd class="cb-fin">${escapeHtml(cs.bKey)}</kbd>` : ''}${steps ? `<small class="cb-steps">${steps}</small>` : ''}<small class="cb-need"></small><i class="cb-bar"><i></i></i>`;
       if (cs.phase === 'armed' || cs.phase === 'done') {
         comboEl.classList.remove('pop');
         void comboEl.offsetWidth;

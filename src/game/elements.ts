@@ -127,7 +127,10 @@ export type CatalogTrick =
   | 'updraft'
   | 'stormchain'
   | 'rupture'
-  | 'collapse';
+  | 'collapse'
+  | 'horizon'
+  | 'echo-bolt'
+  | 'vacuum';
 
 export const CATEGORY_PT: Record<PowerCategory, string> = {
   attack: 'Ataque',
@@ -367,6 +370,9 @@ export const CATALOG: StudioDef[] = [
   { id: 'corrente-tempestuosa', name: 'Corrente Tempestuosa', element: 'lightning', cd: 4.2, dmg: 11, range: 260, speed: 0, radius: 18, cost: 20, unlockMatches: 0, art: '', category: 'attack', trick: 'stormchain', form: 'chain' },
   { id: 'marca-ruptura', name: 'Marca de Ruptura', element: 'lightning', cd: 3.2, dmg: 6, range: 260, speed: 900, radius: 10, cost: 14, unlockMatches: 0, art: '', category: 'attack', trick: 'rupture', form: 'bolt' },
   { id: 'colapso-elemental', name: 'Colapso Elemental', element: 'plasma', cd: 7, dmg: 14, range: 120, speed: 0, radius: 72, cost: 26, unlockMatches: 0, art: '', category: 'attack', trick: 'collapse' },
+  { id: 'horizonte-igneo', name: 'Horizonte Ígneo', element: 'fire', cd: 3.6, dmg: 11, range: 520, speed: 1400, radius: 8, cost: 18, unlockMatches: 0, art: '', category: 'attack', trick: 'horizon', form: 'beam' },
+  { id: 'eco-trovao', name: 'Eco do Trovão', element: 'lightning', cd: 4.4, dmg: 11, range: 480, speed: 0, radius: 18, cost: 20, unlockMatches: 0, art: '', category: 'attack', trick: 'echo-bolt', form: 'bolt' },
+  { id: 'seta-vacuo', name: 'Seta do Vácuo', element: 'wind', cd: 4, dmg: 8, range: 420, speed: 900, radius: 10, cost: 18, unlockMatches: 0, art: '', category: 'control', trick: 'vacuum', form: 'bolt' },
 ];
 
 for (const row of CATALOG) STUDIO.push(row);
@@ -395,7 +401,7 @@ export function catalogAim(extra: Pick<PowerDef, 'act' | 'trick' | 'form' | 'spe
 } {
   if (!extra) return { kind: 'direction', shape: 'arrow', range: 280, r: 18, w: 0 };
   const cone = extra.form === 'breath' || extra.form === 'gust' || extra.trick === 'ash' || extra.trick === 'stormchain';
-  const lane = extra.form === 'fissure' || extra.form === 'beam' || extra.form === 'blade' || extra.trick === 'volcano' || extra.trick === 'fist' || extra.trick === 'lance' || extra.trick === 'tide' || extra.trick === 'gale' || extra.trick === 'rupture';
+  const lane = extra.form === 'fissure' || extra.form === 'beam' || extra.form === 'blade' || extra.trick === 'volcano' || extra.trick === 'fist' || extra.trick === 'lance' || extra.trick === 'tide' || extra.trick === 'gale' || extra.trick === 'rupture' || extra.trick === 'horizon' || extra.trick === 'vacuum' || extra.trick === 'echo-bolt';
   const wall = extra.act === 'wall' || extra.trick === 'mirror' || extra.trick === 'guardian';
   const dash = extra.act === 'dash' || extra.act === 'blink' || extra.trick === 'step';
   const point = !cone && !lane && !wall && !dash && extra.speed <= 0 && extra.act !== 'decoy';
