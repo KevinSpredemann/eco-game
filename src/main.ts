@@ -13,6 +13,7 @@ import { WEAPONS, ITEMS, MAX_HP, GUN_Y, isPrimary, primaryOf } from './game/weap
 import { ClientGame } from './net/clientGame';
 import { NetClient } from './net/netClient';
 import { PROTO, type EndInfo, type RoomInfo } from './net/protocol';
+import { protocolStatus, showStartButton } from './net/quickLobby';
 import { Renderer } from './render/renderer';
 import { drawCharacter } from './render/chars';
 import { drawMonster } from './render/monster';
@@ -529,6 +530,12 @@ function go(action: string, el?: HTMLElement) {
       startPendingT = performance.now();
       $<HTMLButtonElement>('#lobby-start').disabled = true;
       net?.send({ t: 'start' });
+      window.setTimeout(() => {
+        if (!startPending || performance.now() - startPendingT < 5000) return;
+        startPending = false;
+        const btn = document.querySelector<HTMLButtonElement>('#lobby-start');
+        if (btn) btn.disabled = false;
+      }, 5200);
       break;
     case 'online-retry':
       if (retryRoom) {
@@ -1455,16 +1462,35 @@ async function connectNet(): Promise<NetClient> {
   await n.connect(base, account.logged ? account.profile.username : guestName(), account.token);
   if (old && old !== n) old.close();
   net = n;
-  if (n.serverV !== PROTO) {
+  if (protocolStatus(PROTO, n.serverV) !== 'ok') {
     // app velho (ou servidor ainda atualizando): avisa em vez de entrar e ficar tudo estranho
-    const msg = n.serverV > PROTO
+    const stale = protocolStatus(PROTO, n.serverV) === 'client-old';
+    const msg = stale
       ? 'Seu jogo está desatualizado. Feche e abra o jogo de novo (ou recarregue a página) para atualizar.'
       : 'O servidor está atualizando. Tente de novo em 1 minuto.';
     showOnlineError(msg);
-    navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {});
+    if (stale) reloadOnceForProtocol();
+    else navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {});
   }
   sendLobbyLook();
   return n;
+}
+
+/** Um reload só: o service worker antigo segurava o bundle e o servidor recusava a sala. */
+function reloadOnceForProtocol() {
+  const key = 'eco-proto-reload';
+  try {
+    if (sessionStorage.getItem(key) === String(PROTO)) {
+      navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {});
+      return;
+    }
+    sessionStorage.setItem(key, String(PROTO));
+  } catch {
+    return;
+  }
+  const go = () => location.reload();
+  const pending = navigator.serviceWorker?.getRegistration().then((r) => r?.update().then(go, go)).catch(go);
+  if (!pending) go();
 }
 
 function showOnlineError(msg: string, retry = false) {
@@ -1712,7 +1738,7 @@ function renderLobby(r: RoomInfo, me: string) {
   $<HTMLSelectElement>('#lobby-bots').value = String(r.bots);
   for (const sel of ['#lobby-mode', '#lobby-arena', '#lobby-bots']) $<HTMLSelectElement>(sel).disabled = !host;
   $('#lobby-bots').closest('label')!.hidden = r.mode === 'duelo';
-  $('#lobby-start').hidden = !host || !!r.public;
+  $('#lobby-start').hidden = !showStartButton(host, !!r.public, r.autoIn);
   $('#lobby-config').hidden = !!r.public;
   // "pronto" vem do servidor (não fica preso de uma sala para outra)
   lobbyReady = !!mine?.ready;
@@ -1723,7 +1749,9 @@ function renderLobby(r: RoomInfo, me: string) {
   const others = r.players.filter((p) => p.id !== me && !p.host);
   const readyN = others.filter((p) => p.ready).length;
   $('#lobby-note').textContent = r.public
-    ? `Busca automática · ${modeTitle(r.mode, 'online')}: começa quando lotar, quando todos estiverem prontos ou em ${r.autoIn ?? 0}s (bots completam as vagas).`
+    ? (r.autoIn ?? 0) > 0
+      ? `Busca automática · ${modeTitle(r.mode, 'online')}: começa quando lotar, quando todos estiverem prontos ou em ${r.autoIn}s (bots completam as vagas).`
+      : 'A busca parou em 0s. Toque em Começar — se faltar gente, bots completam as vagas.'
     : host
         ? r.players.length < 2 && r.mode === 'duelo'
           ? 'Sozinho? Pode começar: um bot entra no lugar do amigo.'

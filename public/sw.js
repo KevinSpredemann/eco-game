@@ -20,9 +20,9 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   if (req.mode === 'navigate') {
-    // página: rede primeiro (pega atualizações), cache se offline
+    // página: rede primeiro, sem o cache de 10 min do GitHub Pages (senão o bundle velho continua)
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-store' })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put('./', copy));
