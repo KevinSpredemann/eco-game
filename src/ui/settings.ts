@@ -50,6 +50,10 @@ export interface Settings {
   aimSens: number;
   /** auto: clássico segura a tecla, notebook solta na hora. */
   castMode: CastChoice;
+  /** mouse é o padrão. auto trava o golpe no inimigo dentro do alcance e da visão. */
+  targetMode: 'mouse' | 'auto';
+  /** tecla que coleta o orbe. G não é um poder no perfil WASD. */
+  interactKey: string;
   /** setas miram. WASD continua andando. */
   keyboardAim: boolean;
   /** estes espaços sempre abrem a mira manual */
@@ -96,6 +100,8 @@ export const DEFAULTS: Settings = {
   control: 'classic',
   aimSens: 100,
   castMode: 'auto',
+  targetMode: 'mouse',
+  interactKey: 'KeyG',
   keyboardAim: false,
   manualAim: [],
   rangeIndicator: 'aiming',
@@ -156,6 +162,8 @@ export function loadSettings(): Settings {
         ...DEFAULTS,
         ...v,
         castMode: mode,
+        targetMode: v.targetMode === 'auto' ? 'auto' : 'mouse',
+        interactKey: typeof v.interactKey === 'string' && /^Key[A-Z]$/.test(v.interactKey) ? v.interactKey : DEFAULTS.interactKey,
         keyboardAim: v.keyboardAim === true,
         manualAim: Array.isArray(v.manualAim) ? v.manualAim.filter((s: unknown) => typeof s === 'string') : [],
         rangeIndicator: v.rangeIndicator === 'always' ? 'always' : 'aiming',

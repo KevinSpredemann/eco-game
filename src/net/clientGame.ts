@@ -39,6 +39,7 @@ export class ClientGame {
   turrets: any[] = [];
   enemies: any[] = [];
   abilityOrbs: any[] = [];
+  energyOrbs: { id: number; x: number; y: number }[] = [];
   iceWalls: any[] = [];
   pools: { id: number; x: number; y: number; r: number; armT: number; t: number }[] = [];
   resSpots: { x: number; y: number }[] = [];
@@ -348,6 +349,7 @@ export class ClientGame {
     this.vortexes = (s.VX ?? []).map(([id, x, y, t, r]) => ({ id, x, y, t, r, owner: '' }));
     this.smokes = (s.SM ?? []).map(([id, x, y, t, r]) => ({ id, x, y, t, r, owner: '' }));
     this.abilityOrbs = (s.AO ?? []).map(([id, ab, x, y, age]) => ({ id, ab, x, y, age }));
+    this.energyOrbs = (s.EO ?? []).map(([id, x, y]) => ({ id, x, y }));
     this.hooks = (s.HK ?? []).map(([id, owner, x, y]) => ({ id, owner, x, y }));
     for (const e of ev) {
       const evn = e as GameEvent;

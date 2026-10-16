@@ -26,6 +26,7 @@
         <div class="objective" id="hud-objective"></div>
         <div class="tune-hint" id="hud-tune" hidden></div>
         <div class="lead-note" id="lead-note" role="status" hidden></div>
+      <div class="orb-prompt" id="orb-prompt" hidden></div>
       </div>
       <div class="hud-right">
         <button class="icon-btn" id="btn-mute" aria-label="Silenciar">🔊</button>
@@ -510,6 +511,22 @@
             </select>
           </label>
           <label class="row" id="opt-sens-row">Sensibilidade da mira <input type="range" id="opt-aim" min="40" max="180" /></label>
+          <label class="row">Alvo dos poderes
+            <select id="opt-target">
+              <option value="mouse">Mouse (padrão)</option>
+              <option value="auto">Automático, no alcance e na visão</option>
+            </select>
+          </label>
+          <label class="row">Coletar orbe
+            <select id="opt-interact">
+              <option value="KeyG">G</option>
+              <option value="KeyC">C</option>
+              <option value="KeyV">V</option>
+              <option value="KeyT">T</option>
+              <option value="KeyY">Y</option>
+              <option value="KeyB">B</option>
+            </select>
+          </label>
           <label class="row">Como soltar o poder
             <select id="opt-cast">
               <option value="auto">Segurar para mirar</option>

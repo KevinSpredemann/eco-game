@@ -87,7 +87,7 @@ export type ServerMsg =
   | { t: 'error'; msg: string }
   | { t: 'pong'; at: number };
 
-export const BTN = { dash: 1, ability: 2, fire: 4, item: 8, bonus: 16, skill: 32, ult: 64, plasma: 128 };
+export const BTN = { dash: 1, ability: 2, fire: 4, item: 8, bonus: 16, skill: 32, ult: 64, plasma: 128, interact: 256, lock: 512 };
 
 // ------------------------------------------------------------------ snapshot
 export interface Snapshot {
@@ -152,6 +152,8 @@ export interface Snapshot {
   RS?: number[][];
   /** zonas do Z (raízes, vórtice, cinza). Ausente em servidor antigo: o cliente trata como vazio. PROTO segue 12. */
   PA?: (number | string)[][];
+  /** orbes de energia. Ausente no servidor antigo. */
+  EO?: number[][];
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -312,6 +314,7 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     PL: g.pools.map((pl) => [pl.id, r1(pl.x), r1(pl.y), pl.r, pl.armT > 0 ? 1 : 0, r1(pl.t)]),
     RS: g.resSpots.map((r) => [r1(r.x), r1(r.y)]),
     PA: (g.patches ?? []).map((z) => [z.id, z.owner, z.kind, r1(z.x), r1(z.y), z.r, r1(z.t), z.dmg, z.el ? EL_IDS.indexOf(z.el) : -1]),
+    EO: (g.energyOrbs ?? []).map((o) => [o.id, r1(o.x), r1(o.y)]),
   };
 }
 

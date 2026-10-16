@@ -824,6 +824,9 @@ export class InputManager {
   get arrowsDown() {
     return this.keys.has('ArrowLeft') || this.keys.has('ArrowRight') || this.keys.has('ArrowUp') || this.keys.has('ArrowDown');
   }
+  held(code: string) {
+    return !!code && this.keys.has(code);
+  }
   private styleOf(slot: Slot, kind: AimKind): CastStyle {
     return resolveCastStyle({
       castMode: this.castMode,

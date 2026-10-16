@@ -1538,6 +1538,7 @@ export class Renderer {
         this.particles.push({ x: h.x + (Math.random() - 0.5) * 380, y: h.y + (Math.random() - 0.5) * 240, vx: 6, vy: -14, life: 0, max: 1.5, color: 'rgba(255,255,255,0.45)', size: 1.5, kind: 'spark' });
       }
       this.drawAbilityOrbs(game, time);
+      this.drawEnergyOrbs(game, time);
       const ps = game.players.filter((p) => p.playing && p.alive).sort((p1, p2) => p1.y - p2.y);
       for (const p of ps) this.drawTrail(p, time);
       for (const p of ps) this.drawPlayer(game, p, time);
@@ -3737,6 +3738,26 @@ export class Renderer {
     ctx.arc(x, y, r + Math.sin(time * 9) * 1.2, 0, Math.PI * 2);
     ctx.stroke();
     ctx.shadowBlur = 0;
+  }
+
+  /** orbe de energia: só o desenho. A coleta acontece na simulação. */
+  private drawEnergyOrbs(game: Game, time: number) {
+    const ctx = this.ctx;
+    for (const o of (game as { energyOrbs?: { id: number; x: number; y: number }[] }).energyOrbs ?? []) {
+      const bob = Math.sin(time * 3 + o.id) * 3;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(o.x, o.y + 6, 12, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffe08a';
+      ctx.shadowColor = '#ffcf5a';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(o.x, o.y - 10 + bob, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   /** cristais de habilidade no chão */

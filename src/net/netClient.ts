@@ -147,7 +147,7 @@ export class NetClient {
     if (i.ult) P.ult = true;
     if (i.plasma) P.plasma = true;
     const press = (P.dash ? BTN.dash : 0) | (P.ability ? BTN.ability : 0) | (P.item ? BTN.item : 0) | (P.bonus ? BTN.bonus : 0) | (P.skill ? BTN.skill : 0) | (P.ult ? BTN.ult : 0) | (P.plasma ? BTN.plasma : 0);
-    const bits = press | (i.fire ? BTN.fire : 0);
+    const bits = press | (i.fire ? BTN.fire : 0) | (i.interact ? BTN.interact : 0) | (i.lock ? BTN.lock : 0);
     const aimed = press !== 0 || !!i.fire;
     if (aimed && typeof i.ca === 'number') this.pendCast = [Math.round(i.ca * 100) / 100, typeof i.cr === 'number' ? Math.round(i.cr) : null];
     const aim = typeof i.aim === 'number' ? Math.round(i.aim * 100) / 100 : null;

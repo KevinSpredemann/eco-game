@@ -414,7 +414,7 @@ function tick(r: Room, dt: number) {
   for (const m of r.members) {
     inputs[m.id] = m.input;
     // botões de toque único são consumidos no passo
-    m.input = { ...m.input, dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, plasma: false, ca: null, cr: null, ch: null };
+    m.input = { ...m.input, dash: false, ability: false, item: false, bonus: false, skill: false, ult: false, plasma: false, interact: false, lock: false, ca: null, cr: null, ch: null };
   }
   g.step(dt, inputs);
   if (g.phase !== 'rewind' && r.skipVotes.size) r.skipVotes.clear();
@@ -735,6 +735,8 @@ wss.on('connection', (ws) => {
           skill: prev.skill || !!(bits & BTN.skill),
           ult: prev.ult || !!(bits & BTN.ult),
           plasma: prev.plasma || !!(bits & BTN.plasma),
+          interact: prev.interact || !!(bits & BTN.interact),
+          lock: prev.lock || !!(bits & BTN.lock),
           aim: num(aim),
           ca: aimed ? num(ca) : prev.ca ?? null,
           cr: aimed ? (num(cr) === null ? null : Math.max(0, Math.min(2000, num(cr)!))) : prev.cr ?? null,

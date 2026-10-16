@@ -831,6 +831,22 @@ input[type='checkbox'] {
   font-size: 0.92rem;
 }
 
+.orb-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: max(132px, calc(env(safe-area-inset-bottom) + 120px));
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(8, 6, 22, 0.82);
+  color: #f3e7a1;
+  font-size: 0.92rem;
+  pointer-events: none;
+  z-index: 2;
+}
+.orb-prompt[hidden] {
+  display: none;
+}
 .spec-bar {
   position: absolute;
   left: 50%;

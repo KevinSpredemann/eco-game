@@ -32,6 +32,7 @@ import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gea
 import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, catalogAim, cooldownOf, denyPlasma, denyPowerCast, describePower, energyReadout, formOf, kitOf, powerSlotIndex, studioOf } from './game/elements';
 import { comboReady } from './game/combos';
 import { comboDockState, comboDockTag } from './game/comboDock';
+import { nearestOrbPrompt } from './game/orbs';
 import { playFinisher } from './game/finisher';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
@@ -161,6 +162,10 @@ function applySettings() {
       settings.control === 'notebook'
         ? `${move} O mouse mira com ajuda. C trava no inimigo mais perto. No automático os poderes saem na hora. Esc cancela a mira e não gasta.`
         : `${move} No automático, segure o poder para ver a mira e solte para usar. Esc cancela e não gasta energia nem recarga.`;
+    note.textContent += settings.targetMode === 'auto'
+      ? ' Os poderes miram sozinhos no inimigo que está no alcance e na visão.'
+      : ' A mira dos poderes segue o mouse.';
+    note.textContent += ` ${keyLabel(settings.interactKey)} coleta o orbe de energia.`;
   }
   refreshMuteIcon();
   saveSettings(settings);
@@ -225,6 +230,24 @@ function bindOptions() {
     kbAim.checked = settings.keyboardAim;
     kbAim.addEventListener('change', () => {
       settings.keyboardAim = kbAim.checked;
+      applySettings();
+      audio.click();
+    });
+  }
+  const target = $<HTMLSelectElement>('#opt-target');
+  if (target) {
+    target.value = settings.targetMode;
+    target.addEventListener('change', () => {
+      settings.targetMode = target.value === 'auto' ? 'auto' : 'mouse';
+      applySettings();
+      audio.click();
+    });
+  }
+  const interact = $<HTMLSelectElement>('#opt-interact');
+  if (interact) {
+    interact.value = settings.interactKey;
+    interact.addEventListener('change', () => {
+      settings.interactKey = /^Key[A-Z]$/.test(interact.value) ? interact.value : 'KeyG';
       applySettings();
       audio.click();
     });
@@ -2687,6 +2710,12 @@ function updateHud() {
   const tune = tuneHint(g.arena.id);
   setText('#hud-tune', tune);
   $('#hud-tune').hidden = !tune || g.phase === 'results';
+  const orb = g.phase === 'play' ? nearestOrbPrompt(g.human.x, g.human.y, g.energyOrbs ?? [], keyLabel(settings.interactKey)) : null;
+  const orbEl = $('#orb-prompt');
+  if (orbEl) {
+    orbEl.hidden = !orb;
+    if (orb) setText('#orb-prompt', orb);
+  }
   // combo armado: tecla + nome + barra da janela que está acabando (some sozinho quando fecha)
   const cs = powersMatch(g) && g.phase === 'play' ? comboState(g) : null;
   const comboEl = $('#hud-combo');
@@ -3398,6 +3427,9 @@ function readInput(): Input {
   }
   delete i.touchCast;
   delete i.castScreen;
+  if (input.held(settings.interactKey)) i.interact = true;
+  const casting = i.ability || i.skill || i.ult || i.bonus || i.plasma || i.fire;
+  if (casting && (settings.targetMode === 'auto' || input.lockOn)) i.lock = true;
   publishAimLive(i);
   return i;
 }

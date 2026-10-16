@@ -34,6 +34,8 @@ import { choosePortalExit, portalPairAt } from './portals';
 import { mirrorRest, spinEcho, tuneBlocks, tuneBody, tuneClock, tuneEchoDrag, tuneHides, tuneMove, tuneNeedle, tunePendulumHits, tunePush, tuneTouch } from './mapTune';
 import { DUEL, duelTiebreak, type DuelReason } from './duel';
 import { FFA, capAoe, ffaCall } from './ffa';
+import { lockHostile } from './aimLock';
+import { EnergyOrb, ORB_ENERGY, ORB_PAD } from './orbs';
 import {
   AMBUSH_BONUS,
   AMBUSH_TIME,
@@ -174,6 +176,10 @@ export interface Input {
   ch?: number | null;
   /** Rajada de Plasma (X), se entrou no equipamento desta partida */
   plasma?: boolean;
+  /** trava o golpe no inimigo dentro do alcance e da visão. O mouse continua o padrão. */
+  lock?: boolean;
+  /** coleta o orbe de energia. Não aumenta o raio sozinho. */
+  interact?: boolean;
 }
 
 export interface Player {
@@ -845,6 +851,7 @@ export class Game {
   turrets: Turret[] = [];
   enemies: Enemy[] = [];
   abilityOrbs: AbilityOrb[] = [];
+  energyOrbs: EnergyOrb[] = [];
   private orbTimer = 6;
   iceWalls: IceWall[] = [];
   vortexes: Vortex[] = [];
@@ -1138,6 +1145,7 @@ export class Game {
     this.turrets = [];
     this.enemies = [];
     this.abilityOrbs = [];
+    this.energyOrbs = [];
     this.orbTimer = 5 + Math.random() * 3;
     this.iceWalls = [];
     this.ultZones = [];
@@ -1166,6 +1174,8 @@ export class Game {
     this.disrupted.clear();
     this.trails.clear();
     this.fragments = [];
+    const orb = { x: this.core.x, y: this.core.y + 64 };
+    if (this.isFree(orb.x, orb.y, 12)) this.energyOrbs.push({ id: this.fragId++, x: orb.x, y: orb.y });
 
     const spawns = this.arena.spawns;
     const offset = (this.round - 1) * 2;
@@ -1441,6 +1451,7 @@ export class Game {
     this.updateRoundEvents();
     this.updateEchoViews(tms);
 
+    const interactOf = new Map<string, boolean>();
     for (const p of this.players) {
       if (!p.playing) continue;
       if (!p.alive) {
@@ -1451,6 +1462,7 @@ export class Game {
         continue;
       }
       const input = p.isBot ? botCombat(this, p, dt) : inputFor(p);
+      interactOf.set(p.id, !!input.interact);
       this.updatePlayer(p, input, dt);
     }
     this.separatePlayers();
@@ -1467,6 +1479,7 @@ export class Game {
       if (!p.boss) {
         this.checkPowerups(p);
         this.checkAbilityOrbs(p);
+        this.checkEnergyOrbs(p, interactOf.get(p.id) === true);
       }
       if (tuneHides(this.arena, p.x, p.y, this.worldT)) {
         if (!this.tuneSilent.has(p.id)) {
@@ -1804,8 +1817,16 @@ export class Game {
         if (inp.skill) this.beginPower(p, 1, castAng, inp);
         if (inp.ult) this.beginPower(p, 2, castAng, inp);
         if (inp.bonus || inp.item) this.beginPower(p, 3, castAng, inp);
-        if (inp.plasma) this.castPlasma(p, castAng, inp);
-        if (usesPowers(this.mode) && inp.fire) this.castBasic(p, castAng);
+        if (inp.plasma) {
+          const extra = studioOf(p.loadout.secondary);
+          const reach = Math.max(extra?.range ?? PLASMA.range, extra?.radius ?? PLASMA.radius);
+          const aimed = this.lockedAngle(p, castAng, inp, reach);
+          if (aimed !== null) this.castPlasma(p, aimed, inp);
+        }
+        if (usesPowers(this.mode) && inp.fire) {
+          const aimed = this.lockedAngle(p, castAng, inp, BASIC.range);
+          if (aimed !== null) this.castBasic(p, aimed);
+        }
       }
 
     const inBush = (this.arena.bushes ?? []).some((b) => dist(p.x, p.y, b.x, b.y) < b.r);
@@ -3003,6 +3024,16 @@ export class Game {
     }
   }
 
+  private checkEnergyOrbs(p: Player, interact: boolean) {
+    if (!interact) return;
+    const reach = C.PLAYER_R + ORB_PAD;
+    const hit = this.energyOrbs.find((o) => dist(p.x, p.y, o.x, o.y) <= reach);
+    if (!hit) return;
+    this.energyOrbs = this.energyOrbs.filter((o) => o.id !== hit.id);
+    p.energy = clampEnergy(p.energy + ORB_ENERGY);
+    this.events.push({ type: 'pickup', x: hit.x, y: hit.y, pid: p.id, golden: true });
+  }
+
   private checkAbilityOrbs(p: Player) {
     for (const o of this.abilityOrbs) {
       if (o.age < 0.4 || dist(p.x, p.y, o.x, o.y) > C.PLAYER_R + 18) continue;
@@ -3107,6 +3138,33 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ combate
+  /**
+   * Com lock, o golpe aponta para o inimigo dentro do alcance deste poder.
+   * Sem alvo, recusa e não gasta. Sem lock, o ângulo pedido segue igual.
+   */
+  private lockedAngle(p: Player, ang: number, inp: Input | undefined, range: number): number | null {
+    if (!inp?.lock || p.isBot) return ang;
+    const res = lockHostile({
+      x: p.x,
+      y: p.y,
+      range,
+      foes: this.targetsOf(p)
+        .filter((t) => t.player)
+        .map((t) => ({ id: t.player!.id, x: t.x, y: t.y })),
+      sight: (x, y) => this.sight(p.x, p.y, x, y, p.id),
+    });
+    if (!res.ok) {
+      this.events.push({ type: 'deny', pid: p.id, msg: res.reason, x: p.x, y: p.y });
+      abilityTrace(p.id, 'deny', res.reason === 'Fora de alcance' ? 'range' : 'target');
+      return null;
+    }
+    inp.aim = res.ang;
+    inp.ca = res.ang;
+    inp.cr = res.dist;
+    p.aim = res.ang;
+    return res.ang;
+  }
+
   /** mira automática: rival visível mais perto, senão a direção em que anda */
   private autoAim(p: Player): number {
     let best: { x: number; y: number } | null = null;
@@ -3400,6 +3458,12 @@ export class Game {
     const def = kitOf(p.char.id).powers[slot];
     const wind = def.windup ?? 0;
     const tune = this.tuned(def, slot, inp);
+    {
+      const reach = Math.max(tune.range, def.speed <= 0 ? tune.radius : 0);
+      const aimed = this.lockedAngle(p, ang, inp, reach);
+      if (aimed === null) return;
+      ang = aimed;
+    }
     const ult = slot === 2;
     if (ult && p.ultCharge < 100) {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Ultimate em carga', x: p.x, y: p.y });
