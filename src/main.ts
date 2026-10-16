@@ -33,6 +33,8 @@ import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLA
 import { comboReady } from './game/combos';
 import { comboDockState, comboDockTag } from './game/comboDock';
 import { nearestOrbPrompt } from './game/orbs';
+import { cinematicPower } from './game/cinematic';
+import { resolvePick } from './game/slotPower';
 import { portalPairAt, PORTAL_RADIUS } from './game/portals';
 import { leverPrompt, portalPrompt } from './game/interactPrompt';
 import { playFinisher } from './game/finisher';
@@ -961,7 +963,7 @@ function fillModeLists(grid: HTMLElement) {
     audio.click();
     fillModeLists(grid);
   });
-  grid.replaceChildren(...PLAY_MODES.map(modeCard), toggle);
+  grid.replaceChildren(toggle, ...PLAY_MODES.map(modeCard));
 }
 
 function openModes() {
@@ -2404,10 +2406,11 @@ function buildSlots(g: AnyGame): SlotView[] {
     const plasmaUp = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
     // Barra: Q, E, F, R e depois o Z. O índice do kit não muda (R continua no espaço 2).
     for (const i of [0, 1, 3, 2]) {
-      const pw = kit.powers[i];
+      const picked = resolvePick(me.loadout, i);
+      const pw = picked.cine ? cinematicPower(picked.cine) : picked.studio ?? kit.powers[i];
       const left = me.powerCd[i] ?? 0;
       const cd = cooldownOf(me.char.id, pw.cd);
-      const ult = i === 2;
+      const ult = i === 2 && !picked.studio;
       const charge = me.ultCharge ?? 0;
       const low = !ult && left <= 0 && (me.energy ?? ENERGY_MAX) < SLOT_COST[i];
       const charging = ult && left <= 0 && charge < 100;
