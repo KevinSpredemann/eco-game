@@ -30,6 +30,8 @@ export interface Settings {
   ownEcho: boolean;
   trails: boolean;
   reduced: boolean;
+  /** final cinematográfico quando um combo elimina. Desligar deixa o kill normal. */
+  finisher: boolean;
   char: string;
   arena: string;
   bots: number;
@@ -81,6 +83,7 @@ export const DEFAULTS: Settings = {
   ownEcho: true,
   trails: true,
   reduced: false,
+  finisher: true,
   char: 'kael',
   arena: 'lab',
   bots: 3,
@@ -156,6 +159,7 @@ export function loadSettings(): Settings {
         keyboardAim: v.keyboardAim === true,
         manualAim: Array.isArray(v.manualAim) ? v.manualAim.filter((s: unknown) => typeof s === 'string') : [],
         rangeIndicator: v.rangeIndicator === 'always' ? 'always' : 'aiming',
+        finisher: v.finisher !== false,
         cancelAim: v.cancelAim === 'esc' ? 'esc' : 'both',
         moveScheme: scheme,
         keys,

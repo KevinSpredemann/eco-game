@@ -167,6 +167,7 @@ function bindOptions() {
     ['#opt-own', 'ownEcho'],
     ['#opt-trails', 'trails'],
     ['#opt-reduced', 'reduced'],
+    ['#opt-finisher', 'finisher'],
   ];
   for (const [sel, key] of checks) {
     const el = $<HTMLInputElement>(sel);
@@ -2026,7 +2027,7 @@ function comboState(g: AnyGame): { phase: 'ready' | 'armed' | 'wait' | 'done'; k
   if (!me.alive) return null;
   const foes = g.players
     .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT, plasma: o.plasmaPrimeT ?? 0, combo: o.comboT ?? 0 }));
+    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT, plasma: o.plasmaPrimeT ?? 0, combo: o.comboT ?? 0, rupture: o.ruptureT ?? 0 }));
   const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
   const cds = me.powerCd ?? [0, 0, 0, 0];
   // "pronto" só se dá para usar agora: sem recarga, com energia (ou a suprema carregada)
@@ -2052,6 +2053,13 @@ function comboState(g: AnyGame): { phase: 'ready' | 'armed' | 'wait' | 'done'; k
   const recipe = pickComboRecipe(rows);
   if (comboDone && performance.now() < comboDone.until) {
     return { phase: 'done', key: '', name: comboDone.name, frac: 1, aKey: '', bKey: '', aEl: comboDone.aEl, bEl: comboDone.bEl };
+  }
+  const marked = foes.find((o) => (o.rupture ?? 0) > 0);
+  if (marked) {
+    const slot = [0, 1, 3].find((i) => !why(i)) ?? 0;
+    const key = keyOf(slot, labels[slot] ?? 'Q');
+    const ready = !why(slot);
+    return { phase: ready ? 'armed' : 'wait', key, name: 'Ruptura Marcada', frac: Math.min(1, (marked.rupture ?? 0) / 2.4), aKey: 'Z', bKey: key, aEl: 'lightning', bEl: kitOf(me.char.id).powers[slot].element, need: ready ? `Marca aplicada ✓ → ${key}: habilidade compatível` : why(slot) };
   }
   const hit = comboReady(me.char.id, usable, foes, labels);
   if (hit) {
@@ -2449,7 +2457,7 @@ function updateHud() {
       comboEl.dataset.sig = sig;
       const ico = (el: string) => `<i class="cb-el" data-el="${escapeHtml(el)}" style="--el:${ELEMENT_COLOR[el as keyof typeof ELEMENT_COLOR] ?? '#fff'}">${EL_TAG[el] ?? '•'}</i>`;
       const tag = cs.phase === 'done' ? 'FEITO' : cs.phase === 'wait' ? 'NÃO FECHOU' : cs.phase === 'armed' ? 'FECHE' : 'COMBO';
-      comboEl.innerHTML = `<span class="cb-tag">${tag}</span><span class="cb-pair">${ico(cs.aEl)}<em>+</em>${ico(cs.bEl)}</span><span class="cb-go">→</span><b>${escapeHtml(cs.name)}</b>${cs.aKey ? `<kbd>${escapeHtml(cs.aKey)}</kbd>` : ''}${cs.bKey ? `<kbd>${escapeHtml(cs.bKey)}</kbd>` : ''}<small class="cb-need"></small><i class="cb-bar"><i></i></i>`;
+      comboEl.innerHTML = `<span class="cb-tag">${tag}</span><span class="cb-pair">${ico(cs.aEl)}<em>+</em>${ico(cs.bEl)}</span><span class="cb-go">→</span><b>${escapeHtml(cs.name)}</b>${cs.aKey ? `<kbd>${escapeHtml(cs.aKey)}</kbd>` : ''}${cs.bKey ? `<kbd class="cb-fin">${escapeHtml(cs.bKey)}</kbd>` : ''}<small class="cb-need"></small><i class="cb-bar"><i></i></i>`;
       if (cs.phase === 'armed' || cs.phase === 'done') {
         comboEl.classList.remove('pop');
         void comboEl.offsetWidth;
@@ -2627,6 +2635,19 @@ function comboPop(name: string, bonus: number, vfx?: string) {
   comboPopT = window.setTimeout(() => (el.hidden = true), 1150);
 }
 
+function showFinisher(name: string, id: string, seconds: number, x: number, y: number) {
+  const el = $('#finisher');
+  if (!el) return;
+  const col = id === 'water-bolt' ? '#7ecbff' : id === 'earth-fire' ? '#ff7a3c' : id === 'ice-earth' ? '#b7fff2' : id === 'fire-air' ? '#ffb15a' : '#ffe14a';
+  el.style.color = col;
+  el.innerHTML = `<b>${escapeHtml(name.toUpperCase())}</b><small>FINAL</small>`;
+  el.hidden = false;
+  renderer.noteFinisher(x, y, seconds, id);
+  window.setTimeout(() => {
+    el.hidden = true;
+  }, seconds * 1000);
+}
+
 function onEvents(events: GameEvent[]) {
   if (!game) return;
   const g = game;
@@ -2669,6 +2690,13 @@ function onEvents(events: GameEvent[]) {
       case 'deliver':
         audio.deliver(e.count, panOf(e.x));
         if (mine && hintStage === 3) hintStage = 4;
+        break;
+      case 'finisher':
+        if (settings.finisher !== false) {
+          const seconds = settings.reduced ? Math.min(0.8, e.seconds) : e.seconds;
+          showFinisher(e.name, e.id, seconds, e.x, e.y);
+          audio.finisher(e.id);
+        }
         break;
       case 'combo':
         audio.combo(panOf(e.x), e.vfx === 'ult');
@@ -2803,6 +2831,7 @@ function onEvents(events: GameEvent[]) {
         break;
       case 'skill':
         audio.cast(panOf(e.x));
+        if (e.trick) audio.catalog(e.trick);
         break;
       case 'windWarn':
         audio.hazardWarn(e.dir > 0 ? 0.6 : -0.6);

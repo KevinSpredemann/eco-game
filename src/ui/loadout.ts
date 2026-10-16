@@ -235,7 +235,7 @@ export class LoadoutScreen {
         const equipped = this.l.secondary === s.id;
         const state = !owned ? 'locked' : equipped ? 'equipped' : 'available';
         return this.abilityCard(s, {
-          key: equipped ? plasmaKey : 'disponível',
+          key: plasmaKey,
           state,
           why: owned ? '' : this.lockReason(s),
           selected: this.focusKind === 'extra' && this.focusExtra === s.id,

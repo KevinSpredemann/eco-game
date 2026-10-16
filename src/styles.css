@@ -6962,17 +6962,19 @@ canvas.stage,
 #hud-combo {
   position: fixed;
   z-index: 24;
-  left: max(12px, env(safe-area-inset-left));
-  bottom: max(96px, calc(env(safe-area-inset-bottom) + 92px));
+  left: auto;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(118px, calc(env(safe-area-inset-bottom) + 114px));
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   margin: 0;
-  padding: 8px 12px 10px;
-  width: min(340px, calc(50vw - 220px));
-  min-width: 220px;
+  padding: 10px 14px 12px;
+  width: min(320px, 36vw);
+  min-width: 240px;
   max-width: calc(100vw - 24px);
+  text-align: left;
   border-radius: 14px;
   background: rgba(8, 10, 18, 0.9);
   border: 1px solid rgba(255, 225, 74, 0.75);
@@ -6989,8 +6991,8 @@ canvas.stage,
   animation: cb-pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.3);
 }
 #hud-combo .cb-el {
-  min-width: 46px;
-  height: 32px;
+  min-width: 58px;
+  height: 40px;
   padding: 0 6px;
   border-radius: 10px;
   display: inline-flex;
@@ -7006,7 +7008,12 @@ canvas.stage,
 #hud-combo .cb-pair { display: inline-flex; align-items: center; gap: 4px; }
 #hud-combo .cb-pair em, #hud-combo .cb-go { color: #f4f7ff; font-style: normal; }
 #hud-combo b { font-size: 0.82rem; letter-spacing: 0.04em; }
-#hud-combo.ready { box-shadow: 0 0 12px rgba(255, 225, 74, 0.22); }
+#hud-combo.ready { opacity: 0.78; box-shadow: none; }
+#hud-combo kbd.cb-fin {
+  background: #7dffe0;
+  color: #04241c;
+  box-shadow: 0 0 10px rgba(125, 255, 224, 0.65);
+}
 #hud-combo.armed { border-color: #7dffe0; box-shadow: 0 0 16px rgba(125, 255, 224, 0.35); }
 #hud-combo.done { border-color: #b6ff9a; color: #eaffdf; }
 #hud-combo .cb-tag {
@@ -7052,9 +7059,11 @@ canvas.stage,
 /* combo completado (do jogador): nome grande e rápido, no alto, sem cobrir a arena */
 .combo-pop {
   position: fixed;
-  left: max(12px, env(safe-area-inset-left));
-  bottom: max(168px, calc(env(safe-area-inset-bottom) + 164px));
+  left: auto;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(188px, calc(env(safe-area-inset-bottom) + 184px));
   transform: none;
+  text-align: right;
   z-index: 14;
   pointer-events: none;
   text-align: center;
@@ -7081,12 +7090,26 @@ canvas.stage,
   animation: combo-pop 1.1s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 @keyframes combo-pop {
-  0% { opacity: 0; transform: translateX(-50%) scale(0.6); }
-  14% { opacity: 1; transform: translateX(-50%) scale(1.12); }
-  24% { transform: translateX(-50%) scale(1); }
+  0% { opacity: 0; transform: scale(0.6); }
+  14% { opacity: 1; transform: scale(1.12); }
+  24% { transform: scale(1); }
   75% { opacity: 1; }
-  100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  100% { opacity: 0; transform: translateY(-10px); }
 }
+.finisher {
+  position: fixed;
+  left: 50%;
+  bottom: max(168px, calc(env(safe-area-inset-bottom) + 150px));
+  transform: translateX(-50%);
+  z-index: 16;
+  pointer-events: none;
+  text-align: center;
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+}
+.finisher[hidden] { display: none; }
+.finisher b { display: block; font-size: 1.05rem; letter-spacing: 0.14em; }
+.finisher small { color: #ffe14a; letter-spacing: 0.08em; }
 @media (prefers-reduced-motion: reduce) {
   .combo-pop.on,
   #hud-combo.pop {
