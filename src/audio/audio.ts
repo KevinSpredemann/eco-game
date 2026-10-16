@@ -197,6 +197,16 @@ export class AudioEngine {
     this.tone({ type: 'triangle', freq: base * 2, dur: 0.1, gain: 0.08, when: t + 0.05, pan });
     if (golden) [1318, 1568, 2093].forEach((f, i) => this.tone({ type: 'sine', freq: f, dur: 0.3, gain: 0.12, when: t + 0.08 + i * 0.07, pan }));
   }
+  catalog(trick: string) {
+    const freq: Record<string, number> = { lance: 880, volcano: 140, ash: 220, tide: 520, glacial: 660, mirror: 740, fist: 110, roots: 180, guardian: 160, gale: 480, step: 360, updraft: 300, stormchain: 980, rupture: 720, collapse: 200 };
+    const f = freq[trick] ?? 440;
+    this.tone({ type: trick === 'fist' || trick === 'volcano' || trick === 'guardian' ? 'sawtooth' : 'triangle', freq: f, freqEnd: f * 0.7, dur: 0.12, gain: 0.07, filter: 2400 });
+  }
+  finisher(id: string) {
+    const base = id === 'water-bolt' ? 880 : id === 'earth-fire' ? 196 : id === 'ice-earth' ? 640 : id === 'fire-air' ? 420 : 520;
+    const t = this.now;
+    [base, base * 1.25, base * 1.5].forEach((f, i) => this.tone({ type: 'sine', freq: f, dur: 0.16, gain: 0.08, when: t + i * 0.06 }));
+  }
   combo(pan?: number, ult = false) {
     const t = this.now;
     const notes = ult ? [784, 988, 1318] : [660, 880];

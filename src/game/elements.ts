@@ -18,6 +18,8 @@ export interface Aura {
   ctrl?: number;
   /** disparo de plasma recente. A onda do kit consome uma vez. */
   plasma?: number;
+  /** Marca de Ruptura ainda no alvo. Não é a marca de sombra. */
+  rupture?: number;
   /**
    * Relógio do combo, a partir do acerto. Ausente (testes antigos) ainda vale.
    * Zero explícito: a janela fechou, mesmo que a queimadura ou o molhado continuem.
@@ -103,7 +105,29 @@ export interface PowerDef {
   yank?: number;
   /** marca de sinergia. Não enraíza neste golpe. */
   mark?: boolean;
+  /**
+   * Golpe do catálogo novo. O combate lê isto no cast do Z.
+   * Ausente: o poder segue a forma e o ato que já tinha.
+   */
+  trick?: CatalogTrick;
 }
+
+export type CatalogTrick =
+  | 'lance'
+  | 'volcano'
+  | 'ash'
+  | 'tide'
+  | 'glacial'
+  | 'mirror'
+  | 'fist'
+  | 'roots'
+  | 'guardian'
+  | 'gale'
+  | 'step'
+  | 'updraft'
+  | 'stormchain'
+  | 'rupture'
+  | 'collapse';
 
 export const CATEGORY_PT: Record<PowerCategory, string> = {
   attack: 'Ataque',
@@ -229,12 +253,32 @@ export const ULT_LAND: Record<Element, { r: number; t: number; name: string; des
   ice: { r: 130, t: 1.0, name: 'Maré Abissal', desc: 'Uma onda empurra para fora e deixa molhado.' },
   nature: { r: 110, t: 1.4, name: 'Ruptura Titânica', desc: 'Pilares sobem do chão e prendem quem está na área.' },
   wind: { r: 140, t: 1.3, name: 'Tempestade do Vazio', desc: 'Um vórtice puxa para o centro e no fim arremessa.' },
-  lightning: { r: 100, t: 0.8, name: 'Tempestade Elétrica', desc: 'Raios caem em volta e deixam tonto.' },
+  lightning: { r: 100, t: 1.15, name: 'Eclipse Elétrico', desc: 'Marca quem está na área. Depois de um instante, o raio só cai em quem ainda está lá.' },
   shadow: { r: 80, t: 0.7, name: 'Eclipse', desc: 'A sombra explode no ponto do impacto.' },
   plasma: { r: 90, t: 0.8, name: 'Colapso de Plasma', desc: 'O plasma explode no ponto do impacto.' },
 };
 /** Ultimate: preparo mínimo (o rival vê o aviso no chão e pode reagir) */
 export const ULT_WINDUP = 0.45;
+
+export type UltRole = 'solar' | 'tide' | 'titan' | 'void' | 'eclipse' | 'winter' | 'avatar' | 'rift';
+
+/**
+ * Cada personagem fica com um papel de suprema. Não é um menu com as oito.
+ * Gelo do Bruno vira Prisão do Inverno; a Maré continua nos outros gelos.
+ * Aurora entra em Avatar; Vexa em Ruptura Dimensional.
+ */
+export function ultRole(charId: string, el: Element): UltRole {
+  if (charId === 'iris') return 'avatar';
+  if (charId === 'vexa') return 'rift';
+  if (charId === 'bruno' && el === 'ice') return 'winter';
+  if (el === 'fire') return 'solar';
+  if (el === 'ice') return 'tide';
+  if (el === 'nature') return 'titan';
+  if (el === 'wind') return 'void';
+  if (el === 'lightning') return 'eclipse';
+  if (el === 'shadow') return 'rift';
+  return 'solar';
+}
 /** dano de cada tique da zona de fogo da suprema (a cada 0,5 s) */
 export const ULT_FIRE_TICK = 2;
 
@@ -294,6 +338,36 @@ export const STUDIO: StudioDef[] = [
   { id: 'prisma', name: 'Prisma de Eco', element: 'wind', cd: 6, dmg: 6, range: 70, speed: 0, radius: 18, cost: 18, unlockMatches: 4, art: 'art/studio/powers/prisma.webp', category: 'defense', act: 'decoy' },
   { id: 'reverso', name: 'Reverso Harmônico', element: 'ice', cd: 5.2, dmg: 8, range: 150, speed: 0, radius: 78, cost: 22, unlockMatches: 5, art: 'art/studio/powers/reverso.webp', category: 'control', yank: 70 },
 ];
+
+/** Quinze golpes novos. Entram no Z, com a mesma ficha e o mesmo cast do estúdio. */
+export const CATALOG: StudioDef[] = [
+  { id: 'lanca-solar', name: 'Lança Solar', element: 'fire', cd: 3.4, dmg: 12, range: 340, speed: 1280, radius: 8, cost: 18, unlockMatches: 0, art: '', category: 'attack', trick: 'lance', form: 'beam' },
+  { id: 'ruptura-vulcanica', name: 'Ruptura Vulcânica', element: 'fire', cd: 6.4, dmg: 8, range: 220, speed: 0, radius: 32, cost: 24, unlockMatches: 0, art: '', category: 'attack', trick: 'volcano', form: 'fissure', windup: 0.4 },
+  { id: 'correntes-cinzas', name: 'Correntes de Cinzas', element: 'fire', cd: 4.6, dmg: 9, range: 160, speed: 0, radius: 78, cost: 16, unlockMatches: 0, art: '', category: 'control', trick: 'ash', form: 'breath' },
+  { id: 'lamina-mare', name: 'Lâmina de Maré', element: 'ice', cd: 3.6, dmg: 10, range: 240, speed: 640, radius: 14, cost: 18, unlockMatches: 0, art: '', category: 'attack', trick: 'tide', form: 'blade' },
+  { id: 'prisao-glacial', name: 'Prisão Glacial', element: 'ice', cd: 6.2, dmg: 6, range: 180, speed: 0, radius: 48, cost: 22, unlockMatches: 0, art: '', category: 'control', trick: 'glacial', form: 'pillar', windup: 0.55 },
+  { id: 'espelho-gelo', name: 'Espelho de Gelo', element: 'ice', cd: 7, dmg: 6, range: 90, speed: 0, radius: 36, cost: 20, unlockMatches: 0, art: '', category: 'defense', trick: 'mirror', act: 'wall' },
+  { id: 'punho-tectonico', name: 'Punho Tectônico', element: 'nature', cd: 4.4, dmg: 7, range: 210, speed: 0, radius: 28, cost: 18, unlockMatches: 0, art: '', category: 'attack', trick: 'fist', form: 'rock' },
+  { id: 'prisao-raizes', name: 'Prisão de Raízes', element: 'nature', cd: 6.2, dmg: 6, range: 160, speed: 0, radius: 70, cost: 22, unlockMatches: 0, art: '', category: 'control', trick: 'roots' },
+  { id: 'muralha-guardiao', name: 'Muralha do Guardião', element: 'nature', cd: 7.2, dmg: 6, range: 96, speed: 0, radius: 28, cost: 22, unlockMatches: 0, art: '', category: 'defense', trick: 'guardian', act: 'wall' },
+  { id: 'corte-vendaval', name: 'Corte do Vendaval', element: 'wind', cd: 3.8, dmg: 8, range: 220, speed: 640, radius: 14, cost: 18, unlockMatches: 0, art: '', category: 'attack', trick: 'gale', form: 'blade' },
+  { id: 'passo-fantasma', name: 'Passo Fantasma', element: 'wind', cd: 4.2, dmg: 6, range: 140, speed: 0, radius: 22, cost: 14, unlockMatches: 0, art: '', category: 'mobility', trick: 'step', act: 'dash' },
+  { id: 'vortice-ascendente', name: 'Vórtice Ascendente', element: 'wind', cd: 6, dmg: 8, range: 150, speed: 0, radius: 80, cost: 20, unlockMatches: 0, art: '', category: 'control', trick: 'updraft', form: 'whirl' },
+  { id: 'corrente-tempestuosa', name: 'Corrente Tempestuosa', element: 'lightning', cd: 4.2, dmg: 11, range: 260, speed: 0, radius: 18, cost: 20, unlockMatches: 0, art: '', category: 'attack', trick: 'stormchain', form: 'chain' },
+  { id: 'marca-ruptura', name: 'Marca de Ruptura', element: 'lightning', cd: 3.2, dmg: 6, range: 260, speed: 900, radius: 10, cost: 14, unlockMatches: 0, art: '', category: 'attack', trick: 'rupture', form: 'bolt' },
+  { id: 'colapso-elemental', name: 'Colapso Elemental', element: 'plasma', cd: 7, dmg: 14, range: 120, speed: 0, radius: 72, cost: 26, unlockMatches: 0, art: '', category: 'attack', trick: 'collapse' },
+];
+
+for (const row of CATALOG) STUDIO.push(row);
+
+/** Elementos que este equipamento realmente tem (kit + Z). Sem sorteio. */
+export function equippedElements(charId: string, secondary: string | null | undefined): Element[] {
+  const out: Element[] = [];
+  for (const pw of kitOf(charId).powers) if (!out.includes(pw.element)) out.push(pw.element);
+  const extra = studioOf(secondary);
+  if (extra && !out.includes(extra.element)) out.push(extra.element);
+  return out;
+}
 
 export function studioOf(id: string | null | undefined): StudioDef | null {
   if (!id) return null;

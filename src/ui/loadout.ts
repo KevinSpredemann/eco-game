@@ -48,20 +48,20 @@ export interface PowerCardOpts {
   key?: string;
 }
 
-/** Card da biblioteca. Ícone, nome, categoria · elemento, efeito curto, chips e estado. A tecla não entra. */
+/** Card da biblioteca. Ícone, nome, categoria · elemento, efeito curto, chips, estado e a tecla. */
 export function powerCardHtml(pw: PowerDef, opts: PowerCardOpts): string {
   const label = opts.selected && opts.state !== 'equipped' ? 'Selecionado' : opts.state === 'equipped' ? 'Equipado' : opts.state === 'locked' ? 'Bloqueado' : opts.state === 'unavailable' ? 'Indisponível' : 'Disponível';
   const cls = ['pw-card', opts.state, opts.selected ? 'focus' : '', opts.linked ? 'syn-on' : '', opts.ult ? 'ult' : '', opts.extra ?? ''].filter(Boolean).join(' ');
   const line = opts.line || opts.why || powerRole(pw);
   const badge = opts.linked ? '<em class="pw-badge">Sinergia</em>' : '';
+  const key = opts.key ? `<kbd class="pw-key">${opts.key}</kbd>` : '';
   if (opts.compact) {
-    const key = opts.key ? `<kbd class="pw-key">${opts.key}</kbd>` : '';
     return `<button type="button" class="${cls} slim" ${opts.attrs} data-state="${opts.state}" data-el="${pw.element}" title="${pw.name} — ${powerRole(pw)}">${key}${previewHtml(pw, 'sm')}<span class="pw-copy"><b class="pw-name">${pw.name}</b><small class="pw-meta">${opts.ult ? 'Suprema' : ELEMENT_NAME[pw.element]}${opts.linked ? ' · <i class="pw-syn-dot">sinergia</i>' : ''}</small></span></button>`;
   }
   const chips = relevantFacts(pw, opts.slot, opts.cost)
     .map((f) => `<i class="pw-chip"><span>${f.label}</span> ${f.value}</i>`)
     .join('');
-  return `<button type="button" class="${cls}" ${opts.attrs} data-state="${opts.state}" data-el="${pw.element}">${previewHtml(pw, 'sm')}<span class="pw-copy"><b class="pw-name">${pw.name}</b><small class="pw-meta">${categoryLabel(pw)} · ${ELEMENT_NAME[pw.element]}</small><em class="pw-line">${line}</em><span class="pw-chips">${chips}</span><em class="pw-state">${label}</em>${badge}</span></button>`;
+  return `<button type="button" class="${cls}" ${opts.attrs} data-state="${opts.state}" data-el="${pw.element}">${key}${previewHtml(pw, 'sm')}<span class="pw-copy"><b class="pw-name">${pw.name}</b><small class="pw-meta">${categoryLabel(pw)} · ${ELEMENT_NAME[pw.element]}</small><em class="pw-line">${line}</em><span class="pw-chips">${chips}</span><em class="pw-state">${label}</em>${badge}</span></button>`;
 }
 
 interface Opt {
@@ -235,7 +235,7 @@ export class LoadoutScreen {
         const equipped = this.l.secondary === s.id;
         const state = !owned ? 'locked' : equipped ? 'equipped' : 'available';
         return this.abilityCard(s, {
-          key: equipped ? plasmaKey : 'disponível',
+          key: plasmaKey,
           state,
           why: owned ? '' : this.lockReason(s),
           selected: this.focusKind === 'extra' && this.focusExtra === s.id,
