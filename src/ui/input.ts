@@ -199,8 +199,6 @@ export function stickIntent(o: {
   return { mx, my, aim, arrows };
 }
 
-const PREPARE: Record<string, Slot> = { Digit1: 'ability', Digit2: 'skill', Digit3: 'bonus' };
-
 /** Clique curto no notebook ligava o tiro. O notebook agora atira só enquanto o botão está pressionado. */
 export function clickFireLatch(latch: boolean, heldMs: number, toggle: boolean): boolean {
   if (!toggle || heldMs >= 280) return latch;
@@ -216,6 +214,18 @@ export const ACTION_LABEL: Record<Action, string> = {
   plasma: 'Poder extra (Z no padrão)',
   fire: 'Atirar (além do clique)',
 };
+
+/** Ordem da tela de atalhos. O nome é o da habilidade; a tecla padrão fica na dica. */
+export const BIND_ROWS: { id: Action; name: string; hint: string }[] = [
+  { id: 'ability', name: 'Poder 1', hint: 'Q no padrão' },
+  { id: 'skill', name: 'Poder 2', hint: 'E no padrão' },
+  { id: 'bonus', name: 'Poder 3', hint: 'F no padrão' },
+  { id: 'ult', name: 'Ultimate', hint: 'R no padrão' },
+  { id: 'plasma', name: 'Poder extra', hint: 'Z no padrão' },
+  { id: 'dash', name: 'Esquiva', hint: 'Espaço no padrão' },
+  { id: 'fire', name: 'Ataque básico', hint: 'além do clique' },
+  { id: 'item', name: 'Item', hint: 'granada ou mina' },
+];
 const PAUSE_KEYS = ['Escape', 'KeyP'];
 const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
@@ -251,6 +261,48 @@ export function keyLabel(code: string): string {
 }
 export function isReservedKey(code: string, scheme: MoveScheme = 'wasd') {
   return moveKeysFor(scheme).includes(code);
+}
+
+/** Esc, P, Enter e as teclas de andar não viram habilidade. */
+export function reservedKeyMessage(code: string, scheme: MoveScheme = 'wasd'): string | null {
+  if (code === 'Escape') return 'Esc pausa a partida e cancela a mira. Escolha outra tecla.';
+  if (code === 'KeyP') return 'P pausa a partida. Escolha outra tecla.';
+  if (code === 'Enter' || code === 'NumpadEnter') return 'Enter confirma e pula o rebobinado. Escolha outra tecla.';
+  if (moveKeysFor(scheme).includes(code)) return 'Essa tecla anda ou pausa. Escolha outra.';
+  return null;
+}
+
+/** A tecla já está em outra ação. Null se está livre ou é a mesma. */
+export function bindOwner(keys: KeyBinds, action: Action, code: string): Action | null {
+  const other = (Object.keys(keys) as Action[]).find((k) => k !== action && keys[k] === code);
+  return other ?? null;
+}
+
+/** A ação fica com a tecla. Quem usava essa tecla perde o atalho. */
+export function commitBind(keys: KeyBinds, action: Action, code: string): KeyBinds {
+  const next: KeyBinds = { ...keys, [action]: code };
+  for (const k of Object.keys(next) as Action[]) if (k !== action && next[k] === code) next[k] = '';
+  return next;
+}
+
+/** Chat, campo de texto, menu aberto ou tecla repetida não solta golpe. */
+export function castBlocked(o: { repeat: boolean; typing: boolean; menu: boolean }): boolean {
+  return o.repeat || o.typing || o.menu;
+}
+
+export function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return !!el.isContentEditable;
+}
+
+/** Tab nunca troca o foco. Número, Shift, Ctrl e Alt só quando estão no atalho. */
+export function swallowKey(code: string, bound: boolean): boolean {
+  if (code === 'Tab') return true;
+  if (!bound) return false;
+  return code.startsWith('Digit') || code.startsWith('Numpad') || code.startsWith('Shift') || code.startsWith('Control') || code.startsWith('Alt') || code === 'Space';
 }
 
 /** mira em andamento (segurando a tecla ou arrastando o botão) */
@@ -358,6 +410,8 @@ export class InputManager {
   onAimChange: ((a: Aiming | null) => void) | null = null;
   /** captura da próxima tecla (tela de remapear) */
   capture: ((code: string) => void) | null = null;
+  /** menu aberto: não solta golpe. Esc continua pausando. */
+  blockCast: (() => boolean) | null = null;
 
   constructor(private touchRoot: HTMLElement) {
     window.addEventListener('keydown', (e) => {
@@ -368,11 +422,11 @@ export class InputManager {
         fn(e.code);
         return;
       }
+      const typing = isTypingTarget(e.target);
       if (e.repeat) {
-        if (/^(Arrow|Key[WASD]|Space)/.test(e.code)) e.preventDefault();
+        if (!typing && (/^(Arrow|Key[WASD]|Space)/.test(e.code) || swallowKey(e.code, this.codeBound(e.code)))) e.preventDefault();
         return;
       }
-      this.keys.add(e.code);
       if (e.code === 'Escape' || e.code === 'KeyP') {
         // Esc primeiro cancela a mira; depois pausa. O tiro travado solta.
         this.fireLatch = false;
@@ -381,9 +435,11 @@ export class InputManager {
         else this.onPause?.();
         return;
       }
-      if (this.control === 'notebook' && e.code === 'KeyC') {
-        const tag = (e.target as HTMLElement | null)?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Tab não troca o foco do navegador, nem com um menu aberto. Num campo de texto, o Tab continua.
+      if (!typing && e.code === 'Tab') e.preventDefault();
+      if (castBlocked({ repeat: false, typing, menu: !!this.blockCast?.() })) return;
+      this.keys.add(e.code);
+      if (this.control === 'notebook' && e.code === 'KeyC' && !this.codeBound(e.code)) {
         this.lockOn = !this.lockOn;
         this.onLock?.(this.lockOn);
         return;
@@ -391,17 +447,13 @@ export class InputManager {
       if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && !this.shiftIsBound()) {
         e.preventDefault();
       }
-      const prep = PREPARE[e.code];
-      if (prep && !this.codeBound(e.code)) {
-        this.press(prep);
-        return;
-      }
       const slot = this.slotOf(e.code);
       if (slot) this.press(slot);
-      if (/^(Arrow|Space|Tab)/.test(e.code) || e.code.startsWith('Shift')) e.preventDefault();
+      if (/^(Arrow|Space)/.test(e.code) || e.code.startsWith('Shift') || swallowKey(e.code, this.codeBound(e.code))) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
+      if (castBlocked({ repeat: false, typing: isTypingTarget(e.target), menu: !!this.blockCast?.() })) return;
       const slot = this.slotOf(e.code);
       if (slot && this.aiming && this.aiming.slot === slot && !this.aiming.touch && queuesOnRelease(this.styleOf(slot, this.aiming.kind))) this.release();
     });

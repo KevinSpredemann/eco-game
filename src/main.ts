@@ -28,12 +28,12 @@ import { avatarURL, drawMapPreview, drawPortrait } from './ui/portraits';
 import { Carousel, fitText } from './ui/carousel';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
-import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, cooldownOf, denyPlasma, denyPowerCast, describePower, formOf, kitOf, powerSlotIndex, studioOf } from './game/elements';
+import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, catalogAim, cooldownOf, denyPlasma, denyPowerCast, describePower, formOf, kitOf, powerSlotIndex, studioOf } from './game/elements';
 import { comboReady, listSynergies, pickComboRecipe } from './game/combos';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
 import { castAimShape, noteAim, solveAim, type AimShape } from './game/aimService';
-import { ACTION_LABEL, Action, MoveScheme, Slot, isReservedKey, keyLabel, presetKeys } from './ui/input';
+import { ACTION_LABEL, BIND_ROWS, Action, MoveScheme, Slot, bindOwner, commitBind, keyLabel, presetKeys, reservedKeyMessage } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
 import { SkillBar, SlotView, drawSlotArt, slotReady } from './ui/skillbar';
@@ -89,6 +89,25 @@ function refreshMuteIcon() {
 refreshMuteIcon();
 
 // ------------------------------------------------------------------ áudio/opções
+function refreshKeyDocs() {
+  const L = (a: Action) => keyLabel(settings.keys[a]);
+  const move = settings.moveScheme === 'esdf' ? 'ESDF anda' : settings.moveScheme === 'arrows' ? 'As setas andam' : 'WASD anda';
+  const powers = `${L('ability')}, ${L('skill')} e ${L('bonus')} são os poderes, ${L('ult')} é a ultimate, ${L('plasma')} é o extra`;
+  const tabBound = Object.values(settings.keys).includes('Tab');
+  const x1 = document.getElementById('howto-x1');
+  if (x1) {
+    x1.textContent = `Online ou offline, você contra um rival, só com poderes. ${move}. ${powers}. ${L('dash')} esquiva. O clique esquerdo é um ataque básico curto. O direito cancela a mira. Cada poder gasta energia e recarrega sozinho. Sem energia o aviso é Energia insuficiente e a recarga não começa. Projétil gasta ao sair, mesmo se errar. Poder em área sem inimigo no círculo avisa Nenhum alvo válido e não gasta nada. Juntar os efeitos na ordem certa dá dano extra. Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Sem arma e sem munição. Em Opções dá para usar as setas ou ESDF, e trocar cada atalho.`;
+  }
+  const crystals = document.getElementById('howto-crystals');
+  if (crystals) {
+    crystals.textContent = `No X1 e no 2x2 não há cristal de habilidade. ${L('ability')}, ${L('skill')} e ${L('bonus')} são os três poderes. ${L('ult')} é a ultimate. ${L('plasma')} é o espaço extra. A marca do golpe dura poucos segundos: se a janela passar, o próximo poder volta ao efeito normal.`;
+  }
+  const controls = document.getElementById('howto-controls');
+  if (controls) {
+    controls.innerHTML = `<b>Computador:</b> ${move} · mouse mira · <b>${L('ability')} ${L('skill')} ${L('bonus')}</b> poderes · <b>${L('ult')}</b> ultimate com a barra de carga · <b>${L('plasma')}</b> extra · clique esquerdo ataque básico · <b>${L('dash')}</b> esquiva · <b>Shift</b> troca para a mira das setas, se não estiver num poder · botão direito ou <b>Esc</b> cancela a mira. ${tabBound ? `<b>Tab</b> está num poder, então o placar não usa o Tab.` : `<b>Tab</b> abre o placar.`} Recarga, energia, carga, alvo inválido, atordoamento ou queda recusam o poder e não começam outra recarga. Os atalhos ficam em Opções e valem só neste aparelho.<br /><b>Celular:</b> analógico da esquerda anda. Toque no poder para usar na mira, ou arraste para ver a área e solte. Para cancelar, solte em cima do "✕".`;
+  }
+}
+
 function applySettings() {
   audio.vol.master = settings.master / 100;
   audio.vol.music = settings.music / 100;
@@ -104,6 +123,7 @@ function applySettings() {
     layout();
   }
   renderer.showTrails = settings.trails;
+  refreshKeyDocs();
   input.control = settings.control;
   input.aimSens = settings.aimSens / 100;
   input.castMode = settings.castMode;
@@ -124,10 +144,10 @@ function applySettings() {
   if (note) {
     const move =
       settings.moveScheme === 'wasd'
-        ? 'WASD anda. 1, 2 e 3 preparam os poderes. Q, E e F usam. R é a ultimate e pede carga. Z é o extra. Espaço esquiva. Shift troca a mira do mouse pela das setas. O clique esquerdo ataca. O direito cancela.'
+        ? `WASD anda. ${keyLabel(settings.keys.ability)}, ${keyLabel(settings.keys.skill)} e ${keyLabel(settings.keys.bonus)} usam os poderes. ${keyLabel(settings.keys.ult)} é a ultimate e pede carga. ${keyLabel(settings.keys.plasma)} é o extra. ${keyLabel(settings.keys.dash)} esquiva. Shift troca a mira do mouse pela das setas. O clique esquerdo ataca. O direito cancela.`
         : settings.moveScheme === 'esdf'
-          ? 'ESDF anda (E frente, S esquerda, D trás, F direita). Q, W e R são poderes. A é o quarto. Z é o extra. Espaço esquiva. O clique esquerdo ataca. O direito cancela.'
-          : 'As setas andam. Q, W, E e R são os poderes (R é a ultimate). Z é o extra. Espaço esquiva. O clique esquerdo é o ataque básico. O direito cancela a mira.';
+          ? `ESDF anda (E frente, S esquerda, D trás, F direita). ${keyLabel(settings.keys.ability)}, ${keyLabel(settings.keys.skill)} e ${keyLabel(settings.keys.ult)} são poderes. ${keyLabel(settings.keys.bonus)} é o quarto. ${keyLabel(settings.keys.plasma)} é o extra. ${keyLabel(settings.keys.dash)} esquiva. O clique esquerdo ataca. O direito cancela.`
+          : `As setas andam. ${keyLabel(settings.keys.ability)}, ${keyLabel(settings.keys.skill)}, ${keyLabel(settings.keys.bonus)} e ${keyLabel(settings.keys.ult)} são os poderes. ${keyLabel(settings.keys.plasma)} é o extra. ${keyLabel(settings.keys.dash)} esquiva. O clique esquerdo é o ataque básico. O direito cancela a mira.`;
     note.textContent =
       settings.control === 'notebook'
         ? `${move} O mouse mira com ajuda. C trava no inimigo mais perto. No automático os poderes saem na hora. Esc cancela a mira e não gasta.`
@@ -257,32 +277,65 @@ function renderManualAim() {
 }
 
 // ------------------------------------------------------------------ teclas (remapear)
+let bindConflict: { action: Action; code: string; other: Action } | null = null;
+
+function applyKey(action: Action, code: string) {
+  settings.keys = commitBind(settings.keys, action, code);
+  input.binds = settings.keys;
+  bindConflict = null;
+  saveSettings(settings);
+  renderKeybinds();
+  renderManualAim();
+  applySettings();
+  loadoutScreen.relabel();
+  if (game) updateHud();
+}
+
 function renderKeybinds() {
   const box = $('#keybinds');
-  box.innerHTML = (Object.keys(ACTION_LABEL) as Action[])
-    .map((a) => `<div class="kb-row"><span>${ACTION_LABEL[a]}</span><button class="kb-key" data-kb="${a}">${keyLabel(settings.keys[a])}</button></div>`)
-    .join('');
+  const warn = bindConflict
+    ? `<p class="kb-warn">${keyLabel(bindConflict.code)} está em ${ACTION_LABEL[bindConflict.other]}. <button type="button" class="btn small" data-kb-replace>Substituir</button><button type="button" class="btn small ghost" data-kb-cancel>Cancelar</button></p>`
+    : '';
+  box.innerHTML =
+    warn +
+    BIND_ROWS.map(
+      (row) =>
+        `<div class="kb-row"><span class="kb-id"><i class="kb-ico" data-slot="${row.id}"></i><span class="kb-name"><b>${row.name}</b><small>${row.hint}</small></span></span><button type="button" class="kb-key${bindConflict?.action === row.id ? ' wait' : ''}" data-kb="${row.id}">${settings.keys[row.id] ? keyLabel(settings.keys[row.id]) : '—'}</button></div>`,
+    ).join('');
+  box.querySelector<HTMLButtonElement>('[data-kb-cancel]')?.addEventListener('click', () => {
+    bindConflict = null;
+    input.capture = null;
+    renderKeybinds();
+  });
+  box.querySelector<HTMLButtonElement>('[data-kb-replace]')?.addEventListener('click', () => {
+    if (!bindConflict) return;
+    applyKey(bindConflict.action, bindConflict.code);
+    audio.click();
+  });
   box.querySelectorAll<HTMLElement>('[data-kb]').forEach((b) =>
     b.addEventListener('click', () => {
       const a = b.dataset.kb as Action;
-      b.textContent = 'Aperte uma tecla…';
+      bindConflict = null;
+      b.textContent = 'Pressione uma tecla...';
       b.classList.add('wait');
       audio.click();
       input.capture = (code) => {
-        if (code === 'Escape') return renderKeybinds();
-        if (isReservedKey(code, settings.moveScheme)) {
-          toast('Essa tecla já é de movimento ou pausa.');
+        if (code === 'Escape') {
+          input.capture = null;
           return renderKeybinds();
         }
-        // se outra ação usava a tecla, as duas trocam (nunca fica tecla repetida)
-        const other = (Object.keys(settings.keys) as Action[]).find((k) => k !== a && settings.keys[k] === code);
-        if (other) settings.keys[other] = settings.keys[a];
-        settings.keys[a] = code;
-        input.binds = settings.keys;
-        saveSettings(settings);
-        renderKeybinds();
-        renderManualAim();
-        if (other) toast(`${keyLabel(code)} estava em "${ACTION_LABEL[other]}": as duas trocaram.`);
+        const why = reservedKeyMessage(code, settings.moveScheme);
+        if (why) {
+          toast(why);
+          return renderKeybinds();
+        }
+        if (settings.keys[a] === code) return renderKeybinds();
+        const other = bindOwner(settings.keys, a, code);
+        if (other) {
+          bindConflict = { action: a, code, other };
+          return renderKeybinds();
+        }
+        applyKey(a, code);
       };
     }),
   );
@@ -291,9 +344,14 @@ $('#keys-reset').addEventListener('click', () => {
   settings.keys = presetKeys(settings.control, settings.moveScheme);
   input.binds = settings.keys;
   input.fireLatch = false;
+  bindConflict = null;
+  input.capture = null;
   saveSettings(settings);
   renderKeybinds();
   renderManualAim();
+  applySettings();
+  loadoutScreen.relabel();
+  if (game) updateHud();
   audio.click();
 });
 
@@ -730,10 +788,16 @@ function modeCard(m: ModeCard): HTMLElement {
   el.className = 'mode-pick' + (m.available ? '' : ' soon');
   el.dataset.modeId = m.id;
   el.style.setProperty('--c', MODE_COLOR[m.id] ?? '#8a84a8');
+  const L = (a: Action) => keyLabel(settings.keys[a]);
+  const desc =
+    m.id === 'x1-online' || m.id === 'x1-offline'
+      ? m.desc
+          .replace('Q, E e F, R na ultimate e Z no extra', `${L('ability')}, ${L('skill')} e ${L('bonus')}, ${L('ult')} na ultimate e ${L('plasma')} no extra`)
+      : m.desc;
   const avail = m.available ? 'Disponível' : m.reason ?? 'Indisponível';
   const teams = m.teams ? ` · ${m.teams}` : '';
   const who = m.players === '1' ? '1 jogador' : /^\d+$/.test(m.players) ? `${m.players} jogadores` : m.players;
-  el.innerHTML = `<span class="mode-ico">${modeIcon(m.id)}</span><span class="mbody"><span class="mtag">${m.category} · ${m.where}</span><span class="mt">${m.name}</span><span class="md">${m.desc}</span><span class="mmeta">${who}${teams} · ${avail}</span></span>`;
+  el.innerHTML = `<span class="mode-ico">${modeIcon(m.id)}</span><span class="mbody"><span class="mtag">${m.category} · ${m.where}</span><span class="mt">${m.name}</span><span class="md">${desc}</span><span class="mmeta">${who}${teams} · ${avail}</span></span>`;
   const acts = document.createElement('div');
   acts.className = 'mode-acts';
   if (!m.available) {
@@ -1571,13 +1635,7 @@ const loadoutScreen = new LoadoutScreen($('#screen-loadout'), {
     practiceHint = line;
     startMatch();
   },
-  keyOf: (slot) => {
-    if (input.touchMode) {
-      const touch: Partial<Record<typeof slot, string>> = { skill: 'HAB 2', ult: 'ULT', item: 'ITEM' };
-      if (touch[slot]) return touch[slot];
-    }
-    return keyLabel(settings.keys[slot]);
-  },
+  keyOf: (slot) => keyLabel(settings.keys[slot]),
 });
 function openLoadout(ctx: 'pre' | 'pause' | 'lobby') {
   loadoutCtx = ctx;
@@ -1964,10 +2022,17 @@ function leadNote(text: string, mine: boolean) {
 }
 // computador: segurar Tab mostra o placar completo
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'Tab' && game && !e.repeat && !input.capture) scoreboard.toggle(true);
+  if (e.code !== 'Tab' || !game || e.repeat || input.capture) return;
+  if (Object.values(input.binds).includes('Tab')) return;
+  const tag = (e.target as HTMLElement | null)?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (currentScreen() !== null) return;
+  scoreboard.toggle(true);
 });
 window.addEventListener('keyup', (e) => {
-  if (e.code === 'Tab') scoreboard.toggle(false);
+  if (e.code !== 'Tab') return;
+  if (Object.values(input.binds).includes('Tab')) return;
+  scoreboard.toggle(false);
 });
 window.addEventListener('blur', () => scoreboard.toggle(false));
 
@@ -1991,7 +2056,8 @@ function duelScore(g: AnyGame) {
 
 function objectiveText(g: AnyGame) {
   if (g.mode === 'dupla') return '2x2. O time que sobrar vence a rodada. Melhor de 5. Depois o ECO rebobina.';
-  return 'X1 só com poderes. Q, E e F, R na ultimate e Z no extra. Os elementos combinam. Quem zera a vida vence a rodada.';
+  const L = (a: Action) => keyLabel(settings.keys[a]);
+  return `X1 só com poderes. ${L('ability')}, ${L('skill')} e ${L('bonus')}, ${L('ult')} na ultimate e ${L('plasma')} no extra. Os elementos combinam. Quem zera a vida vence a rodada.`;
 }
 
 const OBJ_SHORT: Record<string, string> = { dourado: '★ Fragmento dourado', tripla: '★ Entrega tripla', intocavel: '★ Sem levar dano' };
@@ -2065,7 +2131,7 @@ function comboState(g: AnyGame): { phase: 'ready' | 'armed' | 'wait' | 'done'; k
     return (me.energy ?? 100) < SLOT_COST[i] ? 'sem energia' : '';
   };
   const usable = [0, 1, 2, 3].map((i) => (why(i) ? 9 : 0));
-  const keyOf = (slot: number, key: string) => (input.touchMode ? ['Q', 'E', 'R', 'F'][slot] : key);
+  const keyOf = (_slot: number, key: string) => key;
   const pairOf = (row: { slots: number[]; powers: { element: string }[]; name: string }) => {
     const a = row.slots[0] ?? 0;
     const b = row.slots[1] ?? 1;
@@ -2087,7 +2153,8 @@ function comboState(g: AnyGame): { phase: 'ready' | 'armed' | 'wait' | 'done'; k
     const slot = [0, 1, 3].find((i) => !why(i)) ?? 0;
     const key = keyOf(slot, labels[slot] ?? 'Q');
     const ready = !why(slot);
-    return { phase: ready ? 'armed' : 'wait', key, name: 'Ruptura Marcada', frac: Math.min(1, (marked.rupture ?? 0) / 2.4), aKey: 'Z', bKey: key, aEl: 'lightning', bEl: kitOf(me.char.id).powers[slot].element, need: ready ? `Marca aplicada ✓ → ${key}: habilidade compatível` : why(slot) };
+    const zKey = keyLabel(settings.keys.plasma);
+    return { phase: ready ? 'armed' : 'wait', key, name: 'Ruptura Marcada', frac: Math.min(1, (marked.rupture ?? 0) / 2.4), aKey: zKey, bKey: key, aEl: 'lightning', bEl: kitOf(me.char.id).powers[slot].element, need: ready ? `Marca aplicada ✓ → ${key}: habilidade compatível` : why(slot) };
   }
   const hit = comboReady(me.char.id, usable, foes, labels);
   if (hit) {
@@ -2104,7 +2171,7 @@ function comboState(g: AnyGame): { phase: 'ready' | 'armed' | 'wait' | 'done'; k
     return { phase: 'wait', key: keyOf(armed.slot, armed.key), frac: armed.total ? Math.min(1, armed.left / armed.total) : 0, need: why(armed.slot) || 'não dá para fechar', ...base, bKey: keyOf(armed.slot, armed.key), name: armed.name };
   }
   const plasma = g.players.find((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
-  if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return { phase: 'armed', key: '', name: 'Explosão de Plasma', frac: Math.min(1, plasma.plasmaT / 4), aKey: '', bKey: 'Z', aEl: 'plasma', bEl: 'plasma' };
+  if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return { phase: 'armed', key: '', name: 'Explosão de Plasma', frac: Math.min(1, plasma.plasmaT / 4), aKey: '', bKey: keyLabel(settings.keys.plasma), aEl: 'plasma', bEl: 'plasma' };
   if (recipe) {
     const base = pairOf(recipe);
     lastComboEls = [base.aEl, base.bEl];
@@ -2967,7 +3034,8 @@ function tutorial(dt: number) {
   const g = game;
   const me = g.human;
   hintT += dt;
-  const move = input.touchMode ? 'Arraste o polegar na metade esquerda da tela para andar.' : settings.moveScheme === 'wasd' ? 'Ande com WASD ou as setas. Q, E e F são poderes, R é a ultimate, Z é o extra.' : settings.moveScheme === 'esdf' ? 'Ande com ESDF ou as setas. Q, W e R são poderes, A é o quarto, Z é o extra.' : 'Ande com as setas. Q, W, E e R são os poderes. Z é o extra.';
+  const kk = (a: Action) => keyLabel(settings.keys[a]);
+  const move = input.touchMode ? 'Arraste o polegar na metade esquerda da tela para andar.' : settings.moveScheme === 'wasd' ? `Ande com WASD ou as setas. ${kk('ability')}, ${kk('skill')} e ${kk('bonus')} são poderes, ${kk('ult')} é a ultimate, ${kk('plasma')} é o extra.` : settings.moveScheme === 'esdf' ? `Ande com ESDF ou as setas. ${kk('ability')}, ${kk('skill')} e ${kk('ult')} são poderes, ${kk('bonus')} é o quarto, ${kk('plasma')} é o extra.` : `Ande com as setas. ${kk('ability')}, ${kk('skill')}, ${kk('bonus')} e ${kk('ult')} são os poderes. ${kk('plasma')} é o extra.`;
   if (g.round === 1) {
     if (g.phase === 'prep') return hint('Treino: aprenda energia, núcleo e Ecos. ' + move);
     if (hintStage === 1) {
@@ -2984,7 +3052,7 @@ function tutorial(dt: number) {
         hintStage = 5;
         hintT = 0;
       }
-      return hint(input.touchMode ? 'Toque em IMPULSO para uma arrancada rápida. HAB usa a habilidade do personagem.' : `Espaço = impulso. ${keyLabel(settings.keys.ability)} = habilidade do personagem.`);
+      return hint(input.touchMode ? 'Toque em IMPULSO para uma arrancada rápida. HAB usa a habilidade do personagem.' : `${kk('dash')} = impulso. ${kk('ability')} = habilidade do personagem.`);
     }
     if (hintStage === 5) return hint('Tudo o que você faz está sendo gravado…');
   }
@@ -3274,9 +3342,8 @@ function slotInfo(slot: Slot): { kind: 'instant' | 'direction' | 'point'; range:
   if (slot === 'plasma') {
     const extra = studioOf(me.loadout.secondary);
     if (!extra || extra.id === 'plasma') return { kind: 'direction', range: PLASMA.range, r: PLASMA.radius, w: 0, shape: 'arrow', name: PLASMA.name, color: PLASMA_COLOR };
-    const shape = extra.act === 'wall' ? 'wall' : extra.act === 'dash' || extra.act === 'blink' ? 'line' : extra.speed <= 0 ? 'circle' : 'arrow';
-    const kind = extra.speed <= 0 && extra.act !== 'dash' && extra.act !== 'blink' && extra.act !== 'wall' ? 'instant' : 'direction';
-    return { kind, range: Math.max(extra.range, extra.step ?? 0), r: extra.radius, w: extra.act === 'wall' ? 92 : 0, shape, name: extra.name, color: ELEMENT_COLOR[extra.element] };
+    const aim = catalogAim(extra);
+    return { ...aim, name: extra.name, color: ELEMENT_COLOR[extra.element] };
   }
   if ((game.mode === 'duelo' || game.mode === 'dupla') && powerSlotIndex(slot) !== null) {
     const i = powerSlotIndex(slot)!;
@@ -3334,7 +3401,8 @@ function clipAim(x: number, feetY: number, ang: number, range: number, g: AnyGam
   const s = solidsOf(g);
   return aimStop(x, feetY, ang, range, 3, s.rects, s.discs, s.bounds);
 }
-input.aimKind = (slot) => slotInfo(slot).kind;
+input.aimKind = (slot) => (slot === 'plasma' ? 'instant' : slotInfo(slot).kind);
+input.blockCast = () => currentScreen() !== null;
 input.charged = (slot) => {
   if (!game || (game.mode !== 'duelo' && game.mode !== 'dupla')) return false;
   const i = powerSlotIndex(slot);
@@ -3484,6 +3552,10 @@ function frame(now: number) {
         console.error(err);
       }
       if (typeof inp.aim === 'number') g.human.aim = inp.aim;
+      if (inp.plasma && (g.human.plasmaCd ?? 0) <= 0) {
+        const extra = studioOf(g.human.loadout.secondary);
+        g.human.plasmaCd = extra?.cd ?? PLASMA.cd;
+      }
       net?.sendInput(inp);
     } else if (!g.paused && g.phase !== 'results') {
       acc += dt;

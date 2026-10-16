@@ -154,6 +154,13 @@ export class LoadoutScreen {
     this.renderPowers();
   }
 
+  /** Atalho mudou: os cartões e a ficha leem a tecla nova na hora. */
+  relabel() {
+    if (this.root.hidden) return;
+    if (this.root.querySelector('.pw-board')) this.renderPowers();
+    if (this.root.querySelector('.lo-slots')) this.render();
+  }
+
   /** X1 e 2x2: kit fixo, biblioteca do Z e ficha com os números do combate. */
   private renderPowers() {
     const kit = kitOf(this.charId);
@@ -378,7 +385,7 @@ export class LoadoutScreen {
   }
 
   private swapFacts(prev: string | null, next: string | null) {
-    const delta = swapDelta(this.charId, prev, next);
+    const delta = swapDelta(this.charId, prev, next, this.deps.keyOf('plasma'));
     const gain = delta.gained.length ? delta.gained.join(', ') : 'Nenhuma';
     const loss = delta.lost.length ? delta.lost.join(', ') : 'Nenhuma';
     return `<div class="pw-swap" data-swap><p class="pw-kicker">Confirmar troca</p><ul class="pw-facts"><li><span>Sai</span><b>${delta.removed}</b></li><li><span>Entra</span><b>${delta.added}</b></li><li><span>Tecla</span><b>${delta.key}</b></li><li><span>Ganha</span><b>${gain}</b></li><li><span>Perde</span><b>${loss}</b></li></ul><p class="pw-why">${delta.limit}</p></div>`;

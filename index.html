@@ -398,7 +398,7 @@
           <div class="howto-grid" id="howto-grid">
           <div class="card">
             <h4>Duelo x1</h4>
-            <p>Online ou offline, você contra um rival, só com poderes. WASD anda. Q, E e F são os poderes, R é a ultimate, Z é o extra. Espaço esquiva. O clique esquerdo é um ataque básico curto. O direito cancela a mira. Cada poder gasta energia e recarrega sozinho. Sem energia o aviso é Energia insuficiente e a recarga não começa. Projétil gasta ao sair, mesmo se errar. Poder em área sem inimigo no círculo avisa Nenhum alvo válido e não gasta nada. Juntar os efeitos na ordem certa dá dano extra. Zere a vida dele para vencer a rodada. Ganha quem levar 3 rodadas. Sem arma e sem munição. Em Opções dá para usar as setas ou ESDF.</p>
+            <p id="howto-x1"></p>
           </div>
           <div class="card">
             <h4>2x2</h4>
@@ -410,11 +410,11 @@
           </div>
           <div class="card">
             <h4>Cristais de poder</h4>
-            <p>No X1 e no 2x2 não há cristal de habilidade. Q, E e F são os três poderes. R é a ultimate. Z é o espaço extra. A marca do golpe dura poucos segundos: se a janela passar, o próximo poder volta ao efeito normal.</p>
+            <p id="howto-crystals"></p>
           </div>
           <div class="card">
             <h4>Controles</h4>
-            <p><b>Computador:</b> WASD anda · mouse mira · <b>1 2 3</b> preparam os poderes · <b>Q E F</b> poderes · <b>R</b> ultimate com a barra de carga · <b>Z</b> extra · clique esquerdo ataque básico · <b>Espaço</b> esquiva · <b>Shift</b> troca para a mira das setas · botão direito ou <b>Esc</b> cancela a mira. <b>Tab</b> abre o placar. Recarga, energia, carga, alvo inválido, atordoamento ou queda recusam o poder e não começam outra recarga. Em Opções: setas (Q W E R e Z) ou ESDF (Q W R, A e Z).<br /><b>Celular:</b> analógico da esquerda anda. Toque no poder para usar na mira, ou arraste para ver a área e solte. Para cancelar, solte em cima do "✕".</p>
+            <p id="howto-controls"></p>
           </div>
           <div class="card">
             <h4>Equipamento</h4>
@@ -514,6 +514,8 @@
           </label>
           <div id="opt-manual"></div>
           <p class="form-note" id="opt-control-note"></p>
+          <h3 class="kb-title">Atalhos de habilidades</h3>
+          <p class="form-note">Vale só neste aparelho. O servidor continua conferindo o golpe, não a tecla.</p>
           <div class="keybinds" id="keybinds"></div>
           <button class="btn small ghost" id="keys-reset">Voltar ao padrão deste estilo</button>
         </div>

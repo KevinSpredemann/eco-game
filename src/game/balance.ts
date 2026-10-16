@@ -51,6 +51,11 @@ export const COMBAT = {
   /** vampiro e armas que curam: fração do dano que vira vida */
   vampFrac: 0.25,
   turret: { hp: 40, damage: 6, cooldown: 0.5, range: 420, maxPerOwner: 1 },
+  /**
+   * Dano de clone e ilusão. 0,82 tira cerca de 18%.
+   * O golpe principal (o acerto do poder, a torreta de verdade) não usa isto.
+   */
+  cloneDmgMul: 0.82,
   /** carga da ultimate (0–100) */
   ult: { perSecond: 0.25, perDamageDealt: 0.55, perDamageTaken: 0.3, perKill: 12, perAbility: 8 },
   /** esquiva (rolamento): invulnerável só durante o movimento */
@@ -60,6 +65,12 @@ export const COMBAT = {
 };
 
 /** níveis comprados na loja: no PvP só reduzem um pouco a recarga (sem vantagem injusta) */
+/** Dano que um clone ou uma ilusão aplica. O número do poder em si fica como está. */
+export function cloneDamage(raw: number): number {
+  const n = Math.max(0, raw) * COMBAT.cloneDmgMul;
+  return Math.max(1, Math.round(n));
+}
+
 export function levelMult(lv: number | undefined, pve: boolean) {
   const k = Math.max(1, Math.min(5, Math.floor(lv || 1))) - 1;
   if (pve) return { cooldown: 1 - 0.08 * k, duration: 1 + 0.1 * k, power: 1 + 0.08 * k };

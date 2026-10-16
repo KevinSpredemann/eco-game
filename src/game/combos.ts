@@ -829,7 +829,7 @@ export interface SwapDelta {
 }
 
 /** O que muda no Z. Não grava o equipamento. */
-export function swapDelta(charId: string, prev: string | null, next: string | null): SwapDelta {
+export function swapDelta(charId: string, prev: string | null, next: string | null, key = 'Z'): SwapDelta {
   const before = listSynergies(charId, prev);
   const after = listSynergies(charId, next);
   const ids = new Set([...before.map((row) => row.id), ...after.map((row) => row.id)]);

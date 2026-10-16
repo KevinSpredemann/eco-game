@@ -150,6 +150,8 @@ export interface Snapshot {
   bid: string;
   PL?: number[][];
   RS?: number[][];
+  /** zonas do Z (raízes, vórtice, cinza). Ausente em servidor antigo: o cliente trata como vazio. PROTO segue 12. */
+  PA?: (number | string)[][];
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -309,6 +311,7 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     bid: g.bossId ?? '',
     PL: g.pools.map((pl) => [pl.id, r1(pl.x), r1(pl.y), pl.r, pl.armT > 0 ? 1 : 0, r1(pl.t)]),
     RS: g.resSpots.map((r) => [r1(r.x), r1(r.y)]),
+    PA: (g.patches ?? []).map((z) => [z.id, z.owner, z.kind, r1(z.x), r1(z.y), z.r, r1(z.t), z.dmg, z.el ? EL_IDS.indexOf(z.el) : -1]),
   };
 }
 
