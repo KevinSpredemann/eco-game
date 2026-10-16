@@ -22,7 +22,7 @@ import {
   windState,
 } from './arenas';
 import { AbilityId, CHARACTERS, CharacterDef, getCharacter, withLevel } from './characters';
-import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, Loadout, SKILLS, ULTS, botLoadout, levelMult, sanitizeLoadout } from './balance';
+import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, Loadout, SKILLS, ULTS, botLoadout, cloneDamage, levelMult, sanitizeLoadout } from './balance';
 import * as C from './constants';
 import { botCombat, BotBrain, NavGrid } from './bot';
 import { PowerId, getPower, randomPower } from './powerups';
@@ -624,6 +624,8 @@ export interface Turret {
   t: number;
   cd: number;
   aim: number;
+  /** holograma do Clone. A torreta de verdade não leva o corte de dano. */
+  fromClone?: boolean;
 }
 
 export interface Fragment {
@@ -2094,7 +2096,7 @@ export class Game {
         break;
       }
       case 'clone':
-        if (this.combat) this.placeTurret(p, p.x, p.y, ab.duration);
+        if (this.combat) this.placeTurret(p, p.x, p.y, ab.duration, true);
         else this.clones.push({ owner: p.id, x: p.x, y: p.y, dir: p.dir, t: ab.duration });
         break;
       case 'torreta':
@@ -2179,11 +2181,11 @@ export class Game {
     for (const o of this.players) if (o.alive) this.collideWorld(o);
   }
 
-  private placeTurret(p: Player, x: number, y: number, t: number) {
+  private placeTurret(p: Player, x: number, y: number, t: number, fromClone = false) {
     // no máximo uma torreta por jogador: a antiga some
     const mine = this.turrets.filter((q) => q.owner === p.id);
     if (mine.length >= COMBAT.turret.maxPerOwner) this.turrets = this.turrets.filter((q) => q !== mine[0]);
-    this.turrets.push({ id: this.fragId++, owner: p.id, hp: COMBAT.turret.hp, x, y, t, cd: 0.3, aim: p.aim });
+    this.turrets.push({ id: this.fragId++, owner: p.id, hp: COMBAT.turret.hp, x, y, t, cd: 0.3, aim: p.aim, fromClone });
   }
 
   /** cura com teto na vida máxima (conta para estatísticas e mostra número) */
@@ -3655,7 +3657,7 @@ export class Game {
       const reach = inp && typeof inp.cr === 'number' ? Math.min(step, Math.max(8, inp.cr)) : step;
       const moved = this.blinkTo(p, ang, reach);
       this.events.push({ type: 'blink', pid: p.id, x0: ox, y0: oy, x1: p.x, y1: p.y, el: def.element });
-      if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, dmg) });
+      if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: cloneDamage(Math.max(6, dmg)) });
       const foe = this.nearestHostile(p, 36);
       if (foe) this.deliverPower(p, foe, def.element, dmg, 0, false, { slot, projectile: false, mark: !!def.mark });
       if (moved > 12) p.ambushT = AMBUSH_TIME;
@@ -3663,7 +3665,7 @@ export class Game {
       const ox = p.x + Math.cos(ang) * 48;
       const oy = p.y + Math.sin(ang) * 48;
       const spot = this.isFree(ox, oy, 12) ? { x: ox, y: oy } : { x: p.x, y: p.y };
-      this.clones.push({ owner: p.id, x: spot.x, y: spot.y, dir: ang, t: 3.2, decoy: true, absorb: 1, pop: dmg });
+      this.clones.push({ owner: p.id, x: spot.x, y: spot.y, dir: ang, t: 3.2, decoy: true, absorb: 1, pop: cloneDamage(dmg) });
     } else if (def.act === 'wall') {
       const placed = inp && typeof inp.cr === 'number';
       const spot = placed ? this.castPoint(p, inp, ang, Math.max(range, 1)) : null;
@@ -3735,12 +3737,14 @@ export class Game {
       this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente', x: p.x, y: p.y });
       return;
     }
-    const pay = () => {
+    const pay = (at?: { x: number; y: number; r?: number; form?: string }) => {
       p.energy -= def.cost;
       p.plasmaCd = def.cd;
       p.dir = ang;
       this.noteCombat({ at: this.worldT, kind: 'cast', owner: p.id, target: '', element: def.element, ability: def.id, dmg: 0, x: p.x, y: p.y, combo: '' });
-      this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: def.radius, form: def.form, trick });
+      // brilho na mão. A área grande sai no ponto do golpe, não nos pés.
+      this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, trick });
+      if (at) this.events.push({ type: 'skill', pid: p.id, x: at.x, y: at.y, skill: def.element, r: at.r ?? def.radius, form: at.form ?? def.form, trick });
       abilityTrace(p.id, 'launch', def.name);
     };
     const foeAt = (x: number, y: number, r: number) => this.players.some((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, x, y) <= r && this.sight(p.x, p.y, o.x, o.y, p.id));
@@ -3750,7 +3754,7 @@ export class Game {
         this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido', x: p.x, y: p.y });
         return;
       }
-      pay();
+      pay({ x: p.x + Math.cos(ang) * 70, y: p.y + Math.sin(ang) * 70, r: def.radius, form: 'breath' });
       for (const o of hit) this.deliverPower(p, o, 'fire', def.dmg, 20, true, { slot: -1, projectile: false, trick, ability: def.id });
       const x = p.x + Math.cos(ang) * 70;
       const y = p.y + Math.sin(ang) * 70;
@@ -3759,7 +3763,7 @@ export class Game {
     }
     if (trick === 'stormchain') {
       const first = this.players
-        .filter((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, p.x, p.y) <= def.range && this.sight(p.x, p.y, o.x, o.y, p.id))
+        .filter((o) => this.inCone(p, o, ang, def.range, 0.7))
         .sort((a, b) => dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y))[0];
       if (!first) {
         this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido', x: p.x, y: p.y });
@@ -3789,6 +3793,7 @@ export class Game {
       const recent = this.combatLog.filter((n) => n.kind === 'hit' && n.owner === p.id && this.worldT - n.at <= COMBO_WINDOW && have.has(n.element) && n.ability !== def.id);
       const els = [...new Set(recent.map((n) => n.element))];
       const pt = this.castPoint(p, inp, ang, def.range);
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: els.length >= 2 && foeAt(pt.x, pt.y, def.radius) ? def.radius : def.radius * 0.6, form: 'blast', trick });
       if (els.length >= 2 && foeAt(pt.x, pt.y, def.radius)) {
         for (const o of this.players) {
           if (!o.alive || !o.playing || !this.hostile(p, o) || dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
@@ -3798,12 +3803,10 @@ export class Game {
         this.events.push({ type: 'combo', x: pt.x, y: pt.y, name: 'Colapso Elemental', bonus: 0, pid: p.id, vfx: 'burst', id: 'colapso' });
         this.noteCombat({ at: this.worldT, kind: 'combo', owner: p.id, target: '', element: els[0], ability: def.id, dmg: def.dmg, x: pt.x, y: pt.y, combo: 'Colapso Elemental' });
       } else {
-        const el = kitOf(p.char.id).powers[0].element;
         for (const o of this.players) {
           if (!o.alive || !o.playing || !this.hostile(p, o) || dist(o.x, o.y, pt.x, pt.y) > def.radius * 0.6) continue;
           this.hurt(o, 6, p.id, 'pulse');
         }
-        this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: el, r: def.radius * 0.6, trick });
       }
       return;
     }
@@ -3812,14 +3815,14 @@ export class Game {
       pay();
       for (let i = 0; i < 3; i++) {
         const d = Math.max(36, (len * (i + 1)) / 3);
-        this.pulses.push({ at: this.roundT + 0.42 + i * 0.38, owner: p.id, x: p.x + Math.cos(ang) * d, y: p.y + Math.sin(ang) * d, r: def.radius, dmg: def.dmg, el: 'fire', kind: 'burst', trick, knock: 40 });
+        this.armPulse({ at: this.roundT + 0.42 + i * 0.38, owner: p.id, x: p.x + Math.cos(ang) * d, y: p.y + Math.sin(ang) * d, r: def.radius, dmg: def.dmg, el: 'fire', kind: 'burst', trick, knock: 40 });
       }
       return;
     }
     if (trick === 'glacial') {
       const pt = this.castPoint(p, inp, ang, def.range);
       pay();
-      this.pulses.push({ at: this.roundT + 0.55, owner: p.id, x: pt.x, y: pt.y, r: def.radius, dmg: def.dmg, el: 'ice', kind: 'crystal', trick, knock: 0 });
+      this.armPulse({ at: this.roundT + 0.55, owner: p.id, x: pt.x, y: pt.y, r: def.radius, dmg: def.dmg, el: 'ice', kind: 'crystal', trick, knock: 0 });
       return;
     }
     if (trick === 'fist') {
@@ -3827,7 +3830,7 @@ export class Game {
       const len = this.groundLen(p.x, p.y, ang, def.range);
       for (let i = 0; i < 3; i++) {
         const d = 36 + (len - 36) * (i / 2);
-        this.pulses.push({ at: this.roundT + i * 0.16, owner: p.id, x: p.x + Math.cos(ang) * d, y: p.y + Math.sin(ang) * d, r: def.radius, dmg: def.dmg, el: 'nature', kind: 'rock', trick, knock: 90 });
+        this.armPulse({ at: this.roundT + i * 0.16, owner: p.id, x: p.x + Math.cos(ang) * d, y: p.y + Math.sin(ang) * d, r: def.radius, dmg: def.dmg, el: 'nature', kind: 'rock', trick, knock: 90 });
       }
       return;
     }
@@ -3849,7 +3852,7 @@ export class Game {
     }
     if (trick === 'roots') {
       const pt = this.castPoint(p, inp, ang, def.range);
-      pay();
+      pay({ x: pt.x, y: pt.y, r: def.radius, form: 'pillar' });
       this.placePatch(p, 'roots', pt.x, pt.y, def.radius, 2.2, def.dmg, 'nature', 32);
       return;
     }
@@ -3864,7 +3867,7 @@ export class Game {
     }
     if (trick === 'updraft') {
       const pt = this.castPoint(p, inp, ang, def.range);
-      pay();
+      pay({ x: pt.x, y: pt.y, r: def.radius, form: 'whirl' });
       this.placePatch(p, 'whirl', pt.x, pt.y, def.radius, 1.15, def.dmg, 'wind');
       return;
     }
@@ -3880,6 +3883,13 @@ export class Game {
       this.catalogShot(p, ang, def, def.dmg, speed, trick);
       return;
     }
+  }
+
+  /** Pulso marcado no chão. O aviso dura até o acerto, e o dano só cai nesse instante. */
+  private armPulse(s: ScheduledPulse) {
+    this.pulses.push(s);
+    const wait = Math.max(0.05, s.at - this.roundT);
+    this.events.push({ type: 'windup', pid: s.owner, x: s.x, y: s.y, el: s.el, t: wait, r: s.r });
   }
 
   private updateCatalog(dt: number) {
@@ -3974,7 +3984,10 @@ export class Game {
       abilityTrace(p.id, 'deny', 'locked');
       return;
     }
-    if (p.plasmaCd > 0) return;
+    if (p.plasmaCd > 0) {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Habilidade em recarga', x: p.x, y: p.y });
+      return;
+    }
     if (def.id === 'plasma') {
       if (p.energy < PLASMA.cost) {
         this.events.push({ type: 'deny', pid: p.id, msg: 'Energia insuficiente' });
@@ -4764,7 +4777,7 @@ export class Game {
           if (t.cd <= 0) {
             t.cd = COMBAT.turret.cooldown;
             this.spawnBullets(t.x, t.y + 6, t.aim, 'blaster', t.owner, false);
-            this.bullets[this.bullets.length - 1].dmg = COMBAT.turret.damage;
+            this.bullets[this.bullets.length - 1].dmg = t.fromClone ? cloneDamage(COMBAT.turret.damage) : COMBAT.turret.damage;
             this.events.push({ type: 'shoot', x: t.x, y: t.y, pid: t.owner, weapon: 'blaster' });
           }
         }

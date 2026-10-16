@@ -213,7 +213,8 @@ export class AbilityVfx {
     } else if (e.type === 'ultland' && e.el) {
       this.ultBurst(x, y, e.el, e.r ?? 90);
     } else if (e.type === 'windup' && e.el) {
-      this.addFx({ kind: 'windup', x, y: y - BODY, r: 22, el: e.el, t: 0, max: Math.max(0.25, e.t ?? 0.5) });
+      if ((e.r ?? 0) > 24) this.addFx({ kind: 'telegraph', x, y, r: Math.min(e.r!, 170), el: e.el, t: 0, max: Math.max(0.25, (e.t ?? 0.5) + 0.05) });
+      else this.addFx({ kind: 'windup', x, y: y - BODY, r: 22, el: e.el, t: 0, max: Math.max(0.25, e.t ?? 0.5) });
     } else if (e.type === 'blink' && e.el) {
       this.addFx({ kind: 'blink', x: e.x0 ?? x, y: (e.y0 ?? y) - BODY, x2: e.x1 ?? x, y2: (e.y1 ?? y) - BODY, r: 18, el: e.el, t: 0, max: 0.55 });
       this.burst(e.x0 ?? x, (e.y0 ?? y) - BODY, e.el, 8, 120, 0.4);

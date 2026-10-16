@@ -29,6 +29,7 @@ export class ClientGame {
   fragments: any[] = [];
   powerups: { id: number; kind: PowerId; x: number; y: number; age: number }[] = [];
   clones: any[] = [];
+  patches: { id: number; owner: string; kind: string; x: number; y: number; r: number; t: number; dmg: number; el: string }[] = [];
   ultZones: UltZone[] = [];
   groves: { id: number; owner: string; team: number; x: number; y: number; r: number; t: number; acc: number; heal: number }[] = [];
   echoViews: any[] = [];
@@ -308,6 +309,7 @@ export class ClientGame {
     this.fragments = s.F.map(([id, x, y, g]) => ({ id, x, y, golden: !!g, vx: 0, vy: 0, age: 1, pickDelay: 0 }));
     this.powerups = s.W.map(([id, kind, x, y, age]) => ({ id: id as number, kind: kind as PowerId, x: x as number, y: y as number, age: age as number }));
     this.clones = s.C.map(([owner, x, y, dir, decoy]) => ({ owner, x, y, dir, t: 1, decoy: !!decoy }));
+    this.patches = ((s.PA ?? []) as any[][]).map(([id, owner, kind, x, y, r, t, dmg, el]) => ({ id, owner, kind, x, y, r, t, dmg, el: el >= 0 ? EL_IDS[el] : '' }));
     this.ultZones = ((s.UZ ?? []) as any[][]).map(([id, owner, x, y, r, el, t, total, blown]) => ({ id, owner, x, y, r, el: (EL_IDS[el] ?? 'fire') as Element, t, total, acc: 0, blown: !!blown }));
     this.groves = (s.GR ?? []).map(([id, x, y, r, t, heal]) => ({ id, owner: '', team: -1, x, y, r, t, acc: 0, heal }));
     this.bullets = (s.B as any[][]).map(([id, x, y, vx, vy, wi, fe, life, en, el, kind, owner, form]) => ({ id, x, y, vx, vy, weapon: WEAPON_IDS[wi] ?? 'blaster', fromEcho: !!fe, life, owner: en ? 'enemy' : owner ?? '', el: el >= 0 ? EL_IDS[el] : undefined, plasma: kind === 1, basic: kind === 2, form: typeof form === 'number' && form >= 0 ? POWER_FORMS[form] : undefined }));
@@ -464,6 +466,8 @@ export class ClientGame {
       }
     }
     for (const b of this.bombs) b.t += dt;
+    for (const z of this.patches) z.t -= dt;
+    this.patches = this.patches.filter((z) => z.t > 0);
     for (const c of this.casts) c.t += dt;
     for (const e of this.enemies) {
       e.x += (e.tx - e.x) * k;

@@ -374,6 +374,25 @@ export function studioOf(id: string | null | undefined): StudioDef | null {
   return STUDIO.find((s) => s.id === id) ?? null;
 }
 
+/** Forma da mira do Z. O aperto continua instantâneo; o ponto segue esta forma. */
+export function catalogAim(extra: Pick<PowerDef, 'act' | 'trick' | 'form' | 'speed' | 'range' | 'radius' | 'step'> | null): {
+  kind: 'instant' | 'direction' | 'point';
+  shape: 'arrow' | 'line' | 'circle' | 'cone' | 'wall' | 'self';
+  range: number;
+  r: number;
+  w: number;
+} {
+  if (!extra) return { kind: 'direction', shape: 'arrow', range: 280, r: 18, w: 0 };
+  const cone = extra.form === 'breath' || extra.form === 'gust' || extra.trick === 'ash' || extra.trick === 'stormchain';
+  const lane = extra.form === 'fissure' || extra.form === 'beam' || extra.form === 'blade' || extra.trick === 'volcano' || extra.trick === 'fist' || extra.trick === 'lance' || extra.trick === 'tide' || extra.trick === 'gale' || extra.trick === 'rupture';
+  const wall = extra.act === 'wall' || extra.trick === 'mirror' || extra.trick === 'guardian';
+  const dash = extra.act === 'dash' || extra.act === 'blink' || extra.trick === 'step';
+  const point = !cone && !lane && !wall && !dash && extra.speed <= 0 && extra.act !== 'decoy';
+  const shape = wall ? 'wall' : dash || lane ? 'line' : extra.act === 'decoy' ? 'arrow' : cone ? 'cone' : point ? 'circle' : 'arrow';
+  const kind = extra.act === 'decoy' || (extra.speed <= 0 && !extra.act && extra.range <= 0) ? 'instant' : cone || lane || dash || !point ? 'direction' : 'point';
+  return { kind, shape, range: Math.max(extra.range, extra.step ?? 0), r: extra.radius, w: wall ? 92 : dash ? 28 : 0 };
+}
+
 /**
  * Ataque básico do X1 e do 2x2. Não é arma, não marca elemento e não gasta a marca de plasma.
  * Curto, dano modesto, recarga e energia próprias.
