@@ -173,7 +173,7 @@ export class ClientGame {
     this.zones = s.Z;
 
     for (const row of s.P) {
-      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks, energy, plasmaCd, plasmaT, plasmaOn, basicCd, markedT, fieldT, fieldEl, reactCd, gustT, shockT, ctrlT, rootT2, stunT2, iceT, plasmaPrimeT, comboT] = row as any[];
+      const [id, x, y, dir, fl, hp, hearts, carry, score, walk, wi, ammo, ii, itemN, kills, roundWins, abilCd, dashCd, shieldHp, aim, pw, pwt, vx, vy, hitFlash, team, respawnT, bonusAb, maxHp, skillCd, ult, bcd, deaths, dmg, objPts, portalCd, pcd0, pcd1, pcd2, pcd3, burnT, frozenT, stacks, energy, plasmaCd, plasmaT, plasmaOn, basicCd, markedT, fieldT, fieldEl, reactCd, gustT, shockT, ctrlT, rootT2, stunT2, iceT, plasmaPrimeT, comboT, ruptureT] = row as any[];
       const p = this.players.find((q) => q.id === id);
       if (!p) continue;
       const wasAlive = p.alive;
@@ -213,6 +213,7 @@ export class ClientGame {
       p.plasmaT = plasmaT ?? 0;
       p.plasmaPrimeT = plasmaPrimeT ?? 0;
       p.comboT = comboT ?? 0;
+      p.ruptureT = ruptureT ?? 0;
       p.plasmaOn = !!plasmaOn;
       p.markedT = markedT ?? 0;
       p.fieldT = fieldT ?? 0;
@@ -513,6 +514,8 @@ function blankPlayer(id: string, name: string, char: ReturnType<typeof getCharac
     plasmaT: 0,
     plasmaPrimeT: 0,
     comboT: 0,
+    ruptureT: 0,
+    avatarT: 0,
     markedT: 0,
     fieldT: 0,
     fieldEl: '',

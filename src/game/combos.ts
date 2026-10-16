@@ -28,6 +28,8 @@ import {
  * Queimadura e molhado duram mais; só o combo lê este relógio.
  */
 export const COMBO_WINDOW = 1.5;
+/** Marca de Ruptura fica um pouco além da janela comum, e acaba sozinha. */
+export const RUPTURE_TIME = 2.4;
 /** Marca e campo fecham no mesmo relógio do combo. */
 export const MARK_WINDOW = COMBO_WINDOW;
 export const FIELD_WINDOW = COMBO_WINDOW;
@@ -76,6 +78,12 @@ export interface HitQuery {
   reactCd: number;
   /** lentidão sem congelar. Ausente vale zero. */
   slow?: number;
+  /** Marca de Ruptura ainda no alvo. */
+  rupture?: number;
+  /** id do golpe do catálogo, quando o acerto veio de um. */
+  trick?: string;
+  /** zona de fogo perto do alvo (a rajada de ar fecha o Inferno mesmo sem queimadura no corpo). */
+  nearFire?: boolean;
   /** alvo controlado agora ou há pouco (atordoado/preso + folga). Ausente: só o estado atual. */
   ctrl?: number;
 }
@@ -103,6 +111,10 @@ export interface Reaction {
   pull?: number;
   /** espalha a queimadura para quem está neste raio */
   spreadBurn?: number;
+  /** consome a Marca de Ruptura */
+  clearRupture?: boolean;
+  /** zona que limita o passo, em pixels */
+  zone?: number;
   vfx: 'ult' | 'burst' | 'root' | 'element';
 }
 
@@ -152,6 +164,10 @@ export function resolveReaction(q: HitQuery): Reaction | null {
     };
   }
   const fresh = (q.aura.combo ?? 1) > 0;
+  // Fogo + Ar numa zona de fogo, sem queimadura no corpo: o mesmo Inferno, uma vez.
+  if (fresh && q.element === 'wind' && q.nearFire && (q.aura.burn ?? 0) <= 0 && q.reactCd <= 0) {
+    return { id: 'cinder', name: 'Inferno Espiral', bonus: 10, aoe: 80, spreadBurn: 80, reactLock: REACT_LOCK, vfx: 'element' };
+  }
   if (elemental && fresh) {
     const rupture = elemental.id === 'chill';
     return {
@@ -218,6 +234,14 @@ export function resolveReaction(q: HitQuery): Reaction | null {
   if (ctrl > 0 && q.slot !== 2 && q.reactCd <= 0 && isOffense(q)) {
     return { id: 'execute', name: 'Execução combinada', bonus: EXECUTE_BONUS, clearCtrl: true, reactLock: REACT_LOCK, vfx: 'burst' };
   }
+  // Marca de Ruptura: só se nenhum combo mais específico fechou neste golpe.
+  if ((q.rupture ?? 0) > 0 && q.trick !== 'rupture' && isOffense(q) && q.reactCd <= 0) {
+    return { id: 'rupture-mark', name: 'Ruptura Marcada', bonus: 12, aoe: 48, clearRupture: true, reactLock: REACT_LOCK, vfx: 'burst' };
+  }
+  // Lento (gelo ou raiz que já soltou) + água, sem molhado aberto: zona curta, sem prender para sempre.
+  if (q.element === 'ice' && (q.slow ?? 0) > 0 && root <= 0 && (q.aura.frozen ?? 0) <= 0 && q.reactCd <= 0) {
+    return { id: 'abyss', name: 'Prisão Abissal', bonus: 6, zone: 78, reactLock: REACT_LOCK, vfx: 'root' };
+  }
   return null;
 }
 
@@ -252,6 +276,8 @@ function queryOf(charId: string, pw: PowerDef, slot: number, foe: Aura, distRead
     ctrl: foe.ctrl ?? 0,
     reactCd: distReady ? 0 : 1,
     slow: 0,
+    rupture: foe.rupture ?? 0,
+    trick: pw.trick,
   };
 }
 
@@ -267,6 +293,8 @@ export function comboWindow(id: string, foe: Aura): { left: number; total: numbe
   if (id === 'field-shot') return pick(foe.field ?? 0, FIELD_WINDOW);
   if (id === 'combustao' || id === 'root-aoe' || id === 'shards' || id === 'frostline') return pick(foe.root ?? foe.combo ?? 0, id === 'frostline' ? COMBO_WINDOW : ROOT_TIME);
   if (id === 'ult-control' || id === 'execute') return pick(Math.max(foe.ctrl ?? 0, foe.stun ?? 0, foe.root ?? 0), CONTROL_GRACE + 0.8);
+  if (id === 'rupture-mark') return pick(foe.rupture ?? 0, RUPTURE_TIME);
+  if (id === 'abyss') return pick(foe.combo ?? 0, COMBO_WINDOW);
   return pick(0, 1);
 }
 
@@ -499,6 +527,13 @@ function auraAfter(pw: PowerDef, slot = -1): Aura {
   }
   else if (pw.element === 'wind') aura.gust = 1;
   else if (pw.element === 'nature' && !pw.mark) aura.root = 1;
+  if (pw.trick === 'rupture') {
+    aura.shock = 0;
+    aura.stun = 0;
+    aura.rupture = 1;
+    aura.combo = COMBO_WINDOW;
+    return aura;
+  }
   if (pw.mark) aura.marked = 1;
   if (aoe && !pw.mark) {
     aura.field = 1;
@@ -521,7 +556,8 @@ function needOf(hit: Reaction): string {
   if (hit.id === 'frostline') return 'fissura ou alvo molhado';
   if (hit.id === 'charged') return 'alvo no raio';
   if (hit.id === 'shards') return 'alvo preso na terra';
-  if (hit.id === 'cinder' || hit.id === 'thermal') return 'alvo queimando';
+  if (hit.id === 'cinder') return 'alvo queimando ou zona de fogo';
+  if (hit.id === 'thermal') return 'alvo queimando';
   if (hit.id === 'storm') return 'alvo no vento';
   if (hit.id === 'arc') return 'alvo no raio';
   if (hit.id === 'field-shot') return `campo de ${FIELD_WINDOW}s no alvo`;
@@ -530,16 +566,20 @@ function needOf(hit: Reaction): string {
   if (hit.id === 'ult-control') return 'alvo preso ou tonto';
   if (hit.id === 'combustao') return 'alvo preso na terra';
   if (hit.id === 'execute') return 'alvo preso ou tonto';
+  if (hit.id === 'rupture-mark') return 'Marca de Ruptura no mesmo alvo';
+  if (hit.id === 'abyss') return 'alvo lento, sem estar molhado';
   return 'condição do golpe anterior';
 }
 
 /** O que o combo faz, em poucas palavras, com os números do combate. */
 export function effectOf(hit: Reaction): string {
   const tail = `soma ${hit.bonus}`;
-  if (hit.id === 'freeze') return `congela ${String(hit.hold ?? 0).replace('.', ',')}s e ${tail}`;
+  if (hit.id === 'freeze') return `Execução Glacial: congela ${String(hit.hold ?? 0).replace('.', ',')}s e ${tail}`;
+  if (hit.id === 'rupture-mark') return `consome a marca e ${tail}`;
+  if (hit.id === 'abyss') return `zona que segura o passo e ${tail}`;
+  if (hit.id === 'combustao') return `Fissura Magmática no alvo preso, ${tail}`;
   if (hit.id === 'vortex') return `puxa quem está perto e ${tail}`;
   if (hit.id === 'cinder') return `o fogo gira e pega em volta, ${tail}`;
-  if (hit.id === 'combustao') return `explode no lugar, ${tail}`;
   if (hit.id === 'shards') return `estilhaços em volta, ${tail}`;
   if (hit.id === 'cascade') return `a onda fecha a cadeia e ${tail}`;
   if (hit.id === 'ambush') return `sai da marca e ${tail}`;
@@ -671,6 +711,63 @@ export function listSynergies(charId: string, secondary: string | null): Synergy
     for (let i = 0; i < powers.length; i++) {
       consider(reactionBetween(charId, powers[i], i, extra, -1), powers[i], extra, i, -1, true);
       consider(reactionBetween(charId, extra, -1, powers[i], i), extra, powers[i], -1, i, true);
+    }
+    if (extra.trick === 'collapse') {
+      rows.push({
+        id: 'colapso',
+        name: 'Colapso Elemental',
+        effect: 'explosão dos elementos que você equipou',
+        benefit: 'explosão dos elementos que você equipou',
+        need: 'dois acertos de elementos diferentes, ainda na janela de 1,5 s',
+        order: 'dois golpes de elementos diferentes, depois Colapso Elemental',
+        state: 'active',
+        slots: [-1, 0],
+        ends: [extra.name, powers[0].name],
+        powers: [extra, powers[0]],
+      });
+    }
+    if (extra.trick === 'glacial') {
+      const water = powers.find((pw) => pw.element === 'ice') ?? powers[0];
+      rows.push({
+        id: 'abyss',
+        name: 'Prisão Abissal',
+        effect: 'zona que segura o passo e soma 6',
+        benefit: 'zona que segura o passo e soma 6',
+        need: 'alvo lento pela Prisão Glacial, sem estar molhado',
+        order: `${extra.name}, depois ${water.name}`,
+        state: 'active',
+        slots: [-1, powers.indexOf(water)],
+        ends: [extra.name, water.name],
+        powers: [extra, water],
+      });
+    }
+    if (extra.trick === 'volcano' || extra.trick === 'lance') {
+      rows.push({
+        id: 'magma-wall',
+        name: 'Ruptura Magmática',
+        effect: 'explosão curta na estrutura, uma vez',
+        benefit: 'explosão curta na estrutura, uma vez',
+        need: 'fogo acerta muralha ou raiz ainda de pé',
+        order: 'muralha ou raízes, depois o fogo',
+        state: 'active',
+        slots: [-1, 0],
+        ends: [extra.name, powers[0].name],
+        powers: [extra, powers[0]],
+      });
+    }
+    if (extra.trick === 'gale' || extra.trick === 'updraft') {
+      rows.push({
+        id: 'shards-wall',
+        name: 'Tempestade de Fragmentos',
+        effect: 'fragmentos na direção do vento, uma vez',
+        benefit: 'fragmentos na direção do vento, uma vez',
+        need: 'vento na direção de rochas ou muralha',
+        order: 'rochas ou muralha, depois o vento',
+        state: 'active',
+        slots: [-1, 0],
+        ends: [extra.name, powers[0].name],
+        powers: [extra, powers[0]],
+      });
     }
   }
 

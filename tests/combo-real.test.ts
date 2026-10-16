@@ -242,9 +242,9 @@ describe('combos no combate real', () => {
     const row = encodeSnapshot(chain.g, false).P[1];
     chain.b.plasmaPrimeT = 2.4;
     const sent = encodeSnapshot(chain.g, false).P[1];
-    expect(sent.at(-2)).toBe(2.4);
-    expect(row.at(-2)).toBe(0);
-    expect(sent.at(-1)).toBe(row.at(-1));
+    expect(sent.at(-3)).toBe(2.4);
+    expect(row.at(-3)).toBe(0);
+    expect(sent.at(-2)).toBe(row.at(-2));
     const cg = new ClientGame({
       you: 'a',
       mode: 'duelo',

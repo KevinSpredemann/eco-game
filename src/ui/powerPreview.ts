@@ -41,13 +41,28 @@ export const PREVIEW_KINDS = [
   'shade',
   'burst',
   'shot',
+  'lance',
+  'volcano',
+  'ash',
+  'tide',
+  'glacial',
+  'mirror',
+  'fist',
+  'rootbed',
+  'guardian',
+  'gale',
+  'step',
+  'updraft',
+  'stormchain',
+  'rupture',
   'empty',
 ] as const;
 
 export type PreviewKind = (typeof PREVIEW_KINDS)[number];
 export type PreviewSize = 'xs' | 'sm' | 'lg';
 
-export function previewOf(pw: PowerDef): { kind: Exclude<PreviewKind, 'empty'>; element: Element } {
+export function previewOf(pw: PowerDef): { kind: string; element: Element } {
+  if (pw.trick) return { kind: pw.trick === 'roots' ? 'rootbed' : pw.trick, element: pw.element };
   const step = pw.step ?? pw.range;
   if (pw.mark && pw.speed > 0) return { kind: 'seed', element: pw.element };
   if (pw.grove === 'heal' || (pw.element === 'nature' && pw.charge)) return { kind: 'sprout', element: pw.element };
@@ -99,6 +114,20 @@ const GLYPH: Record<string, string> = {
   shade: '<path d="M40 14a16 16 0 1 0 0 36 12 12 0 0 1 0-36z"/>',
   burst: '<circle cx="32" cy="32" r="6"/><path d="M32 8v10M32 46v10M8 32h10M46 32h10M14 14l8 8M42 42l8 8M50 14l-8 8M22 42l-8 8"/>',
   shot: '<circle cx="44" cy="28" r="7"/><path d="M8 40l22-8"/>',
+  lance: '<path d="M8 40 L40 16"/><circle cx="44" cy="14" r="5"/><path d="M36 22l12-2"/>',
+  volcano: '<path d="M10 46h44"/><path d="M18 46l8-16 6 10 8-18 8 24"/><circle cx="32" cy="18" r="3"/>',
+  ash: '<path d="M12 40c8-14 14-6 22 0s12 10 18-4"/><circle cx="20" cy="22" r="3"/><circle cx="34" cy="16" r="2"/><circle cx="46" cy="24" r="3"/>',
+  tide: '<path d="M10 36c8-12 16 8 24-4s12 8 20-6"/><path d="M18 28c6 4 10-6 16 0"/>',
+  glacial: '<path d="M32 10l10 12-4 18H26l-4-18z"/><path d="M32 22v16"/>',
+  mirror: '<path d="M20 14h24v30H20z"/><path d="M24 20l16 18M40 20L24 38"/>',
+  fist: '<path d="M14 40h36"/><circle cx="22" cy="32" r="5"/><circle cx="34" cy="28" r="6"/><circle cx="46" cy="34" r="4"/>',
+  rootbed: '<path d="M16 48c4-14 8-14 8 0M32 50c0-20 2-20 6-4M44 48c2-12 8-10 8 0"/><path d="M12 48h40"/>',
+  guardian: '<path d="M16 18h32v28H16z"/><path d="M16 28h32M26 18v28M38 18v28"/>',
+  gale: '<path d="M12 40c10-16 18 4 28-12"/><path d="M18 24c8 6 12-8 20 0"/>',
+  step: '<path d="M14 40l10-16 8 10 10-18"/><path d="M40 16l8 6"/>',
+  updraft: '<path d="M32 48c10-8 10-20 0-28-10 8-10 20 0 28z"/><path d="M32 18V8"/>',
+  stormchain: '<path d="M12 40l12-14 8 8 14-20"/><circle cx="14" cy="42" r="3"/><circle cx="48" cy="14" r="3"/>',
+  rupture: '<path d="M32 8l4 12h10l-8 8 4 12-10-6-10 6 4-12-8-8h10z"/>',
   empty: '<circle cx="32" cy="32" r="14" stroke-dasharray="4 4"/>',
   basic: '<circle cx="32" cy="32" r="10"/><circle cx="32" cy="32" r="3"/><path d="M32 8v10M32 46v10M8 32h10M46 32h10"/>',
   impulse: '<path d="M10 32h28M30 20l14 12-14 12"/><path d="M18 16l8 6M18 48l8-6"/>',

@@ -87,6 +87,13 @@ export class Renderer {
   private flashColor = '#fff';
   private echoWasActive = new Map<string, boolean>();
   reducedEffects = false;
+  private finisher: { x: number; y: number; until: number; span: number; id: string } | null = null;
+  private bodyLean = new Map<string, number>();
+
+  noteFinisher(x: number, y: number, seconds: number, id: string) {
+    const now = performance.now() / 1000;
+    this.finisher = { x, y, until: now + seconds, span: seconds, id };
+  }
   readonly abilityFx = new AbilityVfx();
   /** limite de densidade de pixels (qualidade gráfica) */
   dprCap = 3;
@@ -1458,7 +1465,16 @@ export class Renderer {
     this.drawnShakeY = sy;
     this.shake = Math.max(0, this.shake - dt * 40);
     const k = this.scale * this.dpr;
-    ctx.setTransform(k, 0, 0, k, (this.ox + sx) * this.dpr, (this.oy + sy) * this.dpr);
+    const now = time;
+    const fin = this.finisher && now < this.finisher.until ? this.finisher : null;
+    if (this.finisher && now >= this.finisher.until) this.finisher = null;
+    if (fin) {
+      const u = Math.min(1, (fin.span - (fin.until - now)) / Math.max(0.2, fin.span * 0.35));
+      const z = 1 + (this.reducedEffects ? 0.04 : 0.1) * Math.sin(Math.min(1, u) * Math.PI);
+      const px = (this.ox + fin.x * this.scale + sx) * this.dpr;
+      const py = (this.oy + fin.y * this.scale + sy) * this.dpr;
+      ctx.setTransform(k * z, 0, 0, k * z, px - fin.x * k * z, py - fin.y * k * z);
+    } else ctx.setTransform(k, 0, 0, k, (this.ox + sx) * this.dpr, (this.oy + sy) * this.dpr);
     if (this.base) ctx.drawImage(this.base, 0, 0, WORLD_W, WORLD_H);
 
     const t = game.worldT;
@@ -2269,6 +2285,8 @@ export class Renderer {
     else if (p.cloakT > 0) alpha = Math.min(alpha, 0.45);
     if (p.phaseT > 0) alpha = 0.3 + 0.15 * Math.sin(time * 30);
     if (tuneHides(game.arena, p.x, p.y, game.worldT) && !human && game.hostile(game.human, p)) alpha = 0.08;
+    const ash = (game.patches ?? []).some((z) => z.kind === 'ash' && z.t > 0 && Math.hypot(p.x - z.x, p.y - z.y) < z.r);
+    if (ash && !human) alpha = Math.min(alpha, 0.38);
     if (p.invulnT > 0 && Math.sin(time * 30) > 0.3) alpha *= 0.45;
 
     // sombra + anel de cor
@@ -2351,7 +2369,10 @@ export class Renderer {
     if (gunBehind && !powers) this.drawGun(p);
     // vida: inclina ao correr, pula de alegria, amassa ao levar dano
     const sp = Math.hypot(p.vx, p.vy);
-    const lean = p.moving ? Math.max(-0.14, Math.min(0.14, (p.vx / C.SPEED) * 0.09)) : 0;
+    const targetLean = p.moving ? Math.max(-0.18, Math.min(0.18, (p.vx / C.SPEED) * 0.16)) : 0;
+    const leanPrev = this.bodyLean.get(p.id) ?? 0;
+    const lean = leanPrev + (targetLean - leanPrev) * 0.2;
+    this.bodyLean.set(p.id, lean);
     const mood = this.moods.get(p.id);
     const happy = mood && mood.expr === 'happy' && mood.until > performance.now() / 1000;
     const hop = happy ? Math.abs(Math.sin(time * 13)) * 7 : 0;
@@ -2375,6 +2396,19 @@ export class Renderer {
       ctx.shadowBlur = 18 + Math.sin(time * 30) * 6;
     }
     this.sprites.draw(ctx, img, 0, 0, flip, SPRITE_SCALE);
+    if ((p.ruptureT ?? 0) > 0) {
+      ctx.save();
+      ctx.translate(0, -78);
+      ctx.fillStyle = '#ffe14a';
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.lineTo(7, 0);
+      ctx.lineTo(0, 8);
+      ctx.lineTo(-7, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
     ctx.shadowBlur = 0;
     ctx.filter = 'none';
     ctx.restore();
@@ -3127,6 +3161,16 @@ export class Renderer {
     // Caça ao Chefe: pontos de recurso e poças de ácido
     for (const r of g.resSpots ?? []) drawResSpot(ctx, r.x, r.y, time);
     if (g.pools?.length) drawPools(ctx, g.pools, time);
+    for (const z of g.patches ?? []) {
+      ctx.save();
+      ctx.globalAlpha = z.kind === 'ash' ? 0.28 : 0.45;
+      ctx.strokeStyle = z.kind === 'roots' ? '#3dce78' : z.kind === 'whirl' ? '#7dfff0' : z.kind === 'rift' ? '#d09bff' : '#9ee7ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
     // muros de gelo
     for (const w of g.iceWalls ?? []) {
       if (w.kind === 'caixa') {
