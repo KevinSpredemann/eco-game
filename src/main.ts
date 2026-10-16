@@ -1,6 +1,6 @@
 import './styles.css';
 import { audio } from './audio/audio';
-import { ARENAS, BORDER, WORLD_H, WORLD_W, getArena } from './game/arenas';
+import { ARENAS, BORDER, WORLD_H, WORLD_W, getArena, playableArena } from './game/arenas';
 import { tuneHint } from './game/mapTune';
 import { CHARACTERS, getCharacter, withLevel, withSkin } from './game/characters';
 import * as C from './game/constants';
@@ -27,8 +27,8 @@ import { avatarURL, drawMapPreview, drawPortrait } from './ui/portraits';
 import { Carousel, fitText } from './ui/carousel';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
-import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, cooldownOf, denyPlasma, denyPowerCast, describePower, kitOf, powerSlotIndex, studioOf } from './game/elements';
-import { comboReady } from './game/combos';
+import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, cooldownOf, denyPlasma, denyPowerCast, describePower, formOf, kitOf, powerSlotIndex, studioOf } from './game/elements';
+import { comboReady, listSynergies, pickComboRecipe } from './game/combos';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
 import { castAimShape, noteAim, solveAim, type AimShape } from './game/aimService';
@@ -43,6 +43,7 @@ import type { AimPreview } from './render/combatFx';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
 const settings: Settings = loadSettings();
+settings.arena = playableArena(settings.arena);
 if (import.meta.env.DEV) {
   try {
     if (localStorage.getItem('eco.dev') === '1') setAbilityTrace(true);
@@ -1787,7 +1788,7 @@ function startMatch() {
   const hint = practiceHint;
   practiceHint = '';
   if (!owns(account.profile, 'char:' + settings.char)) settings.char = account.profile.equipped.char;
-  const arena = getArena(settings.arena);
+  const arena = getArena(playableArena(settings.arena));
   const g = new Game({
     arena,
     humanChar: settings.char,
@@ -2015,18 +2016,64 @@ function powerHasTarget(me: { id: string; x: number; y: number; team: number }, 
   return game.players.some((o) => o.alive && o.id !== me.id && game!.hostile(me, o) && Math.hypot(o.x - me.x, o.y - me.y) <= reach);
 }
 
-/** combo armado: tecla, nome e quanto falta da janela (0–1) */
-function comboState(g: AnyGame): { key: string; name: string; frac: number } | null {
+const EL_TAG: Record<string, string> = { fire: 'FOGO', ice: 'ÁGUA', nature: 'TERRA', wind: 'AR', lightning: 'RAIO', plasma: 'PLASMA', shadow: 'SOMBRA' };
+let comboDone: { name: string; aEl: string; bEl: string; until: number } | null = null;
+let lastComboEls: [string, string] = ['fire', 'lightning'];
+
+/** combo do loadout: disponível, armado, janela, recusa ou confirmação curta */
+function comboState(g: AnyGame): { phase: 'ready' | 'armed' | 'wait' | 'done'; key: string; name: string; frac: number; aKey: string; bKey: string; aEl: string; bEl: string; need?: string } | null {
   const me = g.human;
   if (!me.alive) return null;
   const foes = g.players
     .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
+    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT, plasma: o.plasmaPrimeT ?? 0, combo: o.comboT ?? 0 }));
   const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
-  const hit = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
-  if (hit) return { key: input.touchMode ? ['Q', 'E', 'R', 'F'][hit.slot] : hit.key, name: hit.name, frac: hit.total ? Math.min(1, hit.left / hit.total) : 0 };
+  const cds = me.powerCd ?? [0, 0, 0, 0];
+  // "pronto" só se dá para usar agora: sem recarga, com energia (ou a suprema carregada)
+  const why = (i: number): string => {
+    if ((cds[i] ?? 0) > 0) return `recarga ${(cds[i] ?? 0).toFixed(1).replace('.', ',')}s`;
+    if (i === 2) return (me.ultCharge ?? 100) < 100 ? 'suprema em carga' : '';
+    return (me.energy ?? 100) < SLOT_COST[i] ? 'sem energia' : '';
+  };
+  const usable = [0, 1, 2, 3].map((i) => (why(i) ? 9 : 0));
+  const keyOf = (slot: number, key: string) => (input.touchMode ? ['Q', 'E', 'R', 'F'][slot] : key);
+  const pairOf = (row: { slots: number[]; powers: { element: string }[]; name: string }) => {
+    const a = row.slots[0] ?? 0;
+    const b = row.slots[1] ?? 1;
+    return {
+      aKey: keyOf(Math.max(0, a), labels[a] ?? ''),
+      bKey: keyOf(Math.max(0, b), labels[b] ?? ''),
+      aEl: row.powers[0]?.element ?? 'fire',
+      bEl: row.powers[1]?.element ?? 'lightning',
+      name: row.name,
+    };
+  };
+  const rows = listSynergies(me.char.id, me.loadout?.secondary ?? null).filter((row) => row.state === 'active' && row.slots.length === 2);
+  const recipe = pickComboRecipe(rows);
+  if (comboDone && performance.now() < comboDone.until) {
+    return { phase: 'done', key: '', name: comboDone.name, frac: 1, aKey: '', bKey: '', aEl: comboDone.aEl, bEl: comboDone.bEl };
+  }
+  const hit = comboReady(me.char.id, usable, foes, labels);
+  if (hit) {
+    const row = rows.find((r) => r.name === hit.name) ?? recipe;
+    const base = row ? pairOf(row) : { aKey: '', bKey: keyOf(hit.slot, hit.key), aEl: 'ice', bEl: 'lightning', name: hit.name };
+    lastComboEls = [base.aEl, base.bEl];
+    return { phase: 'armed', key: keyOf(hit.slot, hit.key), frac: hit.total ? Math.min(1, hit.left / hit.total) : 0, ...base, bKey: keyOf(hit.slot, hit.key), name: hit.name };
+  }
+  // o alvo já está preparado, mas falta algo: mostra o que falta (sem fingir que dá)
+  const armed = comboReady(me.char.id, [0, 0, 0, 0], foes, labels);
+  if (armed) {
+    const row = rows.find((r) => r.name === armed.name) ?? recipe;
+    const base = row ? pairOf(row) : { aKey: '', bKey: keyOf(armed.slot, armed.key), aEl: 'ice', bEl: 'lightning', name: armed.name };
+    return { phase: 'wait', key: keyOf(armed.slot, armed.key), frac: armed.total ? Math.min(1, armed.left / armed.total) : 0, need: why(armed.slot) || 'não dá para fechar', ...base, bKey: keyOf(armed.slot, armed.key), name: armed.name };
+  }
   const plasma = g.players.find((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
-  if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return { key: '', name: 'Explosão de Plasma', frac: Math.min(1, plasma.plasmaT / 4) };
+  if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return { phase: 'armed', key: '', name: 'Explosão de Plasma', frac: Math.min(1, plasma.plasmaT / 4), aKey: '', bKey: 'Z', aEl: 'plasma', bEl: 'plasma' };
+  if (recipe) {
+    const base = pairOf(recipe);
+    lastComboEls = [base.aEl, base.bEl];
+    return { phase: 'ready', key: base.bKey, frac: 0, ...base };
+  }
   return null;
 }
 
@@ -2035,7 +2082,7 @@ function comboLine(g: AnyGame): string {
   if (!me.alive) return '';
   const foes = g.players
     .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
+    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT, plasma: o.plasmaPrimeT ?? 0, combo: o.comboT ?? 0 }));
   const plasma = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
   if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return 'COMBO DISPONÍVEL: Explosão de Plasma';
   const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
@@ -2058,7 +2105,7 @@ function buildSlots(g: AnyGame): SlotView[] {
     const labels = [K('ability'), K('skill'), K('ult'), K('bonus')];
     const foes = g.players
       .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-      .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT }));
+      .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT, plasma: o.plasmaPrimeT ?? 0, combo: o.comboT ?? 0 }));
     const ready = comboReady(me.char.id, me.powerCd ?? [0, 0, 0, 0], foes, labels);
     const plasmaUp = g.players.some((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
     // Barra: Q, E, F, R e depois o Z. O índice do kit não muda (R continua no espaço 2).
@@ -2393,15 +2440,28 @@ function updateHud() {
   const comboEl = $('#hud-combo');
   comboEl.hidden = !cs;
   if (cs) {
-    const sig = `${cs.key}|${cs.name}`;
+    const sig = `${cs.phase}|${cs.aKey}|${cs.bKey}|${cs.name}|${cs.need ?? ''}`;
+    comboEl.classList.toggle('wait', cs.phase === 'wait');
+    comboEl.classList.toggle('ready', cs.phase === 'ready');
+    comboEl.classList.toggle('armed', cs.phase === 'armed');
+    comboEl.classList.toggle('done', cs.phase === 'done');
     if (comboEl.dataset.sig !== sig) {
       comboEl.dataset.sig = sig;
-      comboEl.innerHTML = `<span class="cb-tag">COMBO</span>${cs.key ? `<kbd>${escapeHtml(cs.key)}</kbd>` : ''}<b>${escapeHtml(cs.name)}</b><i class="cb-bar"><i></i></i>`;
-      comboEl.classList.remove('pop');
-      void comboEl.offsetWidth;
-      comboEl.classList.add('pop');
+      const ico = (el: string) => `<i class="cb-el" data-el="${escapeHtml(el)}" style="--el:${ELEMENT_COLOR[el as keyof typeof ELEMENT_COLOR] ?? '#fff'}">${EL_TAG[el] ?? '•'}</i>`;
+      const tag = cs.phase === 'done' ? 'FEITO' : cs.phase === 'wait' ? 'NÃO FECHOU' : cs.phase === 'armed' ? 'FECHE' : 'COMBO';
+      comboEl.innerHTML = `<span class="cb-tag">${tag}</span><span class="cb-pair">${ico(cs.aEl)}<em>+</em>${ico(cs.bEl)}</span><span class="cb-go">→</span><b>${escapeHtml(cs.name)}</b>${cs.aKey ? `<kbd>${escapeHtml(cs.aKey)}</kbd>` : ''}${cs.bKey ? `<kbd>${escapeHtml(cs.bKey)}</kbd>` : ''}<small class="cb-need"></small><i class="cb-bar"><i></i></i>`;
+      if (cs.phase === 'armed' || cs.phase === 'done') {
+        comboEl.classList.remove('pop');
+        void comboEl.offsetWidth;
+        comboEl.classList.add('pop');
+      }
     }
-    (comboEl.querySelector('.cb-bar i') as HTMLElement).style.width = `${Math.round(cs.frac * 100)}%`;
+    const needEl = comboEl.querySelector('.cb-need') as HTMLElement | null;
+    if (needEl) needEl.textContent = cs.need ?? '';
+    const bar = comboEl.querySelector('.cb-bar i') as HTMLElement | null;
+    if (bar) bar.style.width = `${Math.round(cs.frac * 100)}%`;
+    const barWrap = comboEl.querySelector('.cb-bar') as HTMLElement | null;
+    if (barWrap) barWrap.hidden = cs.phase === 'ready' || cs.phase === 'done';
   } else comboEl.dataset.sig = '';
   scoreboard.update(g);
   const me = g.human;
@@ -2613,7 +2673,10 @@ function onEvents(events: GameEvent[]) {
       case 'combo':
         audio.combo(panOf(e.x), e.vfx === 'ult');
         // combo SEU: nome grande e rápido no alto (sem caixa de texto no meio da arena)
-        if (mine) comboPop(e.name, e.bonus, e.vfx);
+        if (mine) {
+          comboDone = { name: e.name, aEl: lastComboEls[0], bEl: lastComboEls[1], until: performance.now() + 1200 };
+          comboPop(e.name, e.bonus, e.vfx);
+        }
         break;
       case 'deny':
         audio.fail(panOf(g.players.find((p) => p.id === e.pid)?.x ?? g.human.x));
@@ -3161,11 +3224,14 @@ function slotInfo(slot: Slot): { kind: 'instant' | 'direction' | 'point'; range:
   if ((game.mode === 'duelo' || game.mode === 'dupla') && powerSlotIndex(slot) !== null) {
     const i = powerSlotIndex(slot)!;
     const pw = kitOf(me.char.id).powers[i];
-    const point = pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink' && pw.act !== 'wall';
+    const form = formOf(pw, i);
+    const cone = form === 'breath' || form === 'gust';
+    const lane = form === 'wave' || form === 'fissure' || form === 'beam' || form === 'blade';
+    const point = !cone && !lane && pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink' && pw.act !== 'wall';
     const family = castFamily(pw);
-    const shape = pw.act === 'wall' ? 'wall' : pw.act === 'dash' || pw.act === 'blink' ? 'line' : pw.act === 'decoy' ? 'arrow' : point ? (family === 'instant' ? 'self' : 'circle') : 'arrow';
+    const shape = pw.act === 'wall' ? 'wall' : pw.act === 'dash' || pw.act === 'blink' ? 'line' : pw.act === 'decoy' ? 'arrow' : cone ? 'cone' : lane ? 'line' : point ? (family === 'instant' ? 'self' : 'circle') : 'arrow';
     return {
-      kind: family === 'instant' ? 'instant' : point ? 'point' : 'direction',
+      kind: family === 'instant' ? 'instant' : cone || lane || !point ? 'direction' : 'point',
       range: Math.max(pw.range, pw.step ?? 0),
       r: pw.act === 'dash' || pw.act === 'blink' ? Math.max(18, pw.radius) : pw.radius,
       w: pw.act === 'wall' ? 92 : pw.act === 'dash' || pw.act === 'blink' ? 28 : 0,

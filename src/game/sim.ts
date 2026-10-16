@@ -57,9 +57,13 @@ import {
   WALL_REACH,
   bonusDamage,
   burnDpsOf,
+  ULT_LAND,
+  ULT_FIRE_TICK,
+  ULT_WINDUP,
   cooldownOf,
   gustSlow,
   healOnCombo,
+  formOf,
   kitOf,
   knockMul,
   studioOf,
@@ -71,7 +75,7 @@ import {
   wallStun,
   type Element,
 } from './elements';
-import { CONTROL_GRACE, FIELD_WINDOW, MARK_WINDOW, isElemental, resolveReaction } from './combos';
+import { COMBO_WINDOW, CONTROL_GRACE, FIELD_WINDOW, MARK_WINDOW, isElemental, resolveReaction } from './combos';
 import { abilityTrace } from './abilityTrace';
 import { castFamily, chargeFactor, chargeRadius, chargeReach } from './aimMath';
 import { resolveCastAngle } from './aimService';
@@ -202,6 +206,10 @@ export interface Player {
   plasmaCd: number;
   /** marca de plasma neste jogador (segundos) */
   plasmaT: number;
+  /** disparo de plasma do kit: a onda seguinte fecha a cadeia (segundos) */
+  plasmaPrimeT: number;
+  /** janela do combo, contada a partir do acerto */
+  comboT: number;
   /** marca de sinergia (Semente). Não é o marcador que aumenta dano. */
   markedT: number;
   /** campo elemental neste alvo, para o projétil compatível */
@@ -215,6 +223,8 @@ export interface Player {
    * e o segundo golpe quase nunca chegava a tempo.
    */
   ctrlT: number;
+  /** Congelamento (Água + Água): preso dentro do gelo por este tempo */
+  iceT: number;
   /** o espaço extra desta partida trouxe a Rajada de Plasma */
   plasmaOn: boolean;
   /** combos fechados nesta rodada (a ninja fica mais rápida) */
@@ -284,7 +294,7 @@ export interface Player {
   /** preparando um golpe (não atira, anda devagar) */
   castT: number;
   /** golpe com preparo: ainda não gastou energia nem recarga */
-  pendingCast: { slot: number; ang: number; ca?: number | null; cr?: number | null; at: number } | null;
+  pendingCast: { slot: number; ang: number; ca?: number | null; cr?: number | null; ch?: number | null; at: number } | null;
   /** recarga do ataque básico */
   basicCd: number;
   /** preso no chão. Não anda nem esquiva. */
@@ -501,6 +511,23 @@ export interface Bullet {
   slot?: number;
   /** este projétil marca, não enraíza */
   mark?: boolean;
+  /** a ultimate deste projétil já caiu (uma vez só) */
+  landed?: boolean;
+  /** como o golpe anda (explosão, onda, feixe…). Ausente: tiro comum. */
+  form?: import('./elements').PowerForm;
+  /** 1 ou -1: a lâmina de vento curva para um lado */
+  curve?: number;
+  /** rumo do lançamento; a lâmina oscila em volta dele e volta à mira */
+  aim?: number;
+  /** distância já percorrida pela lâmina */
+  flown?: number;
+  /** saída da lâmina; a curva mede o desvio a partir daqui */
+  spawnX?: number;
+  spawnY?: number;
+  /** o poder é área, mesmo quando o desenho viaja (onda) */
+  area?: boolean;
+  /** a explosão ou o salto já saiu deste tiro */
+  splashed?: boolean;
 }
 
 export interface Bomb {
@@ -562,6 +589,23 @@ export interface Clone {
   absorb?: number;
   pop?: number;
 }
+
+/** Rastro da ultimate no chão: zona de fogo, maré, vórtice, pilares... Some sozinho. */
+export interface UltZone {
+  id: number;
+  owner: string;
+  x: number;
+  y: number;
+  r: number;
+  el: Element;
+  t: number;
+  total: number;
+  acc: number;
+  /** vórtice: a rajada final já saiu */
+  blown?: boolean;
+}
+
+export { ULT_WINDUP } from './elements';
 
 export interface Grove {
   id: number;
@@ -659,7 +703,7 @@ export type GameEvent =
   | { type: 'bonusSpawn'; x: number; y: number; ab: AbilityId }
   | { type: 'bonusPick'; x: number; y: number; pid: string; ab: AbilityId }
   | { type: 'dmg'; pid: string; x: number; y: number; n: number; k: 'hp' | 'shield' | 'block' | 'weak' | 'dodge' | 'heal' | 'immune'; sx?: number; sy?: number; src?: DmgSrc; note?: string }
-  | { type: 'skill'; pid: string; x: number; y: number; skill: string; r?: number }
+  | { type: 'skill'; pid: string; x: number; y: number; skill: string; r?: number; form?: string }
   | { type: 'ult'; pid: string; x: number; y: number; ult: string }
   | { type: 'cast'; pid: string; kind: CastKind; x: number; y: number }
   | { type: 'castHit'; kind: CastKind; x: number; y: number; r: number; ang: number; len: number }
@@ -678,7 +722,9 @@ export type GameEvent =
   /** projétil de poder acabou sem acertar (parede ou alcance): dissipa no lugar */
   | { type: 'pend'; x: number; y: number; el: string; wall?: boolean }
   /** começou o preparo de um poder (energia na mão) */
-  | { type: 'windup'; pid: string; x: number; y: number; el: string; t: number }
+  | { type: 'windup'; pid: string; x: number; y: number; el: string; t: number; ult?: boolean; tx?: number; ty?: number; r?: number; lane?: boolean }
+  /** a ultimate caiu: efeito grande no chão (mesmo ponto do efeito real) */
+  | { type: 'ultland'; pid: string; x: number; y: number; el: string; r: number }
   /** piscar: de onde saiu para onde chegou (posição real) */
   | { type: 'blink'; pid: string; x0: number; y0: number; x1: number; y1: number; el: string }
   | { type: 'deny'; pid: string; msg: string; x?: number; y?: number };
@@ -709,6 +755,7 @@ export class Game {
   fragments: Fragment[] = [];
   clones: Clone[] = [];
   groves: Grove[] = [];
+  ultZones: UltZone[] = [];
   powerups: { id: number; kind: PowerId; x: number; y: number; age: number }[] = [];
   bullets: Bullet[] = [];
   bombs: Bomb[] = [];
@@ -880,11 +927,14 @@ export class Game {
       energy: ENERGY_MAX,
       plasmaCd: 0,
       plasmaT: 0,
+      plasmaPrimeT: 0,
+      comboT: 0,
       markedT: 0,
       fieldT: 0,
       fieldEl: '',
       reactCd: 0,
       ctrlT: 0,
+      iceT: 0,
       plasmaOn: !!lo.secondary,
       comboStacks: 0,
       hidden: false,
@@ -999,6 +1049,7 @@ export class Game {
     this.abilityOrbs = [];
     this.orbTimer = 5 + Math.random() * 3;
     this.iceWalls = [];
+    this.ultZones = [];
     this.vortexes = [];
     this.smokes = [];
     this.hooks = [];
@@ -1053,11 +1104,14 @@ export class Game {
         energy: ENERGY_MAX,
         plasmaCd: 0,
         plasmaT: 0,
+        plasmaPrimeT: 0,
+        comboT: 0,
         markedT: 0,
         fieldT: 0,
         fieldEl: '',
         reactCd: 0,
         ctrlT: 0,
+        iceT: 0,
         comboStacks: 0,
         tookDamage: false,
         tripleDone: false,
@@ -1325,6 +1379,7 @@ export class Game {
     }
     this.updateClones(dt);
     this.updateGroves(dt);
+    this.updateUltZones(dt);
     this.updateTurrets(dt);
     this.replayEchoActions(tms);
     this.updatePowerups(dt);
@@ -1530,11 +1585,14 @@ export class Game {
       for (let i = 0; i < 4; i++) p.powerCd[i] = Math.max(0, p.powerCd[i] - dt);
       p.plasmaCd = Math.max(0, p.plasmaCd - dt);
       p.plasmaT = Math.max(0, p.plasmaT - dt);
+      p.plasmaPrimeT = Math.max(0, p.plasmaPrimeT - dt);
+      p.comboT = Math.max(0, p.comboT - dt);
       p.markedT = Math.max(0, p.markedT - dt);
       p.fieldT = Math.max(0, p.fieldT - dt);
       if (p.fieldT <= 0) p.fieldEl = '';
       p.reactCd = Math.max(0, p.reactCd - dt);
       p.ctrlT = Math.max(0, p.ctrlT - dt);
+      p.iceT = Math.max(0, p.iceT - dt);
       p.basicCd = Math.max(0, p.basicCd - dt);
       p.rootT = Math.max(0, p.rootT - dt);
       p.rootResistT = Math.max(0, p.rootResistT - dt);
@@ -1595,7 +1653,7 @@ export class Game {
       const c = p.pendingCast;
       p.pendingCast = null;
       p.castT = 0;
-      this.castPower(p, c.slot, c.ang, { mx: 0, my: 0, dash: false, ability: false, ca: c.ca, cr: c.cr });
+      this.castPower(p, c.slot, c.ang, { mx: 0, my: 0, dash: false, ability: false, ca: c.ca, cr: c.cr, ch: c.ch });
     }
     const free = p.stunT <= 0 && p.castT <= 0;
 
@@ -2899,16 +2957,17 @@ export class Game {
   }
 
   private foeInRadius(p: Player, x: number, y: number, radius: number, los = false) {
-    return this.players.some((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, x, y) <= radius && (!los || this.sight(p.x, p.y, o.x, o.y)));
+    return this.players.some((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, x, y) <= radius && (!los || this.sight(p.x, p.y, o.x, o.y, p.id)));
   }
 
   /** Parede, pilar e borda no meio do trecho. As pontas não contam. */
-  private sight(ax: number, ay: number, bx: number, by: number) {
+  /** through: id de quem conjura — a própria barreira não tapa a visão dele. */
+  private sight(ax: number, ay: number, bx: number, by: number, through?: string) {
     const d = Math.hypot(bx - ax, by - ay);
     if (d < 14) return true;
     const inset = 8 / d;
     return (
-      this.solidAlong(ax + (bx - ax) * inset, ay + (by - ay) * inset, bx - (bx - ax) * inset, by - (by - ay) * inset, 2) === null
+      this.solidAlong(ax + (bx - ax) * inset, ay + (by - ay) * inset, bx - (bx - ax) * inset, by - (by - ay) * inset, 2, through) === null
     );
   }
 
@@ -3033,7 +3092,10 @@ export class Game {
     p.fieldEl = '';
     p.reactCd = 0;
     p.ctrlT = 0;
+    p.iceT = 0;
     p.plasmaT = 0;
+    p.plasmaPrimeT = 0;
+    p.comboT = 0;
     p.stunT = 0;
     p.slowT = 0;
   }
@@ -3142,6 +3204,7 @@ export class Game {
       abilityTrace(p.id, 'deny', 'charge');
       return;
     }
+    if (ult && !tune.skipWindup && def.act !== 'dash' && def.act !== 'blink') return this.beginUlt(p, def, ang, inp, tune, Math.max(wind, ULT_WINDUP));
     if (wind <= 0 || tune.skipWindup) {
       this.castPower(p, slot, ang, inp);
       return;
@@ -3164,6 +3227,99 @@ export class Game {
     p.castT = Math.max(p.castT, wind);
     this.events.push({ type: 'windup', pid: p.id, x: p.x, y: p.y, el: def.element, t: wind });
     abilityTrace(p.id, 'windup', def.name);
+  }
+
+  /** Suprema: aviso no chão + preparo. Atordoar quem prepara cancela (já existe no laço). */
+  private beginUlt(p: Player, def: PowerDef, ang: number, inp: Input | undefined, tune: { range: number; radius: number }, wind: number) {
+    if (p.pendingCast || p.powerCd[2] > 0) return;
+    let tx: number;
+    let ty: number;
+    let r: number;
+    if (def.speed <= 0) {
+      const pt = this.castPoint(p, inp, ang, tune.range);
+      if (!this.foeInRadius(p, pt.x, pt.y, tune.radius, def.los !== false)) {
+        this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido', x: p.x, y: p.y });
+        abilityTrace(p.id, 'deny', 'target');
+        return;
+      }
+      tx = pt.x;
+      ty = pt.y;
+      r = tune.radius;
+    } else {
+      const a = typeof inp?.ca === 'number' && isFinite(inp.ca) ? inp.ca : ang;
+      tx = p.x + Math.cos(a) * tune.range;
+      ty = p.y + Math.sin(a) * tune.range;
+      r = ULT_LAND[def.element]?.r ?? 90;
+    }
+    p.pendingCast = { slot: 2, ang, ca: inp?.ca, cr: inp?.cr, ch: inp?.ch, at: this.roundT + wind };
+    p.castT = Math.max(p.castT, wind);
+    this.events.push({ type: 'windup', pid: p.id, x: p.x, y: p.y, el: def.element, t: wind, ult: true, tx, ty, r, lane: def.speed > 0 });
+    abilityTrace(p.id, 'windup', def.name);
+  }
+
+  /** A suprema caiu aqui (acerto, parede ou fim do alcance). Uma vez por suprema. */
+  private ultLand(src: Player, x: number, y: number, el: Element) {
+    const spec = ULT_LAND[el] ?? ULT_LAND.plasma;
+    this.events.push({ type: 'ultland', pid: src.id, x, y, el, r: spec.r });
+    const foes = this.players.filter((o) => o.alive && o.playing && this.hostile(src, o) && dist(o.x, o.y, x, y) <= spec.r && this.sight(x, y, o.x, o.y));
+    if (el === 'ice') {
+      // Maré Abissal: a onda empurra para fora e deixa molhado
+      for (const o of foes) {
+        const d = Math.hypot(o.x - x, o.y - y) || 1;
+        this.knock(o, ((o.x - x) / d) * 240, ((o.y - y) / d) * 240);
+        o.frozenT = Math.max(o.frozenT, FROZEN_TIME);
+        this.slow(o, FROZEN_TIME * 0.6);
+      }
+    } else if (el === 'nature') {
+      // Ruptura Titânica: pilares sobem e prendem
+      for (const o of foes) this.applyRoot(o, 0.9);
+    } else if (el === 'lightning') {
+      for (const o of foes) this.stun(o, 0.45);
+    }
+    this.ultZones.push({ id: this.fragId++, owner: src.id, x, y, r: spec.r, el, t: spec.t, total: spec.t, acc: 0 });
+  }
+
+  /** Fogo queima quem fica; o vórtice puxa e no fim arremessa. Sem dano extra fora disso. */
+  private updateUltZones(dt: number) {
+    for (const z of this.ultZones) {
+      z.t -= dt;
+      z.acc += dt;
+      const src = this.players.find((p) => p.id === z.owner);
+      if (!src) continue;
+      const inside = () => this.players.filter((o) => o.alive && o.playing && this.hostile(src, o) && dist(o.x, o.y, z.x, z.y) <= z.r);
+      if (z.el === 'fire' && z.acc >= 0.5) {
+        z.acc -= 0.5;
+        for (const o of inside()) {
+          this.hurt(o, ULT_FIRE_TICK, src.id, 'pulse');
+          if (!o.alive) continue;
+          o.burnT = Math.max(o.burnT, 1.2);
+          o.burnDps = Math.max(o.burnDps, burnDpsOf(src.char.id));
+          o.burnFrom = src.id;
+        }
+      } else if (z.el === 'wind') {
+        if (!z.blown && z.t > 0.3 && z.acc >= 0.15) {
+          z.acc = 0;
+          for (const o of inside()) {
+            const d = Math.hypot(z.x - o.x, z.y - o.y) || 1;
+            const step = Math.min(26, d);
+            o.pullX = o.x + ((z.x - o.x) / d) * step;
+            o.pullY = o.y + ((z.y - o.y) / d) * step;
+            o.pullT = 0.16;
+          }
+        } else if (!z.blown && z.t <= 0.3) {
+          z.blown = true;
+          for (const o of inside()) {
+            const d = Math.hypot(o.x - z.x, o.y - z.y) || 1;
+            o.pullT = 0;
+            this.knock(o, ((o.x - z.x) / d) * 560, ((o.y - z.y) / d) * 560);
+            o.gustT = MARK_WINDOW;
+            o.comboT = COMBO_WINDOW;
+          }
+          this.events.push({ type: 'ultland', pid: src.id, x: z.x, y: z.y, el: 'wind', r: z.r * 1.1 });
+        }
+      }
+    }
+    this.ultZones = this.ultZones.filter((z) => z.t > 0);
   }
 
   /**
@@ -3204,41 +3360,154 @@ export class Game {
       this.playAct(p, def, ang, inp, dmg, tune, slot);
       return;
     }
+    const form = formOf(def, slot);
+    const cast = { slot, projectile: def.speed > 0, mark: !!def.mark };
+    const denyTarget = () => {
+      this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido', x: p.x, y: p.y });
+      abilityTrace(p.id, 'deny', 'target');
+    };
+    if (form === 'breath' || form === 'gust') {
+      const arc = 0.62;
+      const foes = this.players.filter((o) => this.inCone(p, o, ang, tune.range, arc));
+      if (!foes.length) return denyTarget();
+      pay();
+      abilityTrace(p.id, 'impact', def.name);
+      this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: tune.range, form });
+      for (const o of foes) this.deliverPower(p, o, def.element, dmg, knock, true, cast);
+      if (ult) {
+        p.ultCharge = 0;
+        this.ultLand(p, p.x + Math.cos(ang) * Math.min(90, tune.range), p.y + Math.sin(ang) * Math.min(90, tune.range), def.element);
+      }
+      return;
+    }
+    if (form === 'fissure' && def.speed <= 0) {
+      const len = this.groundLen(p.x, p.y, ang, tune.range);
+      const x1 = p.x + Math.cos(ang) * len;
+      const y1 = p.y + Math.sin(ang) * len;
+      const foes = this.players.filter((o) => o.alive && o.playing && this.hostile(p, o) && distToSegment(o.x, o.y, p.x, p.y, x1, y1) < 28 + this.hitR(o) && this.sight(p.x, p.y, o.x, o.y, p.id));
+      if (!foes.length) return denyTarget();
+      pay();
+      abilityTrace(p.id, 'impact', def.name);
+      this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: len, form });
+      for (const o of foes) this.deliverPower(p, o, def.element, dmg, knock, true, cast);
+      if (ult) {
+        p.ultCharge = 0;
+        this.ultLand(p, x1, y1, def.element);
+      }
+      return;
+    }
+    if (form === 'chain' && def.speed <= 0) {
+      const pt = this.castPoint(p, inp, ang, tune.range);
+      const los = def.los !== false;
+      const foes = this.players
+        .filter((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, pt.x, pt.y) <= tune.radius && (!los || this.sight(p.x, p.y, o.x, o.y, p.id)))
+        .sort((a, b) => dist(a.x, a.y, pt.x, pt.y) - dist(b.x, b.y, pt.x, pt.y));
+      if (!foes.length) return denyTarget();
+      pay();
+      abilityTrace(p.id, 'impact', def.name);
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: tune.radius, form });
+      this.deliverPower(p, foes[0], def.element, dmg, knock, true, cast);
+      const jump = foes.find((o) => o !== foes[0] && dist(o.x, o.y, foes[0].x, foes[0].y) < 150);
+      if (jump) this.deliverPower(p, jump, def.element, Math.max(1, Math.round(dmg * 0.6)), knock, true, cast);
+      if (ult) {
+        p.ultCharge = 0;
+        this.ultLand(p, pt.x, pt.y, def.element);
+      }
+      return;
+    }
+    if (form === 'wave' && def.speed <= 0) {
+      const arc = 0.7;
+      const foes = this.players.filter((o) => this.inCone(p, o, ang, tune.range, arc));
+      if (!foes.length) return denyTarget();
+      pay();
+      const speed = 460;
+      this.pushPowerShot(p, ang, def, dmg, knock, slot, speed, tune.range / speed, true);
+      abilityTrace(p.id, 'launch', def.name);
+      this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, r: tune.radius, form });
+      return;
+    }
     if (def.speed <= 0) {
       const pt = this.castPoint(p, inp, ang, tune.range);
       const los = def.los !== false;
-      if (!this.foeInRadius(p, pt.x, pt.y, tune.radius, los)) {
-        this.events.push({ type: 'deny', pid: p.id, msg: 'Nenhum alvo válido', x: p.x, y: p.y });
-        abilityTrace(p.id, 'deny', 'target');
-        return;
-      }
+      const radius = tune.radius;
+      if (!this.foeInRadius(p, pt.x, pt.y, radius, los)) return denyTarget();
       pay();
       abilityTrace(p.id, 'impact', def.name);
-      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: tune.radius });
+      this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: radius, form });
       for (const o of this.players) {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
-        if (dist(o.x, o.y, pt.x, pt.y) > tune.radius) continue;
-        if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
-        this.deliverPower(p, o, def.element, dmg, knock, true, { slot, projectile: false, mark: !!def.mark });
+        if (dist(o.x, o.y, pt.x, pt.y) > radius) continue;
+        if (los && !this.sight(p.x, p.y, o.x, o.y, p.id)) continue;
+        this.deliverPower(p, o, def.element, dmg, form === 'rock' ? Math.max(knock, 200) : knock, true, cast);
+        if (form === 'whirl') {
+          const dx = pt.x - o.x;
+          const dy = pt.y - o.y;
+          const dd = Math.hypot(dx, dy) || 1;
+          const step = Math.min(48, Math.max(0, dd - 18));
+          if (step > 0) {
+            o.pullX = o.x + (dx / dd) * step;
+            o.pullY = o.y + (dy / dd) * step;
+            o.pullT = 0.4;
+          }
+          this.slow(o, 0.7);
+        }
       }
       if (def.grove === 'heal') this.placeGrove(p, pt.x, pt.y, tune.radius, 4);
-      if (ult) p.ultCharge = 0;
+      if (ult) {
+        p.ultCharge = 0;
+        this.ultLand(p, pt.x, pt.y, def.element);
+      }
       return;
     }
     pay();
+    const travel = form === 'bolt' ? Math.max(def.speed, 1040) : form === 'beam' ? Math.max(def.speed, 1200) : def.speed;
+    this.pushPowerShot(p, ang, def, dmg, form === 'rock' ? Math.max(knock, 200) : knock, slot, travel, tune.range / travel, form === 'wave' || form === 'fissure' || form === 'beam' || !!def.pass);
+    abilityTrace(p.id, 'launch', def.name);
+    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element, form });
+  }
+
+  /** Alvo à frente, dentro do cone e com linha de visão. */
+  private inCone(p: Player, o: Player, ang: number, reach: number, arc: number) {
+    if (!o.alive || !o.playing || !this.hostile(p, o)) return false;
+    const dx = o.x - p.x;
+    const dy = o.y - p.y;
+    const dd = Math.hypot(dx, dy);
+    if (dd > reach || dd < 1) return false;
+    let diff = Math.abs(Math.atan2(dy, dx) - ang);
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    if (diff > arc) return false;
+    return this.sight(p.x, p.y, o.x, o.y, p.id);
+  }
+
+  /** Até onde a fissura anda antes da parede. */
+  private groundLen(x: number, y: number, ang: number, reach: number) {
+    let len = reach;
+    for (let d = 18; d <= reach; d += 8) {
+      if (!this.isFree(x + Math.cos(ang) * d, y + Math.sin(ang) * d, 8)) {
+        len = Math.max(16, d - 8);
+        break;
+      }
+    }
+    return len;
+  }
+
+  private pushPowerShot(p: Player, ang: number, def: PowerDef, dmg: number, knock: number, slot: number, speed: number, life: number, pierce: boolean) {
+    const form = formOf(def, slot);
     const muzzle = 18;
-    const home = def.home ? this.nearestHostile(p, tune.range) : null;
+    const home = def.home ? this.nearestHostile(p, def.range) : null;
+    const sx = p.x + Math.cos(ang) * muzzle;
+    const sy = p.y - GUN_Y + Math.sin(ang) * muzzle;
     this.bullets.push({
       id: this.fragId++,
-      x: p.x + Math.cos(ang) * muzzle,
-      y: p.y - GUN_Y + Math.sin(ang) * muzzle,
-      vx: Math.cos(ang) * def.speed,
-      vy: Math.sin(ang) * def.speed,
+      x: sx,
+      y: sy,
+      vx: Math.cos(ang) * speed,
+      vy: Math.sin(ang) * speed,
       owner: p.id,
       dmg,
-      life: tune.range / def.speed,
+      life,
       weapon: VISUAL_WEAPON[def.element],
-      pierce: !!def.pass,
+      pierce,
       fromEcho: false,
       hit: [],
       el: def.element,
@@ -3246,9 +3515,14 @@ export class Game {
       homeId: home?.id,
       slot,
       mark: !!def.mark,
+      form,
+      curve: form === 'blade' ? (p.id.charCodeAt(0) % 2 === 0 ? 1 : -1) : undefined,
+      aim: form === 'blade' ? ang : undefined,
+      flown: form === 'blade' ? 0 : undefined,
+      spawnX: form === 'blade' ? sx : undefined,
+      spawnY: form === 'blade' ? sy : undefined,
+      area: def.speed <= 0,
     });
-    abilityTrace(p.id, 'launch', def.name);
-    this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
   }
 
   /** Efeito já pago: arrancada, piscar, ilusão, bosque ou muralha. */
@@ -3274,9 +3548,9 @@ export class Game {
       const moved = this.blinkTo(p, ang, reach);
       this.events.push({ type: 'blink', pid: p.id, x0: ox, y0: oy, x1: p.x, y1: p.y, el: def.element });
       if (def.ghost) this.clones.push({ owner: p.id, x: ox, y: oy, dir: ang + Math.PI, t: 2.6, decoy: true, absorb: 1, pop: Math.max(6, dmg) });
-      if (moved > 12) p.ambushT = AMBUSH_TIME;
       const foe = this.nearestHostile(p, 36);
       if (foe) this.deliverPower(p, foe, def.element, dmg, 0, false, { slot, projectile: false, mark: !!def.mark });
+      if (moved > 12) p.ambushT = AMBUSH_TIME;
     } else if (def.act === 'decoy') {
       const ox = p.x + Math.cos(ang) * 48;
       const oy = p.y + Math.sin(ang) * 48;
@@ -3370,7 +3644,7 @@ export class Game {
       for (const o of this.players) {
         if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
         if (dist(o.x, o.y, pt.x, pt.y) > def.radius) continue;
-        if (los && !this.sight(p.x, p.y, o.x, o.y)) continue;
+        if (los && !this.sight(p.x, p.y, o.x, o.y, p.id)) continue;
         this.deliverPower(p, o, def.element, def.dmg, KNOCK[def.element], true, { slot: -1, projectile: false });
         if (def.yank && def.yank > 0) {
           const dx = p.x - o.x;
@@ -3408,6 +3682,14 @@ export class Game {
     this.events.push({ type: 'skill', pid: p.id, x: p.x, y: p.y, skill: def.element });
   }
 
+  /** Projétil da suprema que acabou sem acertar ninguém: cai onde parou. */
+  private landUltShot(b: Bullet) {
+    if (b.slot !== 2 || !b.el || b.landed || b.fromEcho) return;
+    b.landed = true;
+    const src = this.players.find((q) => q.id === b.owner);
+    if (src) this.ultLand(src, b.x, b.y, b.el);
+  }
+
   /** Marca de 4 s. O dano do projétil não passa do valor da habilidade. */
   private deliverPlasma(src: Player, dst: Player, damage: number) {
     if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
@@ -3418,10 +3700,10 @@ export class Game {
 
   /** Uma reação por golpe. O bônus entra no mesmo dano, uma vez. */
   private deliverPower(src: Player, dst: Player, element: Element, damage: number, knock: number, aoe = false, cast?: { slot?: number; projectile?: boolean; mark?: boolean }) {
-    if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return;
-    if (tuneBlocks(this.arena, src.x, src.y, dst.x, dst.y, this.worldT)) return;
+    if (!dst.alive || dst.invulnT > 1 || dst.phaseT > 0 || dst.dodgeT > 0 || !this.hostile(src, dst)) return 0;
+    if (tuneBlocks(this.arena, src.x, src.y, dst.x, dst.y, this.worldT)) return 0;
     this.events.push({ type: 'phit', x: dst.x, y: dst.y, el: element, pid: src.id, aoe });
-    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT, marked: dst.markedT, field: dst.fieldT, fieldEl: dst.fieldEl, stun: dst.stunT };
+    const aura = { burn: dst.burnT, frozen: dst.frozenT, gust: dst.gustT, shock: dst.shockT, root: dst.rootT, marked: dst.markedT, field: dst.fieldT, fieldEl: dst.fieldEl, stun: dst.stunT, plasma: dst.plasmaPrimeT, combo: dst.comboT };
     const extra = bonusDamage(src.char.id, aura, dst.stunT > 0);
     const move = this.mobilityBonus(src);
     const reaction = resolveReaction({
@@ -3457,8 +3739,10 @@ export class Game {
       dst.fieldT = 0;
       dst.fieldEl = '';
     }
+    if (reaction?.clearPlasma) dst.plasmaPrimeT = 0;
     if (reaction?.reactLock) dst.reactCd = reaction.reactLock;
     if (reaction?.clearCtrl) dst.ctrlT = 0;
+    const frozeNow = !!reaction?.hold;
     const bonus = reaction ? (reaction.id === 'root-aoe' ? Math.min(reaction.bonus, Math.max(0, EXTRA_CAP - move)) : reaction.bonus) : 0;
     const plasma = dst.plasmaT > 0;
     let burst = 0;
@@ -3480,10 +3764,16 @@ export class Game {
         dst.burnFrom = src.id;
         dst.burnAcc = 0;
       } else if (element === 'ice') {
-        dst.frozenT = FROZEN_TIME;
-        this.slow(dst, FROZEN_TIME);
-      } else if (element === 'lightning') dst.shockT = MARK_TIME;
-      else if (element === 'wind') dst.gustT = MARK_TIME;
+        if (frozeNow) {
+          // Congelamento: preso no gelo, sem andar nem conjurar. Não molha de novo (não encadeia).
+          dst.iceT = reaction!.hold!;
+          this.stun(dst, reaction!.hold!);
+        } else {
+          dst.frozenT = FROZEN_TIME;
+          this.slow(dst, FROZEN_TIME);
+        }
+      } else if (element === 'lightning') dst.shockT = MARK_WINDOW;
+      else if (element === 'wind') dst.gustT = MARK_WINDOW;
       else if (element === 'nature' && !cast?.mark) this.applyRoot(dst, reaction?.rootAdd ?? ROOT_TIME);
       else if (cast?.mark) {
         dst.markedT = MARK_WINDOW;
@@ -3492,6 +3782,15 @@ export class Game {
       if (aoe && !cast?.mark) {
         dst.fieldT = FIELD_WINDOW;
         dst.fieldEl = element;
+      }
+      if (element === 'plasma' && cast?.projectile && !aoe && (cast.slot ?? -1) !== 2 && !reaction?.clearPlasma) dst.plasmaPrimeT = MARK_WINDOW;
+      dst.comboT = COMBO_WINDOW;
+    }
+    if (reaction?.id === 'freeze') {
+      this.events.push({ type: 'skill', pid: src.id, x: dst.x, y: dst.y, skill: 'ice', r: 78, form: 'wave' });
+      for (const o of this.players) {
+        if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
+        if (dist(o.x, o.y, dst.x, dst.y) < 78 && this.sight(dst.x, dst.y, o.x, o.y)) this.slow(o, 0.8);
       }
     }
     if (bonus > 0 && reaction) {
@@ -3509,8 +3808,28 @@ export class Game {
           if (dist(o.x, o.y, dst.x, dst.y) < reaction.aoe && this.sight(dst.x, dst.y, o.x, o.y)) this.hurt(o, reaction.bonus * 0.5, src.id, 'pulse');
         }
       }
+      for (const o of this.players) {
+        if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
+        const d = dist(o.x, o.y, dst.x, dst.y);
+        // Vórtice: puxa quem está perto para o alvo
+        if (reaction.pull && d < reaction.pull && d > 1) {
+          const step = Math.min(56, d - 18);
+          if (step > 0) {
+            o.pullX = o.x + ((dst.x - o.x) / d) * step;
+            o.pullY = o.y + ((dst.y - o.y) / d) * step;
+            o.pullT = 0.35;
+          }
+          this.slow(o, 0.8);
+        }
+        // Inferno Espiral: a chama gira e pega em quem está perto
+        if (reaction.spreadBurn && d < reaction.spreadBurn && this.sight(dst.x, dst.y, o.x, o.y)) {
+          o.burnT = Math.max(o.burnT, BURN_TIME * 0.6);
+          o.burnDps = Math.max(o.burnDps, burnDpsOf(src.char.id));
+          o.burnFrom = src.id;
+        }
+      }
     }
-    if (!dst.alive) return;
+    if (!dst.alive) return bonus > 0 && reaction?.aoe ? reaction.aoe : 0;
     if (element === 'lightning') this.stun(dst, stunTime(src.char.id));
     if (element === 'plasma') {
       const ang = Math.atan2(dst.y - src.y, dst.x - src.x);
@@ -3532,6 +3851,7 @@ export class Game {
       const ang = Math.atan2(dst.y - src.y, dst.x - src.x);
       this.knock(dst, Math.cos(ang) * knock, Math.sin(ang) * knock);
     }
+    return bonus > 0 && reaction?.aoe ? reaction.aoe : 0;
   }
 
   private fire(p: Player) {
@@ -3735,6 +4055,21 @@ export class Game {
     }
   }
 
+  /** Vizinhos do impacto, uma vez. Não passa de novo pelo combo do alvo principal. */
+  private splashAround(src: Player, primary: Player, b: Bullet, radius: number, frac: number, wet: boolean, skip = 0) {
+    for (const o of this.players) {
+      if (o === primary || !o.alive || !o.playing || b.hit.includes(o.id) || !this.hostile(src, o)) continue;
+      if (dist(o.x, o.y, primary.x, primary.y) > radius) continue;
+      if (skip > 0 && dist(o.x, o.y, primary.x, primary.y) < skip) continue;
+      if (!this.sight(primary.x, primary.y, o.x, o.y)) continue;
+      b.hit.push(o.id);
+      if (wet) this.slow(o, 0.6);
+      const n = Math.round(b.dmg * frac);
+      if (n > 0) this.hurt(o, n, src.id, 'pulse');
+      this.events.push({ type: 'phit', x: o.x, y: o.y, el: b.el ?? 'fire', pid: src.id, aoe: true });
+    }
+  }
+
   private updateCombat(dt: number) {
     // balas
     for (const b of this.bullets) {
@@ -3747,16 +4082,39 @@ export class Game {
       for (let i = 0; i < steps && b.life > 0; i++) {
         const ox = b.x;
         const oy = b.y;
-        const nx = ox + (b.vx * dt) / steps;
-        const ny = oy + (b.vy * dt) / steps;
-        if (!b.pierce && tuneBlocks(this.arena, ox, oy, nx, ny, this.worldT)) {
+        let nx = ox + (b.vx * dt) / steps;
+        let ny = oy + (b.vy * dt) / steps;
+        if (b.form === 'blade' && typeof b.aim === 'number' && typeof b.spawnX === 'number' && typeof b.spawnY === 'number') {
+          const sp = Math.hypot(b.vx, b.vy) || 1;
+          const flown = (b.flown ?? 0) + (sp * dt) / steps;
+          const place = (lat: number) => ({
+            x: b.spawnX! + Math.cos(b.aim!) * flown - Math.sin(b.aim!) * lat,
+            y: b.spawnY! + Math.sin(b.aim!) * flown + Math.cos(b.aim!) * lat,
+          });
+          const lateral = Math.sin(flown / 46) * 14 * (b.curve ?? 1);
+          const curved = place(lateral);
+          const flat = place(0);
+          const who = b.fromEcho || enemyShot ? undefined : b.owner;
+          const clear = (x: number, y: number) => this.solidAlong(ox, oy + GUN_Y, x, y + GUN_Y, 3, who) === null;
+          const use = clear(curved.x, curved.y) ? curved : clear(flat.x, flat.y) ? flat : curved;
+          nx = use.x;
+          ny = use.y;
+          b.flown = flown;
+          const dx = nx - ox;
+          const dy = ny - oy;
+          const dd = Math.hypot(dx, dy) || 1;
+          b.vx = (dx / dd) * sp;
+          b.vy = (dy / dd) * sp;
+        }
+        const stopWall = !b.pierce || b.form === 'wave' || b.form === 'fissure' || b.form === 'beam';
+        if (stopWall && tuneBlocks(this.arena, ox, oy, nx, ny, this.worldT)) {
           b.x = ox;
           b.y = oy;
           b.life = 0;
           b.miss = 'wall';
           break;
         }
-        if (!b.pierce) {
+        if (stopWall) {
           const wallT = this.solidAlong(ox, oy + GUN_Y, nx, ny + GUN_Y, 3, b.fromEcho || enemyShot ? undefined : b.owner);
           const bodyT = this.earliestBody(b, ox, oy, nx, ny, enemyShot, ownerTeam);
           if (wallT !== null && (bodyT === null || wallT <= bodyT)) {
@@ -3770,6 +4128,7 @@ export class Game {
               this.events.push({ type: 'deny', pid: b.owner, msg: 'Obstáculo', x: b.x, y: b.y });
               this.events.push({ type: 'pend', x: b.x, y: b.y, el: b.plasma ? 'plasma' : b.el ?? 'basic', wall: true });
             }
+            this.landUltShot(b);
             abilityTrace(b.owner, 'wall', `${Math.round(b.x)},${Math.round(b.y)}`);
             break;
           }
@@ -3795,7 +4154,8 @@ export class Game {
             if (o.id === b.owner && this.rules.teams) continue;
             if (o.id !== b.owner && ownerTeam >= 0 && ownerTeam === o.team) continue;
           }
-          if (!this.bodyHit(o, b.x, b.y)) continue;
+          const pad = b.form === 'wave' ? 26 : b.form === 'fissure' ? 18 : b.form === 'rock' ? 14 : b.form === 'blast' ? 10 : b.form === 'blade' ? 12 : 6;
+          if (!this.bodyHit(o, b.x, b.y, pad)) continue;
           // poder do X1: dano e elemento aqui. A arma desenhada não queima, cura nem empurra de novo.
           if (b.plasma) {
             b.hit.push(o.id);
@@ -3823,8 +4183,29 @@ export class Game {
           if (b.el) {
             b.hit.push(o.id);
             const src = this.players.find((q) => q.id === b.owner);
-            if (src) this.deliverPower(src, o, b.el, b.dmg, b.knock ?? 0, false, { slot: b.slot ?? -1, projectile: true, mark: !!b.mark });
-            else this.hurt(o, b.dmg, b.owner, 'shot', Math.atan2(b.vy, b.vx));
+            if (src) {
+              const comboReach = this.deliverPower(src, o, b.el, b.dmg, b.knock ?? 0, !!b.area, { slot: b.slot ?? -1, projectile: !b.area, mark: !!b.mark });
+              if (b.form === 'blast' && !b.splashed) {
+                b.splashed = true;
+                this.splashAround(src, o, b, 52, 0.45, false, comboReach);
+              } else if (b.form === 'jet' && !b.splashed) {
+                b.splashed = true;
+                this.splashAround(src, o, b, 40, 0.25, true, comboReach);
+              } else if (b.form === 'chain' && !b.splashed) {
+                b.splashed = true;
+                const nxt = this.players
+                  .filter((q) => q !== o && q.alive && q.playing && !b.hit.includes(q.id) && this.hostile(src, q) && dist(q.x, q.y, o.x, o.y) < 140 && this.sight(o.x, o.y, q.x, q.y))
+                  .sort((a, c) => dist(a.x, a.y, o.x, o.y) - dist(c.x, c.y, o.x, o.y))[0];
+                if (nxt) {
+                  b.hit.push(nxt.id);
+                  this.deliverPower(src, nxt, b.el, Math.max(1, Math.round(b.dmg * 0.6)), b.knock ?? 0, false, { slot: b.slot ?? -1, projectile: true, mark: !!b.mark });
+                }
+              }
+              if (b.slot === 2 && !b.landed && !b.fromEcho) {
+                b.landed = true;
+                this.ultLand(src, o.x, o.y, b.el);
+              }
+            } else this.hurt(o, b.dmg, b.owner, 'shot', Math.atan2(b.vy, b.vx));
             if (!b.pierce) {
               b.life = 0;
               break;
@@ -3900,6 +4281,7 @@ export class Game {
         this.events.push({ type: 'deny', pid: b.owner, msg: 'Fora de alcance', x: b.x, y: b.y });
         this.events.push({ type: 'pend', x: b.x, y: b.y, el: b.plasma ? 'plasma' : b.el ?? 'basic' });
       }
+      if (b.life <= 0) this.landUltShot(b);
       // foguete e lança-granadas explodem ao bater ou no fim do alcance
       const bw = WEAPONS[b.weapon];
       if (bw.blast && b.life <= 0 && !b.el) this.explode(b.x, b.y + GUN_Y, bw.blast.r, bw.blast.dmg * (b.fromEcho ? ECHO_DAMAGE_MULT : 1), b.owner, b.fromEcho);

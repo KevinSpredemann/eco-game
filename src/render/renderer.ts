@@ -847,6 +847,16 @@ export class Renderer {
     const pc = (id: string) => game.players.find((p) => p.id === id);
     for (const e of events) {
       this.abilityFx.note(e);
+      if (this.abilityFx.kick > 0) {
+        // suprema caindo: tranco curto na câmera (não fica tremendo)
+        this.shake = Math.max(this.shake, this.abilityFx.kick);
+        this.abilityFx.kick = 0;
+      }
+      if (e.type === 'windup' && e.ult) {
+        const who = pc(e.pid);
+        this.text(e.x, e.y - 74, 'SUPREMA!', ELEMENT_COLOR[e.el as Element] ?? '#ffd23e', 22);
+        if (who && who.id === this.meId(game)) this.flash = Math.max(this.flash, 0.08);
+      }
       switch (e.type) {
         case 'pickup':
           this.burst(e.x, e.y, e.golden ? '#ffd23e' : '#5dff8a', e.golden ? 22 : 10, 160);
@@ -2229,6 +2239,7 @@ export class Renderer {
 
   private drawClones(game: Game, time: number) {
     const ctx = this.ctx;
+    this.abilityFx.drawUltZones(ctx, game.ultZones ?? [], time);
     for (const g of game.groves ?? []) {
       ctx.strokeStyle = hexA('#3dcc6a', 0.55);
       ctx.lineWidth = 2;

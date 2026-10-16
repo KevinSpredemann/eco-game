@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
 import { BASIC, kitOf, resolvedDamage } from '../src/game/elements';
+import { COMBO_WINDOW } from '../src/game/combos';
 import { acceptedLoadout, newProfile, owns } from '../src/game/economy';
 
 const STEP = 1 / 60;
@@ -141,6 +142,7 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     b.x = 560;
     b.y = 250;
     b.frozenT = 2;
+    b.comboT = COMBO_WINDOW;
     const before = b.hp;
     cold.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 40 && b.hp === before; i++) cold.step(STEP, { a: idle, b: idle });

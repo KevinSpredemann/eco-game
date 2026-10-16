@@ -4,6 +4,7 @@ import type { CastKind, Game, GameMode, Player } from '../game/sim';
 import type { Loadout } from '../game/balance';
 import type { PowerId } from '../game/powerups';
 import { WEAPONS, type WeaponId, type ItemId } from '../game/weapons';
+import { POWER_FORMS } from '../game/elements';
 
 export const EL_IDS = ['fire', 'ice', 'lightning', 'wind', 'nature', 'shadow', 'plasma'] as const;
 export const WEAPON_IDS: WeaponId[] = Object.keys(WEAPONS) as WeaponId[];
@@ -26,7 +27,7 @@ export interface LobbyPlayer {
 }
 
 /** versão do protocolo: o jogo e o servidor precisam falar a mesma (um app velho no celular não entra numa sala nova) */
-export const PROTO = 11;
+export const PROTO = 12;
 
 export interface RoomInfo {
   code: string;
@@ -116,6 +117,8 @@ export interface Snapshot {
   W: (number | string)[][];
   C: (number | string)[][];
   GR?: number[][];
+  /** rastro da suprema no chão */
+  UZ?: (number | string)[][];
   E: (number | string)[][];
   EM?: (number | string)[][];
   ED?: EchoDigest[];
@@ -266,11 +269,15 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
       r1(p.ctrlT),
       r1(p.rootT),
       r1(p.stunT),
+      r1(p.iceT),
+      r1(p.plasmaPrimeT),
+      r1(p.comboT),
     ]),
     F: g.fragments.map((f) => [f.id, r1(f.x), r1(f.y), f.golden ? 1 : 0]),
     W: g.powerups.map((w) => [w.id, w.kind, r1(w.x), r1(w.y), r1(w.age)]),
     C: g.clones.map((c) => [c.owner, r1(c.x), r1(c.y), r2(c.dir), c.decoy ? 1 : 0]),
     GR: g.groves.map((gr) => [gr.id, r1(gr.x), r1(gr.y), gr.r, r1(gr.t), gr.heal]),
+    UZ: g.ultZones.map((z) => [z.id, z.owner, r1(z.x), r1(z.y), z.r, EL_IDS.indexOf(z.el as (typeof EL_IDS)[number]), r2(z.t), r2(z.total), z.blown ? 1 : 0]),
     E: g.echoViews.map((e) => [e.key, r1(e.x), r1(e.y), r2(e.dir), (e.moving ? 1 : 0) | (e.active ? 2 : 0) | (e.disrupted ? 4 : 0) | (e.iced ? 8 : 0) | (e.expiring ? 16 : 0), r2(e.pulse), e.age, r2(e.warn ?? 0), r2(e.warnAng ?? 0), e.warnKind ?? 0, r1(e.offLeft ?? 0)]),
     EM: withEchoMeta ? g.echoViews.map((e) => [e.key, e.rec.playerId, e.rec.characterId, e.rec.color, e.rec.round]) : undefined,
     ED: withRoutes ? [...g.echoDigests.values()] : undefined,
@@ -278,7 +285,7 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     RL: withRoutes && g.phase === 'rewind' ? g.roundEchoLines : undefined,
     Z: g.arena.zones.map((_, i) => ({ off: '0', warn: '1', on: '2' })[g.zoneState(i)]).join(''),
     // el: elemento do poder (para o efeito certo também online); pl: 1 plasma, 2 ataque básico
-    B: g.bullets.map((b) => [b.id, r1(b.x), r1(b.y), Math.round(b.vx), Math.round(b.vy), WEAPON_IDS.indexOf(b.weapon), b.fromEcho ? 1 : 0, r2(b.life), b.owner === 'enemy' ? 1 : 0, b.el ? EL_IDS.indexOf(b.el) : -1, b.plasma ? 1 : b.basic ? 2 : 0, b.owner === 'enemy' ? '' : b.owner]),
+    B: g.bullets.map((b) => [b.id, r1(b.x), r1(b.y), Math.round(b.vx), Math.round(b.vy), WEAPON_IDS.indexOf(b.weapon), b.fromEcho ? 1 : 0, r2(b.life), b.owner === 'enemy' ? 1 : 0, b.el ? EL_IDS.indexOf(b.el) : -1, b.plasma ? 1 : b.basic ? 2 : 0, b.owner === 'enemy' ? '' : b.owner, b.form ? POWER_FORMS.indexOf(b.form) : -1]),
     BM: g.bombs.map((b) => [b.id, r1(b.x), r1(b.y), r1(b.tx), r1(b.ty), r2(b.t), b.pulse ? 1 : 0, b.ice ? 1 : 0]),
     M: g.mines.map((m) => [m.id, r1(m.x), r1(m.y), m.armT <= 0 ? 1 : 0]),
     T: g.turrets.map((t) => [t.id, t.owner, r1(t.x), r1(t.y), r2(t.aim), Math.ceil(t.hp)]),

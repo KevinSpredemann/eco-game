@@ -4,8 +4,10 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { KITS, kitOf, resolvedDamage } from '../src/game/elements';
-import { CONTROL_GRACE, ULT_CONTROL_BONUS, listSynergies } from '../src/game/combos';
+import { KITS, kitOf, mainElementOf, resolvedDamage } from '../src/game/elements';
+import { CASCADE_BONUS, COMBO_WINDOW, CONTROL_GRACE, TOCAIA_BONUS, ULT_CONTROL_BONUS, listSynergies } from '../src/game/combos';
+import { encodeSnapshot } from '../src/net/protocol';
+import { ClientGame } from '../src/net/clientGame';
 
 const STEP = 1 / 60;
 const KEYS = ['ability', 'skill', 'ult', 'bonus'] as const;
@@ -47,6 +49,8 @@ function duel(charId: string, d: number) {
     a.y = 360;
     a.energy = 100;
     a.ultCharge = 100;
+    a.powerCd.fill(0);
+    a.castT = 0;
   };
   return { g, a, b, log, run, refill };
 }
@@ -151,5 +155,138 @@ describe('combos no combate real', () => {
     const before = t.b.hp;
     t.run(press(2, 140), 60);
     expect(t.b.hp).toBeLessThan(before);
+  });
+
+  it('cada personagem fecha pelo menos um combo com Q, E ou F', () => {
+    const keys = ['Q', 'E', 'R', 'F'];
+    const missing: string[] = [];
+    const fails: string[] = [];
+    const table: string[] = [];
+    for (const id of Object.keys(KITS)) {
+      const rows = listSynergies(id, null).filter((row) => row.state === 'active' && row.slots.length === 2 && row.slots.every((s) => s === 0 || s === 1 || s === 3));
+      if (!rows.length) {
+        missing.push(id);
+        continue;
+      }
+      table.push(`${id} ${rows.map((r) => `${keys[r.slots[0]]}+${keys[r.slots[1]]}=${r.name}`).join(', ')}`);
+      let hit = false;
+      let label = rows[0].name;
+      for (const row of rows) {
+        if (hit) break;
+        const [i, j] = row.slots;
+        const pi = kitOf(id).powers[i];
+        const pj = kitOf(id).powers[j];
+        label = `${row.name} (${pi.name} → ${pj.name})`;
+        for (const d of [90, 140]) {
+          if ((pi.act === 'blink' && (pi.step ?? pi.range) < d) || (pj.act === 'blink' && (pj.step ?? pj.range) < d)) continue;
+          const t = duel(id, d);
+          t.run(press(i, pi.act === 'wall' ? d - 50 : d), 50);
+          t.refill();
+          t.run(press(j, pj.act === 'wall' ? d - 50 : d), 60);
+          if (t.log.combos.filter((c) => c.name === row.name).length === 1) hit = true;
+        }
+      }
+      if (!hit) fails.push(`${id} ${label}`);
+    }
+    expect(missing, table.join('\n')).toEqual([]);
+    expect(fails, table.join('\n')).toEqual([]);
+  });
+
+  it('Vortex: Q depois E é Cadeia de Plasma, uma vez, e some fora da janela', () => {
+    const t = duel('vortex', 90);
+    t.run(press(0, 90), 40);
+    expect(t.log.combos).toEqual([]);
+    expect(t.b.plasmaPrimeT).toBeGreaterThan(0.2);
+    expect(t.b.plasmaPrimeT).toBeLessThanOrEqual(COMBO_WINDOW);
+    t.a.powerCd[0] = 0;
+    t.a.energy = 100;
+    t.run(press(0, 90), 40);
+    expect(t.log.combos.filter((c) => c.name === 'Cadeia de Plasma')).toEqual([]);
+    expect(t.b.plasmaPrimeT).toBeGreaterThan(0);
+
+    const chain = duel('vortex', 90);
+    chain.run(press(0, 90), 40);
+    chain.refill();
+    const before = chain.b.hp;
+    chain.run(press(1, 90), 10);
+    const got = chain.log.combos.filter((c) => c.name === 'Cadeia de Plasma');
+    expect(got).toHaveLength(1);
+    expect(got[0].bonus).toBe(CASCADE_BONUS);
+    expect(before - chain.b.hp).toBe(resolvedDamage(kitOf('vortex').powers[1], 1) + CASCADE_BONUS);
+    expect(chain.b.plasmaPrimeT).toBe(0);
+    chain.refill();
+    chain.run(press(1, 90), 10);
+    expect(chain.log.combos.filter((c) => c.name === 'Cadeia de Plasma')).toHaveLength(1);
+
+    const late = duel('vortex', 90);
+    late.run(press(0, 90), 40);
+    late.run(idle, Math.ceil((late.b.plasmaPrimeT + 0.3) / STEP));
+    expect(late.b.plasmaPrimeT).toBe(0);
+    late.refill();
+    late.run(press(1, 90), 10);
+    expect(late.log.combos.some((c) => c.name === 'Cadeia de Plasma')).toBe(false);
+
+    const dry = duel('vortex', 90);
+    dry.a.energy = 0;
+    dry.run(press(0, 90), 1);
+    expect(dry.g.bullets.some((b) => b.el === 'plasma')).toBe(false);
+    expect(dry.b.plasmaPrimeT).toBe(0);
+
+    const back = duel('vortex', 90);
+    back.run(press(1, 90), 5);
+    back.refill();
+    back.run(press(0, 90), 40);
+    expect(back.log.combos.some((c) => c.name === 'Cadeia de Plasma')).toBe(false);
+    expect(back.log.combos.some((c) => c.name === 'Descarga')).toBe(true);
+
+    const row = encodeSnapshot(chain.g, false).P[1];
+    chain.b.plasmaPrimeT = 2.4;
+    const sent = encodeSnapshot(chain.g, false).P[1];
+    expect(sent.at(-2)).toBe(2.4);
+    expect(row.at(-2)).toBe(0);
+    expect(sent.at(-1)).toBe(row.at(-1));
+    const cg = new ClientGame({
+      you: 'a',
+      mode: 'duelo',
+      arena: 'lab',
+      roster: [
+        { id: 'a', char: 'vortex', skin: 'padrao', trail: 'nenhum', name: 'A', isBot: false },
+        { id: 'b', char: 'kael', skin: 'padrao', trail: 'nenhum', name: 'B', isBot: true },
+      ],
+    });
+    cg.applySnapshot(encodeSnapshot(chain.g, false), []);
+    expect(cg.players.find((p) => p.id === 'b')!.plasmaPrimeT).toBe(2.4);
+    expect(COMBO_WINDOW).toBeGreaterThanOrEqual(0.8);
+    expect(COMBO_WINDOW).toBeLessThanOrEqual(1.5);
+  });
+
+  it('Vexa: Q depois E é Tocaia, e o piscar prepara a Emboscada do golpe seguinte', () => {
+    const t = duel('vexa', 80);
+    t.run(press(0, 80), 40);
+    expect(t.b.markedT).toBeGreaterThan(0);
+    expect(t.log.combos).toEqual([]);
+    t.refill();
+    const before = t.b.hp;
+    t.run(press(1, 80), 8);
+    expect(t.log.combos.filter((c) => c.name === 'Tocaia')).toHaveLength(1);
+    expect(t.log.combos.filter((c) => c.name === 'Tocaia')[0].bonus).toBe(TOCAIA_BONUS);
+    expect(t.log.combos.some((c) => c.name === 'Emboscada')).toBe(false);
+    expect(before - t.b.hp).toBe(resolvedDamage(kitOf('vexa').powers[1], 1) + TOCAIA_BONUS);
+    expect(t.b.markedT).toBe(0);
+    expect(t.a.ambushT).toBeGreaterThan(0);
+    t.refill();
+    t.run(press(0, 80), 40);
+    expect(t.log.combos.filter((c) => c.name === 'Emboscada')).toHaveLength(1);
+    expect(t.log.combos.filter((c) => c.name === 'Tocaia')).toHaveLength(1);
+  });
+
+  it('o elemento do personagem segue o kit', () => {
+    expect(mainElementOf('vortex')).toBe('plasma');
+    expect(mainElementOf('vexa')).toBe('shadow');
+    expect(mainElementOf('nara')).toBe('nature');
+    expect(mainElementOf('kai')).toBe('ice');
+    expect(mainElementOf('lyra')).toBe('ice');
+    expect(mainElementOf('kael')).toBe('wind');
+    expect(mainElementOf('maya')).toBe('fire');
   });
 });

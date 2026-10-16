@@ -57,7 +57,7 @@ describe('combos com efeito de verdade', () => {
     expect(resolveReaction(q({ charId: 'leo', element: 'wind', aura: { burn: 0, frozen: 0, gust: 0, shock: 1 } }))?.name).not.toBe('Tempestade');
 
     const burn = resolveReaction(q({ element: 'fire', aura: { burn: 0, frozen: 0, gust: 0, shock: 0, root: 1 } }));
-    expect(burn).toMatchObject({ id: 'combustao', name: 'Combustão', bonus: COMBUST_BONUS, aoe: 64 });
+    expect(burn).toMatchObject({ id: 'combustao', name: 'Fissura Magmática', bonus: COMBUST_BONUS, aoe: 64 });
     expect(resolveReaction(q({ element: 'fire' }))).toBeNull();
 
     expect(resolveReaction(q({ element: 'plasma', aura: { burn: 0, frozen: 1, gust: 0, shock: 0 } }))).toMatchObject({ id: 'chill', name: 'Ruptura', bonus: 8 });
@@ -93,7 +93,7 @@ describe('combos com efeito de verdade', () => {
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle, c: idle, d: idle });
     untilHit(g, 'b', hb);
     const names = g.drainEvents().filter((e) => e.type === 'combo').map((e) => (e.type === 'combo' ? e.name : ''));
-    expect(names.filter((n) => n === 'Combustão')).toEqual(['Combustão']);
+    expect(names.filter((n) => n === 'Fissura Magmática')).toEqual(['Fissura Magmática']);
     expect(hb - b.hp).toBe(base + COMBUST_BONUS);
     expect(hc - c.hp).toBe(COMBUST_BONUS * 0.5);
     expect(d.hp).toBe(hd);
@@ -103,7 +103,7 @@ describe('combos com efeito de verdade', () => {
     const again = b.hp;
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle, c: idle, d: idle });
     untilHit(g, 'b', again);
-    const second = g.drainEvents().filter((e) => e.type === 'combo' && e.name === 'Combustão');
+    const second = g.drainEvents().filter((e) => e.type === 'combo' && e.name === 'Fissura Magmática');
     expect(second).toHaveLength(0);
     expect(again - b.hp).toBeGreaterThanOrEqual(base);
     expect(again - b.hp).toBeLessThan(base + COMBUST_BONUS);

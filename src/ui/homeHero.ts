@@ -5,6 +5,19 @@ import { WEAPONS, loadoutPrimary } from '../game/weapons';
 import { drawCharacter } from '../render/chars';
 import { accessoryBehind, drawAccessory } from '../render/accessories';
 import { dpr, hexA, studioSprite } from './portraits';
+import { ELEMENT_COLOR, mainElementOf, type Element } from '../game/elements';
+
+export { mainElementOf };
+
+interface Mote {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  max: number;
+  size: number;
+}
 
 /** Mesma conta de sempre: cerca de 78% da altura do palco, sem passar da largura. */
 export function heroFit(maxH: number, maxW: number, spanH: number, spanW: number) {
@@ -20,7 +33,9 @@ export class HomeHero {
   private phase = 0;
   private char: CharacterDef | null = null;
   private acc = 'nenhum';
-  private reduce = false;
+  reduce = false;
+  motes: Mote[] = [];
+  el: Element = 'wind';
 
   constructor(private cv: HTMLCanvasElement) {
     this.reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -28,7 +43,9 @@ export class HomeHero {
   }
 
   set(c: CharacterDef, acc: string, _weapon?: string) {
+    if (this.char?.id !== c.id) this.motes = [];
     this.char = c;
+    this.el = mainElementOf(c.id);
     this.acc = acc || 'nenhum';
     this.writeCaption();
   }
@@ -81,6 +98,7 @@ export class HomeHero {
     if (Math.abs(box.clientWidth - this.w) > 1 || Math.abs(box.clientHeight - this.h) > 1) this.fit();
     if (!this.w || !this.h || !this.char) return;
     this.phase += dt * (this.reduce ? 0 : 1.6);
+    stepMotes(this, dt);
     this.draw();
   }
 
@@ -170,6 +188,28 @@ export class HomeHero {
     const breath = this.reduce ? 1 : 1 + Math.sin(this.phase) * 0.012;
     const sway = this.reduce ? 0 : Math.sin(this.phase * 0.7) * 0.02;
     const footLocal = box.bottom;
+    const elCol = ELEMENT_COLOR[this.el];
+    // palco: disco de luz no chão na cor do elemento, com anel que respira
+    const platW = Math.min(bodyH * 0.36, maxW * 0.3);
+    const ring = this.reduce ? 0.5 : 0.5 + 0.5 * Math.sin(this.phase * 1.3);
+    const floor = g.createRadialGradient(originX, feetY + 4, 2, originX, feetY + 4, platW * 1.6);
+    floor.addColorStop(0, hexA(elCol, 0.28));
+    floor.addColorStop(0.5, hexA(col, 0.08));
+    floor.addColorStop(1, hexA(col, 0));
+    g.save();
+    g.translate(originX, feetY + 4);
+    g.scale(1, 0.22);
+    g.fillStyle = floor;
+    g.beginPath();
+    g.arc(0, 0, platW * 1.6, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = hexA(elCol, 0.25 + 0.25 * ring);
+    g.lineWidth = 3;
+    g.beginPath();
+    g.arc(0, 0, platW * (1 + 0.05 * ring), 0, Math.PI * 2);
+    g.stroke();
+    g.restore();
+    drawMotes(this, g, originX, feetY, bodyH, elCol, true);
     g.fillStyle = 'rgba(4, 2, 16, 0.28)';
     g.beginPath();
     g.ellipse(originX, feetY + 3, Math.min(bodyH * 0.26, maxW * 0.2), Math.min(14, bodyH * 0.035), 0, 0, Math.PI * 2);
@@ -185,8 +225,9 @@ export class HomeHero {
     g.fillRect(0, 0, this.w, this.h);
 
     const acc = accessoryById(this.acc);
+    const bob = this.reduce ? 0 : Math.sin(this.phase * 0.9) * Math.min(3, bodyH * 0.006);
     g.save();
-    g.translate(originX, originY + footLocal * s);
+    g.translate(originX, originY + footLocal * s - Math.max(0, bob));
     g.rotate(sway);
     g.scale(s, s * breath);
     g.translate(0, -footLocal);
@@ -194,17 +235,91 @@ export class HomeHero {
     g.imageSmoothingQuality = 'high';
     g.lineJoin = 'round';
     g.lineCap = 'round';
+    // contorno de luz (luz de trás) na cor do elemento: separa o personagem do fundo
+    // (só na arte em imagem: no desenho vetorial cada peça ganharia sombra própria)
+    if (img) {
+      g.shadowColor = hexA(elCol, 0.55);
+      g.shadowBlur = 22 * (this.cv.width / this.w);
+    }
     if (img) g.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight, img.naturalWidth, img.naturalHeight);
     else {
       if (accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
       drawCharacter(g, c, 'down', this.phase, false);
       if (!accessoryBehind(acc.kind)) drawAccessory(g, acc.kind, acc.color);
     }
+    g.shadowBlur = 0;
+    g.shadowColor = 'transparent';
     g.restore();
+    drawMotes(this, g, originX, feetY, bodyH, elCol, false);
   }
 }
 
 type InkBox = { top: number; bottom: number; left: number; right: number };
+
+// partículas do elemento em volta do personagem (poucas, lentas, sem disputar com os botões)
+function stepMotes(self: { motes: Mote[]; reduce: boolean; el: Element }, dt: number) {
+  if (self.reduce) {
+    self.motes.length = 0;
+    return;
+  }
+  for (const m of self.motes) {
+    m.life += dt;
+    m.x += m.vx * dt;
+    m.y += m.vy * dt;
+    if (self.el === 'wind') m.vx += Math.cos(m.life * 3) * 20 * dt;
+  }
+  self.motes = self.motes.filter((m) => m.life < m.max);
+  if (self.motes.length < 18 && Math.random() < dt * 9) {
+    const el = self.el;
+    const u = (Math.random() - 0.5) * 2;
+    self.motes.push(
+      el === 'fire'
+        ? { x: u * 0.32, y: -Math.random() * 0.15, vx: u * 6, vy: -38 - Math.random() * 30, life: 0, max: 2.2, size: 2.2 }
+        : el === 'ice'
+          ? { x: u * 0.3, y: -0.2 - Math.random() * 0.6, vx: 0, vy: -14 - Math.random() * 10, life: 0, max: 3, size: 3.2 }
+          : el === 'nature'
+            ? { x: u * 0.36, y: 0, vx: u * 10, vy: -16 - Math.random() * 12, life: 0, max: 1.8, size: 2.6 }
+            : { x: u * 0.4, y: -0.1 - Math.random() * 0.7, vx: 40 + Math.random() * 30, vy: -6, life: 0, max: 2.2, size: 2 },
+    );
+  }
+}
+
+function drawMotes(self: { motes: Mote[]; el: Element }, g: CanvasRenderingContext2D, cx: number, feetY: number, bodyH: number, col: string, back: boolean) {
+  self.motes.forEach((m, i) => {
+    if ((i % 2 === 0) !== back) return;
+    const k = m.life / m.max;
+    const a = Math.sin(Math.PI * Math.min(1, k)) * 0.75;
+    const x = cx + m.x * bodyH + m.vx * m.life * 0.4;
+    const y = feetY + m.y * bodyH + m.vy * m.life;
+    g.globalAlpha = a;
+    if (self.el === 'ice') {
+      // bolhas de água subindo
+      g.strokeStyle = hexA(col, 0.9);
+      g.lineWidth = 1.2;
+      g.beginPath();
+      g.arc(x, y, m.size, 0, Math.PI * 2);
+      g.stroke();
+    } else if (self.el === 'nature') {
+      // poeira e pedrinhas
+      g.fillStyle = i % 3 ? '#c99a52' : '#7a5228';
+      g.fillRect(x, y, m.size, m.size);
+    } else if (self.el === 'fire') {
+      g.fillStyle = i % 2 ? '#ffb347' : '#ff5a1e';
+      g.beginPath();
+      g.arc(x, y, m.size * (1 - k * 0.6), 0, Math.PI * 2);
+      g.fill();
+    } else {
+      // riscos de vento
+      g.strokeStyle = hexA(col, 0.8);
+      g.lineWidth = 1.4;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x - 14, y + 1);
+      g.stroke();
+    }
+  });
+  g.globalAlpha = 1;
+}
 
 const inkCache = new Map<string, InkBox>();
 const FALLBACK: InkBox = { top: -78, bottom: 6, left: -20, right: 20 };

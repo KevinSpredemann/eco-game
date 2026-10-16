@@ -127,7 +127,7 @@ const MINOR = [0, 3, 5, 7, 10];
 const DORIAN = [0, 2, 3, 7, 9];
 const PHRYG = [0, 1, 5, 7, 8];
 
-export const ARENAS: ArenaDef[] = [
+const ALL_ARENAS: ArenaDef[] = [
   {
     id: 'lab',
     name: 'Laboratório Sombrio',
@@ -172,8 +172,8 @@ export const ARENAS: ArenaDef[] = [
       ],
     ],
     spawns: [
-      { x: 90, y: 360 },
-      { x: 1190, y: 360 },
+      { x: 90, y: 220 },
+      { x: 1190, y: 220 },
       { x: 640, y: 150 },
       { x: 640, y: 570 },
       { x: 350, y: 90 },
@@ -783,8 +783,19 @@ export const ARENAS: ArenaDef[] = [
   ...STUDIO_ARENAS,
 ];
 
+/** Mapas de ilhas ligadas por pontes estreitas ("tubos"): saíram da escolha de mapa. */
+export const RETIRED_ARENAS: ReadonlySet<string> = new Set(['cidade', 'recife']);
+
+/** Mapas que dá para escolher e sortear (offline, sala e servidor). */
+export const ARENAS: ArenaDef[] = ALL_ARENAS.filter((a) => !RETIRED_ARENAS.has(a.id));
+
 export function getArena(id: string): ArenaDef {
-  return ARENAS.find((a) => a.id === id) ?? ARENAS[0];
+  return ALL_ARENAS.find((a) => a.id === id) ?? ARENAS[0];
+}
+
+/** id salvo de um mapa que saiu vira o primeiro mapa da lista */
+export function playableArena(id: string): string {
+  return ARENAS.some((a) => a.id === id) ? id : ARENAS[0].id;
 }
 
 // ---- geometria dinâmica (pura, usada pela simulação, IA e render) ----

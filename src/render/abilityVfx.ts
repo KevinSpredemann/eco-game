@@ -24,6 +24,7 @@ export interface VfxBullet {
   plasma?: boolean;
   basic?: boolean;
   fromEcho?: boolean;
+  form?: string;
 }
 
 export interface VfxImpact {
@@ -53,9 +54,10 @@ interface LiveShot {
   /** últimas posições (rastro) */
   trail: number[];
   seed: number;
+  form?: string;
 }
 
-type PKind = 'spark' | 'ember' | 'flake' | 'leaf' | 'smoke' | 'shard' | 'dot' | 'star';
+type PKind = 'spark' | 'ember' | 'flake' | 'leaf' | 'smoke' | 'shard' | 'dot' | 'star' | 'drop' | 'rock';
 interface Spark {
   x: number;
   y: number;
@@ -74,7 +76,18 @@ interface Spark {
   drag: number;
 }
 
-type FxKind = 'area' | 'flash' | 'bolt' | 'windup' | 'blink' | 'combo' | 'fizzle' | 'shock';
+type FxKind = 'area' | 'flash' | 'bolt' | 'windup' | 'blink' | 'combo' | 'fizzle' | 'shock' | 'telegraph' | 'ultcharge' | 'ultburst' | 'ripple' | 'spikes';
+
+/** rastro da suprema no chão, como vem da simulação (ou do retrato online) */
+export interface VfxUltZone {
+  x: number;
+  y: number;
+  r: number;
+  el: string;
+  t: number;
+  total: number;
+  blown?: boolean;
+}
 interface Fx {
   kind: FxKind;
   x: number;
@@ -95,10 +108,10 @@ export function elementCore(el: string): { core: string; edge: string } {
   const map: Record<string, { core: string; edge: string }> = {
     lightning: { core: '#f4fbff', edge: '#3ee8ff' },
     fire: { core: '#ffd27a', edge: '#ff4a1a' },
-    ice: { core: '#f4fbff', edge: '#7ad7ff' },
+    ice: { core: '#e6f6ff', edge: '#2f9bff' },
     plasma: { core: '#f0c6ff', edge: '#d24cff' },
     wind: { core: '#e8fff8', edge: '#3ddec0' },
-    nature: { core: '#d8ffc4', edge: '#2fbf6a' },
+    nature: { core: '#f1d9a8', edge: '#b07a34' },
     shadow: { core: '#d8d0ff', edge: '#8a7cff' },
     basic: { core: '#ffffff', edge: '#bfe9ff' },
   };
@@ -107,7 +120,7 @@ export function elementCore(el: string): { core: string; edge: string } {
 
 /** cores das reações (mistura dos dois elementos do combo) */
 const COMBO_COLORS: Record<string, [string, string]> = {
-  shatter: ['#9fe8ff', '#3ee8ff'],
+  shatter: ['#2f9bff', '#3ee8ff'],
   steam: ['#ffffff', '#ffb38a'],
   cinder: ['#ff7a3a', '#7dffe0'],
   storm: ['#3ee8ff', '#7dffe0'],
@@ -117,9 +130,16 @@ const COMBO_COLORS: Record<string, [string, string]> = {
   'ult-control': ['#ffe9a0', '#ffd23e'],
   'mark-root': ['#5dff8a', '#2fbf6a'],
   'root-aoe': ['#5dff8a', '#b7d39a'],
-  combustao: ['#ff5a1e', '#ffd27a'],
+  combustao: ['#ff5a1e', '#b07a34'],
   execute: ['#ffffff', '#ff4a5a'],
   'field-shot': ['#9ad7ff', '#ffffff'],
+  freeze: ['#bfeaff', '#2f9bff'],
+  vortex: ['#2f9bff', '#7dffe0'],
+  shards: ['#b07a34', '#7dffe0'],
+  frostline: ['#9fe8ff', '#c99a52'],
+  charged: ['#ffe14a', '#d24cff'],
+  cascade: ['#d24cff', '#ffe9ff'],
+  ambush: ['#8a7cff', '#c4b6ff'],
 };
 
 /** número "aleatório" estável por semente (raio que não treme demais) */
@@ -141,6 +161,8 @@ export class AbilityVfx {
   private fx: Fx[] = [];
   private seed = 1;
   reduced = false;
+  /** pedido de tremor de câmera (o renderer lê e zera). Só nos golpes grandes. */
+  kick = 0;
 
   cap() {
     return this.reduced ? VFX_CAP_LOW : VFX_CAP;
@@ -156,7 +178,7 @@ export class AbilityVfx {
   }
 
   /** eventos reais da simulação → efeitos no mesmo ponto */
-  note(e: { type: string; x?: number; y?: number; k?: string; msg?: string; skill?: string; pts?: number[]; name?: string; el?: string; r?: number; aoe?: boolean; t?: number; x0?: number; y0?: number; x1?: number; y1?: number; id?: string; vfx?: string; wall?: boolean; ang?: number }) {
+  note(e: { type: string; x?: number; y?: number; k?: string; msg?: string; skill?: string; pts?: number[]; name?: string; el?: string; r?: number; aoe?: boolean; t?: number; x0?: number; y0?: number; x1?: number; y1?: number; id?: string; vfx?: string; wall?: boolean; ang?: number; ult?: boolean | string; tx?: number; ty?: number; lane?: boolean; form?: string }) {
     const x = e.x ?? 0;
     const y = e.y ?? 0;
     if (e.type === 'dmg' && (e.k === 'hp' || e.k === 'shield')) {
@@ -179,6 +201,17 @@ export class AbilityVfx {
       this.impactFx(x, y - BODY, e.el, !!e.aoe);
     } else if (e.type === 'pend' && e.el) {
       this.fizzle(x, y, e.el);
+    } else if (e.type === 'windup' && e.el && e.ult === true) {
+      // suprema: coluna de energia em quem prepara + aviso no chão onde vai cair
+      const t = Math.max(0.3, e.t ?? 0.5);
+      this.addFx({ kind: 'ultcharge', x, y, r: 34, el: e.el, t: 0, max: t + 0.15 });
+      if (typeof e.tx === 'number' && typeof e.ty === 'number') {
+        // projétil: faixa no chão na direção do tiro (cai no primeiro que acertar); área: círculo no ponto
+        if (e.lane) this.addFx({ kind: 'telegraph', x, y, x2: e.tx, y2: e.ty, r: 22, el: e.el, t: 0, max: t + 0.2 });
+        else this.addFx({ kind: 'telegraph', x: e.tx, y: e.ty, r: Math.min(e.r ?? 90, 170), el: e.el, t: 0, max: t + 0.2 });
+      }
+    } else if (e.type === 'ultland' && e.el) {
+      this.ultBurst(x, y, e.el, e.r ?? 90);
     } else if (e.type === 'windup' && e.el) {
       this.addFx({ kind: 'windup', x, y: y - BODY, r: 22, el: e.el, t: 0, max: Math.max(0.25, e.t ?? 0.5) });
     } else if (e.type === 'blink' && e.el) {
@@ -189,6 +222,10 @@ export class AbilityVfx {
       this.burst(x, y - 10, e.el, 8, 140, 0.4);
     } else if (e.type === 'skill' && e.skill) {
       const el = e.skill;
+      if (e.form === 'pillar' || e.form === 'fissure') this.addFx({ kind: 'spikes', x, y: y + 10, r: Math.min(e.r ?? 48, 90), el, t: 0, max: 0.55 });
+      else if (e.form === 'breath' || e.form === 'gust') this.addFx({ kind: 'shock', x, y: y - BODY, r: Math.min((e.r ?? 90) * 0.45, 70), el, t: 0, max: 0.28 });
+      else if (e.form === 'whirl') this.addFx({ kind: 'ripple', x, y: y + 8, r: Math.min(e.r ?? 72, 110), el, t: 0, max: 0.55 });
+      else if (e.form === 'wave') this.addFx({ kind: 'ripple', x, y: y + 8, r: Math.min(e.r ?? 60, 90), el, t: 0, max: 0.45 });
       if ((e.r ?? 0) > 30 && el in ELEMENT_COLOR) {
         // área: desenha a área real no chão e a animação do elemento dentro dela
         this.addFx({ kind: 'area', x, y, r: Math.min(e.r!, 160), el, t: 0, max: 0.75 });
@@ -216,9 +253,10 @@ export class AbilityVfx {
         prev.x = b.x;
         prev.y = b.y;
         prev.el = el || prev.el;
+        prev.form = b.form || prev.form;
         prev.trail.unshift(b.x, b.y);
         if (prev.trail.length > 16) prev.trail.length = 16;
-      } else this.live.set(b.id, { x: b.x, y: b.y, px: b.x - b.vx / 60, py: b.y - b.vy / 60, el, trail: [b.x, b.y], seed: this.seed++ });
+      } else this.live.set(b.id, { x: b.x, y: b.y, px: b.x - b.vx / 60, py: b.y - b.vy / 60, el, form: b.form, trail: [b.x, b.y], seed: this.seed++ });
     }
     for (const id of this.live.keys()) if (!seen.has(id)) this.live.delete(id);
   }
@@ -276,6 +314,7 @@ export class AbilityVfx {
     }
     // efeitos de chão primeiro (áreas), depois projéteis, depois brilhos
     for (const f of this.fx) if (f.kind === 'area') this.drawArea(ctx, f, time);
+    for (const f of this.fx) if (f.kind === 'telegraph' || f.kind === 'ripple' || f.kind === 'spikes') this.drawGround(ctx, f, time);
     for (const s of this.live.values()) {
       if (!s.el) continue;
       this.drawTrail(ctx, s);
@@ -291,7 +330,7 @@ export class AbilityVfx {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    for (const f of this.fx) if (f.kind !== 'area') this.drawFx(ctx, f, time);
+    for (const f of this.fx) if (f.kind !== 'area' && f.kind !== 'telegraph' && f.kind !== 'ripple' && f.kind !== 'spikes') this.drawFx(ctx, f, time);
     for (const im of this.impacts) this.drawImpact(ctx, im);
     this.drawSparks(ctx);
     ctx.restore();
@@ -299,7 +338,7 @@ export class AbilityVfx {
   }
 
   /** Estado no alvo. O tempo vem do relógio real (burnT, frozenT, rootT, slowT…). */
-  drawStatus(ctx: CanvasRenderingContext2D, p: { x: number; y: number; burnT: number; frozenT: number; slowT: number; rootT: number; stunT: number; plasmaT?: number; shockT?: number; gustT?: number; markedT?: number }, time: number) {
+  drawStatus(ctx: CanvasRenderingContext2D, p: { x: number; y: number; burnT: number; frozenT: number; slowT: number; rootT: number; stunT: number; plasmaT?: number; shockT?: number; gustT?: number; markedT?: number; iceT?: number }, time: number) {
     const low = this.reduced;
     ctx.save();
     // raízes: crescem do chão e prendem os pés; somem ao acabar
@@ -308,6 +347,11 @@ export class AbilityVfx {
       const fade = Math.min(1, p.rootT / 0.3);
       ctx.globalAlpha = fade;
       const n = low ? 3 : 6;
+      // Terra: espinhos de pedra em volta dos pés + raízes subindo
+      for (let i = 0; i < (low ? 3 : 5); i++) {
+        const a0 = (i / 5) * Math.PI * 2 + 0.3;
+        this.spike(ctx, p.x + Math.cos(a0) * 16, p.y + 4 + Math.sin(a0) * 5, 5, 14 * grow);
+      }
       for (let i = 0; i < n; i++) {
         const side = i % 2 ? 1 : -1;
         const a0 = (i / n) * Math.PI * 2;
@@ -323,23 +367,50 @@ export class AbilityVfx {
       if (!low) for (let i = 0; i < 3; i++) this.leafAt(ctx, p.x + (i - 1) * 9, p.y - 10 * grow - i * 3, time + i);
       ctx.globalAlpha = 1;
     }
-    // congelado: casca de gelo nas pernas + flocos; lento: anel de gelo nos pés
-    if (p.frozenT > 0) {
-      const a = 0.35 + 0.15 * Math.sin(time * 4);
-      ctx.fillStyle = `rgba(160,230,255,${a})`;
-      ctx.strokeStyle = 'rgba(230,250,255,0.9)';
-      ctx.lineWidth = 1.5;
+    // congelado (Água + Água): bloco de gelo em volta do corpo
+    if ((p.iceT ?? 0) > 0) {
+      const a = Math.min(1, (p.iceT ?? 0) / 0.2);
+      ctx.globalAlpha = 0.85 * a;
+      ctx.fillStyle = 'rgba(190,235,255,0.55)';
+      ctx.strokeStyle = '#f4fbff';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(p.x - 16, p.y + 2);
-      ctx.lineTo(p.x - 12, p.y - 22);
-      ctx.lineTo(p.x - 3, p.y - 30);
-      ctx.lineTo(p.x + 6, p.y - 24);
-      ctx.lineTo(p.x + 15, p.y - 28);
-      ctx.lineTo(p.x + 16, p.y + 2);
+      ctx.moveTo(p.x - 20, p.y + 4);
+      ctx.lineTo(p.x - 22, p.y - 40);
+      ctx.lineTo(p.x - 8, p.y - 58);
+      ctx.lineTo(p.x + 12, p.y - 54);
+      ctx.lineTo(p.x + 22, p.y - 34);
+      ctx.lineTo(p.x + 20, p.y + 4);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      if (!low && Math.random() < 0.25) this.spawn(p.x + (Math.random() - 0.5) * 30, p.y - 20 - Math.random() * 20, (Math.random() - 0.5) * 20, -10, 0.8, '#e8fbff', 2.2, 'flake', 20, 0);
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 14, p.y - 36);
+      ctx.lineTo(p.x - 4, p.y - 48);
+      ctx.moveTo(p.x + 6, p.y - 20);
+      ctx.lineTo(p.x + 14, p.y - 30);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    // molhado (Água): brilho azul escorrendo, gotas caindo e poça nos pés
+    if (p.frozenT > 0) {
+      ctx.fillStyle = 'rgba(47,155,255,0.28)';
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y + 3, 20, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(124,196,255,${0.45 + 0.2 * Math.sin(time * 5)})`;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const dx = (i - 1) * 8;
+        const ph = (time * 1.6 + i * 0.37) % 1;
+        ctx.beginPath();
+        ctx.moveTo(p.x + dx, p.y - 34 + ph * 10);
+        ctx.lineTo(p.x + dx, p.y - 26 + ph * 14);
+        ctx.stroke();
+      }
+      if (!low && Math.random() < 0.3) this.spawn(p.x + (Math.random() - 0.5) * 24, p.y - 26, (Math.random() - 0.5) * 10, 20, 0.5, '#7cc4ff', 2, 'drop', 300, 0);
     } else if (p.slowT > 0) {
       ctx.strokeStyle = 'rgba(160,230,255,0.6)';
       ctx.lineWidth = 2;
@@ -454,6 +525,106 @@ export class AbilityVfx {
     ctx.fill();
   }
 
+  /** Silhueta do comportamento. A cor continua sendo a do elemento. */
+  private drawForm(ctx: CanvasRenderingContext2D, s: LiveShot, time: number, core: string, edge: string): boolean {
+    const f = s.form;
+    if (f === 'bolt' || f === 'chain' || f === 'beam') {
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = f === 'beam' ? 3.2 : 2;
+      ctx.beginPath();
+      ctx.moveTo(f === 'beam' ? -30 : -16, 0);
+      ctx.lineTo(8, 0);
+      ctx.stroke();
+      if (f === 'chain') {
+        ctx.beginPath();
+        ctx.moveTo(2, 0);
+        ctx.lineTo(14, -7);
+        ctx.stroke();
+      }
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(6, 0, f === 'beam' ? 2.2 : 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      return true;
+    }
+    if (f === 'blast') {
+      const r = 7 + Math.sin(time * 18 + s.seed) * 1.1;
+      ctx.fillStyle = edge;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(-1, 0, r * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      return true;
+    }
+    if (f === 'wave') {
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(-2, 0, 12, -1.15, 1.15);
+      ctx.stroke();
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(-8, 0, 7, -0.9, 0.9);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      return true;
+    }
+    if (f === 'blade') {
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 2.4;
+      const sway = Math.sin(time * 9 + s.seed) * 5;
+      ctx.beginPath();
+      ctx.moveTo(-16, sway * 0.2);
+      ctx.quadraticCurveTo(-4, -9 + sway, 12, sway * 0.35);
+      ctx.stroke();
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.moveTo(-10, 2);
+      ctx.quadraticCurveTo(0, 8 - sway * 0.4, 8, 1);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      return true;
+    }
+    if (f === 'fissure') {
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-14, 3);
+      ctx.lineTo(-2, -2);
+      ctx.lineTo(12, 4);
+      ctx.stroke();
+      return true;
+    }
+    if (f === 'rock') {
+      ctx.fillStyle = edge;
+      ctx.beginPath();
+      ctx.moveTo(7, 0);
+      ctx.lineTo(0, 6);
+      ctx.lineTo(-8, 1);
+      ctx.lineTo(-3, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = core;
+      ctx.fillRect(-2, -2, 3, 3);
+      return true;
+    }
+    if (f === 'jet') {
+      ctx.fillStyle = edge;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 9, 3.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(3, -1, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+      return true;
+    }
+    return false;
+  }
+
   private drawShot(ctx: CanvasRenderingContext2D, s: LiveShot, time: number) {
     const { core, edge } = elementCore(s.el);
     const ang = Math.atan2(s.y - s.py, s.x - s.px);
@@ -466,6 +637,10 @@ export class AbilityVfx {
     // poderes um pouco maiores que um tiro comum: dá para ver o que vem
     if (s.el !== 'basic') ctx.scale(1.7, 1.7);
     else ctx.scale(1.3, 1.3);
+    if (s.form && this.drawForm(ctx, s, time, core, edge)) {
+      ctx.restore();
+      return;
+    }
     if (s.el === 'lightning') {
       // núcleo branco-azulado com ramificações elétricas que mudam a cada quadro
       ctx.strokeStyle = edge;
@@ -499,23 +674,22 @@ export class AbilityVfx {
       ctx.arc(2, 0, 3.4, 0, Math.PI * 2);
       ctx.fill();
     } else if (s.el === 'ice') {
-      // estilhaço de gelo girando, com faceta clara
-      ctx.rotate(time * 6 + s.seed);
-      ctx.fillStyle = 'rgba(160,230,255,0.85)';
-      ctx.strokeStyle = '#f4fbff';
-      ctx.lineWidth = 1.2;
+      // Água: esfera que balança (gota esticada pela velocidade) com brilho e cauda líquida
+      const w = Math.sin(time * 18 + s.seed) * 1.2;
+      ctx.fillStyle = 'rgba(47,155,255,0.9)';
       ctx.beginPath();
-      ctx.moveTo(8, 0);
-      ctx.lineTo(0, -5);
-      ctx.lineTo(-8, 0);
-      ctx.lineTo(0, 5);
-      ctx.closePath();
+      ctx.moveTo(7, 0);
+      ctx.bezierCurveTo(7, -6 - w, -4, -6 + w, -14, 0);
+      ctx.bezierCurveTo(-4, 6 - w, 7, 6 + w, 7, 0);
       ctx.fill();
-      ctx.stroke();
+      ctx.fillStyle = 'rgba(160,215,255,0.85)';
       ctx.beginPath();
-      ctx.moveTo(0, -7);
-      ctx.lineTo(0, 7);
-      ctx.stroke();
+      ctx.ellipse(1, 0, 4.5, 3.6 + w * 0.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(3, -1.6, 1.4, 0, Math.PI * 2);
+      ctx.fill();
     } else if (s.el === 'plasma') {
       // núcleo roxo pulsando com anel que "distorce"
       const r = 6 + Math.sin(time * 14) * 1.4;
@@ -544,21 +718,24 @@ export class AbilityVfx {
       }
       ctx.globalAlpha = 1;
     } else if (s.el === 'nature') {
-      // semente com folhas girando em espiral
-      ctx.fillStyle = '#6b4a2a';
+      // Terra: pedra que gira no ar com uma semente verde presa (a raiz sai dela)
+      ctx.rotate(time * 7 + s.seed);
+      ctx.fillStyle = '#8a5f2c';
+      ctx.strokeStyle = '#f1d9a8';
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.ellipse(0, 0, 5, 3.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#5dff8a';
-      for (let i = 0; i < 2; i++) {
-        ctx.save();
-        ctx.rotate(time * 8 + i * Math.PI);
-        ctx.translate(7, 0);
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 4, 2, 0.4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const rr = 6 + hash(s.seed * 7 + i) * 2.5;
+        ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
       }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#5dff8a';
+      ctx.beginPath();
+      ctx.ellipse(2, -1, 2.4, 1.4, 0.5, 0, Math.PI * 2);
+      ctx.fill();
     } else if (s.el === 'shadow') {
       ctx.fillStyle = 'rgba(20,10,40,0.9)';
       ctx.beginPath();
@@ -592,9 +769,9 @@ export class AbilityVfx {
     const vy = (s.y - s.py) * 4;
     const j = (n: number) => (Math.random() - 0.5) * n;
     if (s.el === 'fire') this.spawn(s.x + j(6), s.y + j(6), -vx * 0.2 + j(30), -vy * 0.2 - 30, 0.45, Math.random() < 0.5 ? '#ffb347' : '#ff5a1e', 2.4, 'ember', -50, 1);
-    else if (s.el === 'ice') this.spawn(s.x + j(8), s.y + j(8), j(30), j(30), 0.6, '#e8fbff', 2, 'flake', 10, 1.5);
+    else if (s.el === 'ice') this.spawn(s.x + j(8), s.y + j(8), j(30) - vx * 0.1, j(20), 0.5, Math.random() < 0.6 ? '#7cc4ff' : '#e6f6ff', 2.2, 'drop', 180, 1.5);
     else if (s.el === 'lightning') this.spawn(s.x + j(10), s.y + j(10), j(120), j(120), 0.18, '#bff8ff', 1.6, 'spark', 0, 2);
-    else if (s.el === 'nature') this.spawn(s.x + j(8), s.y + j(8), j(30), 20, 0.7, Math.random() < 0.7 ? '#5dff8a' : '#2fbf6a', 3, 'leaf', 40, 1);
+    else if (s.el === 'nature') this.spawn(s.x + j(8), s.y + j(8), j(30), 10, 0.6, Math.random() < 0.6 ? 'rgba(176,122,52,0.7)' : 'rgba(220,190,140,0.6)', 4, 'smoke', -10, 1);
     else if (s.el === 'plasma') this.spawn(s.x + j(10), s.y + j(10), j(40), j(40), 0.4, '#e9a8ff', 2, 'dot', 0, 2);
     else if (s.el === 'shadow') this.spawn(s.x + j(6), s.y + j(6), j(20), -10, 0.5, 'rgba(60,30,110,0.8)', 5, 'smoke', -10, 1);
     else if (s.el === 'wind') this.spawn(s.x + j(10), s.y + j(10), -vx * 0.3, -vy * 0.3, 0.3, '#c8fff0', 1.6, 'dot', 0, 3);
@@ -608,26 +785,33 @@ export class AbilityVfx {
       this.burst(x, y, 'fire', Math.round(14 * n), 220, 0.5, 'ember', -60);
       this.burst(x, y, 'smoke', Math.round(4 * n), 40, 0.8, 'smoke', -30);
     } else if (el === 'ice') {
-      this.addFx({ kind: 'shock', x, y, r: 24, el, t: 0, max: 0.3 });
-      this.burst(x, y, 'ice', Math.round(12 * n), 200, 0.55, 'shard', 160);
+      // respingo: coroa de gotas que cai e uma onda no chão
+      this.addFx({ kind: 'shock', x, y, r: 26, el, t: 0, max: 0.3 });
+      this.addFx({ kind: 'ripple', x, y: y + BODY, r: 40, el, t: 0, max: 0.6 });
+      this.burst(x, y, 'ice', Math.round(14 * n), 200, 0.6, 'drop', 420);
     } else if (el === 'lightning') {
       this.addFx({ kind: 'flash', x, y, r: 34, el, t: 0, max: 0.14 });
       this.addFx({ kind: 'bolt', x, y, r: 46, el, t: 0, max: 0.22 });
       this.burst(x, y, 'lightning', Math.round(12 * n), 260, 0.25, 'spark', 0);
     } else if (el === 'wind') {
-      this.addFx({ kind: 'shock', x, y, r: 34, el, t: 0, max: 0.35 });
-      this.burst(x, y, 'wind', Math.round(10 * n), 220, 0.35, 'dot', 0);
+      this.addFx({ kind: 'shock', x, y, r: 34, el, t: 0, max: 0.28 });
+      this.addFx({ kind: 'ripple', x, y: y + BODY, r: 48, el, t: 0, max: 0.45 });
+      this.burst(x, y, 'wind', Math.round(10 * n), 260, 0.35, 'dot', 0);
     } else if (el === 'nature') {
+      // pedra estoura em lascas + poeira; espinhos saem do chão no ponto
       this.addFx({ kind: 'shock', x, y, r: 22, el, t: 0, max: 0.3 });
-      this.burst(x, y, 'nature', Math.round(10 * n), 140, 0.8, 'leaf', 120);
-      this.burst(x, y + BODY - 2, '#6b4a2a', Math.round(6 * n), 90, 0.5, 'dot', 260);
+      this.addFx({ kind: 'spikes', x, y: y + BODY, r: 26, el, t: 0, max: 0.55 });
+      this.burst(x, y, '#8a5f2c', Math.round(9 * n), 170, 0.6, 'rock', 380);
+      this.burst(x, y + BODY - 4, 'rgba(200,170,120,0.6)', Math.round(5 * n), 60, 0.8, 'smoke', -10);
     } else if (el === 'plasma') {
       this.addFx({ kind: 'shock', x, y, r: 40, el, t: 0, max: 0.4 });
       this.addFx({ kind: 'flash', x, y, r: 26, el, t: 0, max: 0.14 });
       this.burst(x, y, 'plasma', Math.round(14 * n), 240, 0.45, 'dot', 0);
     } else if (el === 'shadow') {
-      this.addFx({ kind: 'shock', x, y, r: 26, el, t: 0, max: 0.35 });
-      this.burst(x, y, 'smoke', Math.round(8 * n), 80, 0.7, 'smoke', -20);
+      this.addFx({ kind: 'flash', x, y, r: 22, el, t: 0, max: 0.16 });
+      this.addFx({ kind: 'shock', x, y, r: 18, el, t: 0, max: 0.28 });
+      this.burst(x, y, '#8a7cff', Math.round(8 * n), 180, 0.4, 'spark', 0);
+      this.burst(x, y, 'smoke', Math.round(6 * n), 50, 0.7, 'smoke', -20);
     } else {
       this.burst(x, y, 'basic', 5, 120, 0.25, 'spark', 0);
     }
@@ -636,7 +820,7 @@ export class AbilityVfx {
   /** projétil que não acertou: dissipa no lugar (sem fingir acerto) */
   private fizzle(x: number, y: number, el: string) {
     this.addFx({ kind: 'fizzle', x, y, r: 12, el, t: 0, max: 0.3 });
-    this.burst(x, y, el, 5, 70, 0.3, el === 'fire' ? 'ember' : el === 'ice' ? 'flake' : 'dot', 0);
+    this.burst(x, y, el, 5, 70, 0.3, el === 'fire' ? 'ember' : el === 'ice' ? 'drop' : el === 'nature' ? 'rock' : 'dot', el === 'ice' || el === 'nature' ? 300 : 0);
   }
 
   /** combo fechado: efeito próprio de cada reação, maior que um golpe comum */
@@ -646,6 +830,30 @@ export class AbilityVfx {
     this.burst(x, y, a, 14, 300, 0.55, 'spark', 0);
     this.burst(x, y, b, 10, 200, 0.6, id === 'shatter' ? 'shard' : id === 'steam' ? 'smoke' : id.includes('root') ? 'leaf' : 'dot', id === 'shatter' ? 180 : 0);
     if (id === 'storm' || id === 'arc' || id === 'shatter') this.addFx({ kind: 'bolt', x, y, r: 70, el: 'lightning', t: 0, max: 0.3 });
+    if (id === 'freeze') this.burst(x, y, '#e6f6ff', 12, 220, 0.7, 'shard', 200);
+    if (id === 'vortex') this.addFx({ kind: 'area', x, y: y + BODY, r: 96, el: 'wind', t: 0, max: 0.7 });
+    if (id === 'cinder') this.addFx({ kind: 'area', x, y: y + BODY, r: 80, el: 'fire', t: 0, max: 0.8 });
+    if (id === 'shards') this.burst(x, y, '#8a5f2c', 14, 340, 0.6, 'rock', 120);
+    if (id === 'combustao') {
+      this.addFx({ kind: 'spikes', x, y: y + BODY, r: 60, el: 'fire', t: 0, max: 0.6 });
+      this.burst(x, y, 'fire', 14, 260, 0.6, 'ember', -40);
+    }
+    if (id === 'frostline') {
+      this.addFx({ kind: 'spikes', x, y: y + BODY, r: 64, el: 'ice', t: 0, max: 0.6 });
+      this.burst(x, y, '#9fe8ff', 10, 200, 0.5, 'shard', 180);
+    }
+    if (id === 'charged') {
+      this.addFx({ kind: 'shock', x, y, r: 70, el: 'plasma', t: 0, max: 0.4 });
+      this.addFx({ kind: 'bolt', x, y, r: 64, el: 'lightning', t: 0, max: 0.28 });
+    }
+    if (id === 'cascade') {
+      this.addFx({ kind: 'shock', x, y, r: 72, el: 'plasma', t: 0, max: 0.45 });
+      this.burst(x, y, '#e9a8ff', 16, 280, 0.5, 'spark', 0);
+    }
+    if (id === 'ambush') {
+      this.addFx({ kind: 'flash', x, y, r: 36, el: 'shadow', t: 0, max: 0.2 });
+      this.burst(x, y, '#8a7cff', 12, 240, 0.45, 'spark', 0);
+    }
   }
 
   // ================================================================== desenho dos efeitos
@@ -698,33 +906,41 @@ export class AbilityVfx {
         ctx.stroke();
       }
     } else if (f.el === 'ice') {
-      // estrela de gelo no chão
+      // onda de água abrindo em anéis pelo chão
       ctx.strokeStyle = core;
-      ctx.lineWidth = 2;
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
+      for (let i = 0; i < 3; i++) {
+        const kk = (k * 1.4 + i * 0.28) % 1;
+        ctx.globalAlpha = fade * (1 - kk);
+        ctx.lineWidth = 3 * (1 - kk) + 1;
         ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(a) * r * 0.85, Math.sin(a) * r * 0.85);
+        ctx.arc(0, 0, f.r * kk, 0, Math.PI * 2);
         ctx.stroke();
       }
+      ctx.globalAlpha = fade;
     } else if (f.el === 'fire') {
       ctx.fillStyle = hexA('#ff7a3a', 0.35 * fade);
       ctx.beginPath();
       ctx.arc(0, 0, r * 0.8, 0, Math.PI * 2);
       ctx.fill();
     } else if (f.el === 'nature') {
-      // raízes saindo do centro em direção à borda
-      ctx.scale(1, 1 / 0.55);
-      ctx.strokeStyle = '#2fbf6a';
-      ctx.lineWidth = 3;
+      // Terra: rachaduras saindo do centro + espinhos de pedra subindo em sequência
+      ctx.strokeStyle = '#3a2614';
+      ctx.lineWidth = 2.5;
+      const len = r * Math.min(1, k * 4);
       for (let i = 0; i < 7; i++) {
         const a = (i / 7) * Math.PI * 2 + f.seed;
-        const len = r * Math.min(1, k * 4);
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(Math.cos(a + 0.4) * len * 0.5, Math.sin(a + 0.4) * len * 0.3, Math.cos(a) * len, Math.sin(a) * len * 0.55);
+        ctx.lineTo(Math.cos(a + 0.2) * len * 0.5, Math.sin(a + 0.2) * len * 0.5);
+        ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
         ctx.stroke();
+      }
+      ctx.scale(1, 1 / 0.55);
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2 + f.seed + 0.4;
+        const up = Math.max(0, Math.min(1, k * 5 - i * 0.35)) * fade;
+        if (up <= 0) continue;
+        this.spike(ctx, Math.cos(a) * r * 0.62, Math.sin(a) * r * 0.62 * 0.55, 7, 18 * up);
       }
     } else if (f.el === 'plasma') {
       ctx.strokeStyle = core;
@@ -823,6 +1039,47 @@ export class AbilityVfx {
           ctx.stroke();
         }
       }
+    } else if (f.kind === 'ultcharge') {
+      // coluna de energia subindo de quem prepara a suprema, anel girando nos pés
+      ctx.globalCompositeOperation = 'lighter';
+      const h = 90 * Math.min(1, k * 1.6);
+      const g = ctx.createLinearGradient(f.x, f.y, f.x, f.y - h);
+      g.addColorStop(0, hexA(edge, 0.55 * (0.4 + 0.6 * fade)));
+      g.addColorStop(1, hexA(edge, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(f.x - 18, f.y - h, 36, h);
+      this.glow(ctx, f.x, f.y - BODY, 30 + k * 26, edge, 0.5);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = core;
+      ctx.lineWidth = 2.5;
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.scale(1, 0.4);
+      ctx.beginPath();
+      ctx.arc(0, 0, f.r + 8 * Math.sin(time * 10), time * 6, time * 6 + Math.PI * 1.5);
+      ctx.stroke();
+      ctx.restore();
+    } else if (f.kind === 'ultburst') {
+      // clarão grande da suprema + duas ondas
+      ctx.globalCompositeOperation = 'lighter';
+      this.glow(ctx, f.x, f.y - BODY, f.r * (0.6 + k * 0.6), edge, 0.75 * fade);
+      this.glow(ctx, f.x, f.y - BODY, f.r * 0.35, '#ffffff', 0.6 * fade);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = core;
+      ctx.globalAlpha = fade;
+      ctx.lineWidth = 6 * fade + 1;
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.scale(1, 0.55);
+      ctx.beginPath();
+      ctx.arc(0, 0, f.r * (0.2 + k * 1.05), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 3 * fade + 1;
+      ctx.beginPath();
+      ctx.arc(0, 0, f.r * (0.1 + k * 0.7), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     } else if (f.kind === 'fizzle') {
       ctx.globalAlpha = fade * 0.7;
       ctx.strokeStyle = edge;
@@ -890,6 +1147,28 @@ export class AbilityVfx {
         ctx.restore();
       } else if (s.kind === 'leaf') {
         this.leafAt(ctx, s.x, s.y, s.rot, s.size);
+      } else if (s.kind === 'drop') {
+        // gota esticada na direção em que cai
+        const sp = Math.hypot(s.vx, s.vy) || 1;
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(Math.atan2(s.vy, s.vx));
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s.size * (1 + Math.min(1.5, sp / 200)), s.size * 0.8, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else if (s.kind === 'rock') {
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.rot);
+        ctx.beginPath();
+        ctx.moveTo(s.size, 0);
+        ctx.lineTo(s.size * 0.2, -s.size * 0.9);
+        ctx.lineTo(-s.size, -s.size * 0.3);
+        ctx.lineTo(-s.size * 0.5, s.size * 0.8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
       } else if (s.kind === 'smoke') {
         ctx.globalAlpha *= 0.5;
         ctx.beginPath();
@@ -910,6 +1189,250 @@ export class AbilityVfx {
       }
     }
     ctx.globalAlpha = 1;
+  }
+
+  // ================================================================== supremas e chão
+  /** A suprema caiu: efeito exclusivo do elemento, no ponto real. */
+  private ultBurst(x: number, y: number, el: string, r: number) {
+    this.kick = Math.max(this.kick, 9);
+    this.addFx({ kind: 'ultburst', x, y, r: Math.min(r, 170), el, t: 0, max: 0.75 });
+    if (el === 'fire') {
+      this.burst(x, y - BODY, 'fire', 34, 420, 0.8, 'ember', -80);
+      this.burst(x, y - BODY, 'smoke', 10, 120, 1.2, 'smoke', -40);
+    } else if (el === 'ice') {
+      this.addFx({ kind: 'ripple', x, y, r: r * 1.15, el, t: 0, max: 0.9 });
+      this.burst(x, y - BODY, 'ice', 34, 360, 0.9, 'drop', 520);
+    } else if (el === 'nature') {
+      this.addFx({ kind: 'spikes', x, y, r: r * 0.9, el, t: 0, max: 1.2 });
+      this.burst(x, y - BODY, '#8a5f2c', 26, 360, 0.8, 'rock', 420);
+      this.burst(x, y, 'rgba(200,170,120,0.6)', 10, 140, 1, 'smoke', -10);
+    } else if (el === 'wind') {
+      this.burst(x, y - BODY, 'wind', 30, 380, 0.6, 'dot', 0);
+      this.burst(x, y - BODY, '#9ed98a', 10, 260, 0.9, 'leaf', 60);
+    } else if (el === 'lightning') {
+      this.addFx({ kind: 'bolt', x, y: y - BODY, r: r, el, t: 0, max: 0.5 });
+      this.burst(x, y - BODY, 'lightning', 28, 420, 0.4, 'spark', 0);
+    } else {
+      this.burst(x, y - BODY, el, 28, 360, 0.6, 'dot', 0);
+    }
+  }
+
+  /** efeitos que ficam no chão: aviso da suprema, onda de água, espinhos de terra */
+  private drawGround(ctx: CanvasRenderingContext2D, f: Fx, time: number) {
+    const k = f.t / f.max;
+    const fade = 1 - k;
+    const { core, edge } = elementCore(f.el);
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    if (f.kind === 'telegraph' && typeof f.x2 === 'number' && typeof f.y2 === 'number') {
+      // faixa de perigo da suprema em linha: enche do lançador até o alcance
+      const dx = f.x2 - f.x;
+      const dy = (f.y2 ?? f.y) - f.y;
+      const len = Math.hypot(dx, dy) || 1;
+      ctx.rotate(Math.atan2(dy, dx));
+      const pulse = 0.5 + 0.5 * Math.sin(time * 16);
+      ctx.fillStyle = hexA(edge, 0.14);
+      ctx.fillRect(16, -f.r, len - 16, f.r * 2);
+      ctx.fillStyle = hexA(edge, 0.3);
+      ctx.fillRect(16, -f.r, (len - 16) * Math.min(1, k * 1.1), f.r * 2);
+      ctx.strokeStyle = hexA('#ff5a4a', 0.5 + 0.4 * pulse);
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 7]);
+      ctx.strokeRect(16, -f.r, len - 16, f.r * 2);
+      ctx.setLineDash([]);
+      ctx.fillStyle = hexA(core, 0.8);
+      ctx.beginPath();
+      ctx.moveTo(len, 0);
+      ctx.lineTo(len - 16, -f.r * 0.8);
+      ctx.lineTo(len - 16, f.r * 0.8);
+      ctx.closePath();
+      ctx.fill();
+    } else if (f.kind === 'telegraph') {
+      // aviso de perigo: círculo que se enche até a suprema sair (dá para ver e fugir)
+      ctx.scale(1, 0.55);
+      const pulse = 0.5 + 0.5 * Math.sin(time * 16);
+      ctx.fillStyle = hexA(edge, 0.12 + 0.16 * k);
+      ctx.beginPath();
+      ctx.arc(0, 0, f.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = hexA(edge, 0.28);
+      ctx.beginPath();
+      ctx.arc(0, 0, f.r * Math.min(1, k * 1.1), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = hexA('#ff5a4a', 0.55 + 0.4 * pulse);
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 7]);
+      ctx.beginPath();
+      ctx.arc(0, 0, f.r, time * 2, time * 2 + Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = core;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-10, 0);
+      ctx.lineTo(10, 0);
+      ctx.moveTo(0, -10);
+      ctx.lineTo(0, 10);
+      ctx.stroke();
+    } else if (f.kind === 'ripple') {
+      ctx.scale(1, 0.5);
+      ctx.strokeStyle = edge;
+      for (let i = 0; i < 2; i++) {
+        const kk = Math.min(1, k * 1.2 + i * 0.2);
+        ctx.globalAlpha = fade * (1 - i * 0.4);
+        ctx.lineWidth = 4 * fade + 1;
+        ctx.beginPath();
+        ctx.arc(0, 0, f.r * kk, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else if (f.kind === 'spikes') {
+      // espinhos de pedra sobem do chão em sequência e voltam a afundar
+      const n = Math.max(3, Math.min(10, Math.round(f.r / 9)));
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + f.seed;
+        const rise = Math.max(0, Math.min(1, k * 4 - (i / n) * 1.2));
+        const sink = k > 0.7 ? (1 - k) / 0.3 : 1;
+        const h = (14 + f.r * 0.18) * rise * sink;
+        if (h <= 0.5) continue;
+        this.spike(ctx, Math.cos(a) * f.r * 0.7, Math.sin(a) * f.r * 0.7 * 0.5, 5 + f.r * 0.04, h, f.el === 'fire');
+      }
+    }
+    ctx.restore();
+  }
+
+  /** espinho de pedra (ou de magma) visto de lado */
+  private spike(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, hot = false) {
+    ctx.fillStyle = hot ? '#5a2410' : '#7a5228';
+    ctx.beginPath();
+    ctx.moveTo(x - w, y);
+    ctx.lineTo(x - w * 0.15, y - h);
+    ctx.lineTo(x + w, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = hot ? '#ff7a3a' : '#c99a52';
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.15, y - h);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w * 0.2, y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** Rastro da suprema enquanto ela dura (o mesmo tempo da simulação). */
+  drawUltZones(ctx: CanvasRenderingContext2D, zones: readonly VfxUltZone[], time: number) {
+    for (const z of zones) {
+      const left = Math.max(0, z.t);
+      const age = z.total - left;
+      const inA = Math.min(1, age / 0.2);
+      const outA = Math.min(1, left / 0.35);
+      const a = inA * outA;
+      const { core, edge } = elementCore(z.el);
+      ctx.save();
+      ctx.translate(z.x, z.y);
+      if (z.el === 'fire') {
+        // Colapso Solar: chão em brasa com línguas de fogo
+        ctx.save();
+        ctx.scale(1, 0.55);
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, z.r);
+        g.addColorStop(0, `rgba(255,140,40,${0.45 * a})`);
+        g.addColorStop(0.7, `rgba(200,50,10,${0.3 * a})`);
+        g.addColorStop(1, 'rgba(120,20,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, 0, z.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = hexA('#ff5a1e', 0.7 * a);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, z.r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        ctx.globalAlpha = a;
+        const n = this.reduced ? 4 : 9;
+        for (let i = 0; i < n; i++) {
+          const ang = (i / n) * Math.PI * 2 + i * 0.7;
+          const d = z.r * (0.25 + 0.6 * hash(i * 13 + 1));
+          this.flameAt(ctx, Math.cos(ang) * d, Math.sin(ang) * d * 0.55, 10 + Math.sin(time * 12 + i) * 5);
+        }
+        if (!this.reduced && Math.random() < 0.6) {
+          const ang = Math.random() * Math.PI * 2;
+          const d = Math.random() * z.r;
+          this.spawn(z.x + Math.cos(ang) * d, z.y + Math.sin(ang) * d * 0.55, 0, -70, 0.6, Math.random() < 0.5 ? '#ffb347' : '#ff5a1e', 2.4, 'ember', -60, 1);
+        }
+      } else if (z.el === 'ice') {
+        // Maré Abissal: a onda grande abre e deixa o chão molhado
+        ctx.scale(1, 0.55);
+        const k = Math.min(1, age / Math.max(0.2, z.total * 0.8));
+        ctx.fillStyle = hexA(edge, 0.18 * a);
+        ctx.beginPath();
+        ctx.arc(0, 0, z.r * k, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = hexA(core, 0.9 * a);
+        ctx.lineWidth = 7 * (1 - k) + 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, z.r * k, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = hexA(edge, 0.7 * a);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, z.r * k * 0.8, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (z.el === 'nature') {
+        // Ruptura Titânica: fendas e pilares de pedra em anel
+        ctx.save();
+        ctx.scale(1, 0.55);
+        ctx.strokeStyle = hexA('#3a2614', 0.8 * a);
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(Math.cos(ang + 0.15) * z.r * 0.5, Math.sin(ang + 0.15) * z.r * 0.5);
+          ctx.lineTo(Math.cos(ang) * z.r, Math.sin(ang) * z.r);
+          ctx.stroke();
+        }
+        ctx.restore();
+        const n = this.reduced ? 5 : 9;
+        for (let i = 0; i < n; i++) {
+          const ang = (i / n) * Math.PI * 2;
+          const rise = Math.max(0, Math.min(1, age * 6 - i * 0.25)) * outA;
+          if (rise <= 0) continue;
+          this.spike(ctx, Math.cos(ang) * z.r * 0.75, Math.sin(ang) * z.r * 0.75 * 0.55, 9, 34 * rise);
+        }
+      } else if (z.el === 'wind') {
+        // Tempestade do Vazio: vórtice girando e puxando; no fim, o anel explode para fora
+        ctx.scale(1, 0.55);
+        ctx.strokeStyle = hexA(core, 0.8 * a);
+        for (let i = 0; i < 4; i++) {
+          const ang = -time * 9 + (i * Math.PI) / 2;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(0, 0, z.r * (0.25 + 0.18 * i), ang, ang + 1.8);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = hexA(edge, 0.6 * a);
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 10]);
+        ctx.beginPath();
+        ctx.arc(0, 0, z.r, -time * 3, -time * 3 + Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (!this.reduced && !z.blown && Math.random() < 0.7) {
+          const ang = Math.random() * Math.PI * 2;
+          const px = z.x + Math.cos(ang) * z.r;
+          const py = z.y + Math.sin(ang) * z.r * 0.55;
+          this.spawn(px, py - 8, (z.x - px) * 2.2, (z.y - py) * 2.2, 0.45, Math.random() < 0.5 ? '#c8fff0' : '#9ed98a', 2.2, Math.random() < 0.4 ? 'leaf' : 'dot', 0, 0);
+        }
+      } else {
+        ctx.scale(1, 0.55);
+        ctx.strokeStyle = hexA(edge, 0.7 * a);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, z.r * (0.6 + 0.4 * Math.min(1, age * 3)), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
 
   // ================================================================== formas
@@ -980,8 +1503,8 @@ export class AbilityVfx {
       const x = f.x + Math.cos(a) * d;
       const y = f.y + Math.sin(a) * d * 0.55;
       if (f.el === 'fire') this.spawn(x, y, 0, -80, 0.5, Math.random() < 0.5 ? '#ffb347' : '#ff5a1e', 2.6, 'ember', -60, 1);
-      else if (f.el === 'ice') this.spawn(x, y - 10, 0, -20, 0.7, '#e8fbff', 2.2, 'flake', 0, 1);
-      else if (f.el === 'nature') this.spawn(x, y, (Math.random() - 0.5) * 40, -40, 0.8, '#5dff8a', 3, 'leaf', 80, 1);
+      else if (f.el === 'ice') this.spawn(x, y - 6, (Math.random() - 0.5) * 60, -120, 0.6, Math.random() < 0.5 ? '#7cc4ff' : '#e6f6ff', 2.2, 'drop', 420, 0.5);
+      else if (f.el === 'nature') this.spawn(x, y, (Math.random() - 0.5) * 40, -90, 0.7, '#8a5f2c', 2.6, 'rock', 320, 0.5);
       else if (f.el === 'wind') this.spawn(x, y - 10, -Math.sin(a) * 120, Math.cos(a) * 60, 0.35, '#c8fff0', 1.6, 'dot', 0, 2);
       else if (f.el === 'plasma') this.spawn(x, y - 10, 0, -40, 0.5, '#e9a8ff', 2, 'dot', 0, 1);
     } else if (f.kind === 'windup' && Math.random() < dt * 40) {
@@ -1003,12 +1526,12 @@ export class AbilityVfx {
       const c = elementCore(el);
       return i % 2 ? c.core : c.edge;
     };
-    const k: PKind = kind ?? (el === 'ice' ? 'shard' : el === 'nature' ? 'leaf' : el === 'fire' ? 'ember' : el === 'lightning' ? 'spark' : 'dot');
+    const k: PKind = kind ?? (el === 'ice' ? 'drop' : el === 'nature' ? 'rock' : el === 'fire' ? 'ember' : el === 'lightning' ? 'spark' : 'dot');
     const count = this.reduced ? Math.ceil(n / 3) : n;
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + Math.random() * 0.6;
       const sp = speed * (0.4 + Math.random() * 0.6);
-      this.spawn(x, y, Math.cos(a) * sp, Math.sin(a) * sp, life * (0.7 + Math.random() * 0.5), color(i), k === 'smoke' ? 6 : k === 'shard' ? 3 : 2.4, k, g, 2.5);
+      this.spawn(x, y, Math.cos(a) * sp, Math.sin(a) * sp, life * (0.7 + Math.random() * 0.5), color(i), k === 'smoke' ? 6 : k === 'shard' || k === 'rock' ? 3.2 : 2.4, k, g, 2.5);
     }
   }
 
