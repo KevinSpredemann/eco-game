@@ -346,10 +346,10 @@ type RosterRow = { id: string; char: string; skin: string; trail: string; name: 
 /** quantos participantes a sala terá (pessoas + bots) */
 function plannedSize(r: Room, fill = false) {
   return plannedLobbySize({
-    mode: r.mode === 'dupla' ? 'dupla' : 'duelo',
+    mode: r.mode === 'todos' ? 'todos' : r.mode === 'dupla' ? 'dupla' : 'duelo',
     humans: r.members.length,
-    bots: r.bots,
-    fill,
+    bots: r.mode === 'todos' ? 0 : r.bots,
+    fill: r.mode === 'todos' ? false : fill,
   });
 }
 
@@ -369,7 +369,7 @@ function startGame(r: Room, fill = false) {
     const ch = pool[i % pool.length];
     roster.push({ id: 'bot' + i, char: ch, skin: 'padrao', trail: 'nenhum', name: CHARACTERS.find((c) => c.id === ch)!.name + ' (bot)', isBot: true, loadout: botLoadout(ch) });
   }
-  if (roster.length < 2) roster.push({ id: 'bot9', char: pool[0], skin: 'padrao', trail: 'nenhum', name: 'Bot', isBot: true });
+  if (r.mode !== 'todos' && roster.length < 2) roster.push({ id: 'bot9', char: pool[0], skin: 'padrao', trail: 'nenhum', name: 'Bot', isBot: true });
   for (const m of r.members) m.ready = false;
   r.autoAt = 0;
   const game = new Game({
@@ -439,6 +439,13 @@ setInterval(() => {
   for (const c of [...clients.values()]) if (c.gone && now - c.gone > GRACE_MS) dropClient(c);
   for (const r of rooms.values()) {
     if (r.game || !r.members.length) continue;
+    if (r.public && r.mode === 'todos' && r.members.length < (MIN_PLAYERS.todos ?? 4)) {
+      if (r.autoAt && now >= r.autoAt) {
+        r.autoAt = now + QUICK_WAIT_MS;
+        broadcastRoom(r);
+      }
+      continue;
+    }
     if (r.public) {
       const plan = publicLobbyAction({
         members: r.members.length,
@@ -614,7 +621,7 @@ wss.on('connection', (ws) => {
         leaveRoom(c);
         const mode: GameMode = validMode(m.mode) ? m.mode : 'duelo';
         const arena = ARENAS.some((a) => a.id === m.arena) ? m.arena : 'lab';
-        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [], rematchVotes: new Map(), rematchAt: 0 };
+        const r: Room = { code: newCode(), host: c.id, mode, arena, bots: mode === 'todos' ? 0 : Math.max(0, Math.min(maxPlayers(mode) - 1, Number(m.bots) || 0)), members: [c], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: false, autoAt: 0, roster: [], rematchVotes: new Map(), rematchAt: 0 };
         rooms.set(r.code, r);
         c.room = r;
         c.ready = false;
@@ -650,7 +657,7 @@ wss.on('connection', (ws) => {
         if (!r || r.host !== c.id || r.game) return;
         if (validMode(m.mode)) r.mode = m.mode;
         if (ARENAS.some((a) => a.id === m.arena)) r.arena = m.arena;
-        r.bots = Math.max(0, Math.min(maxPlayers(r.mode) - 1, Number(m.bots) || 0));
+        r.bots = r.mode === 'todos' ? 0 : Math.max(0, Math.min(maxPlayers(r.mode) - 1, Number(m.bots) || 0));
         broadcastRoom(r);
         break;
       }

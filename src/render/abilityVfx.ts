@@ -7,6 +7,7 @@
  * reação no alvo → dissipação. Partículas vêm de um pool com teto (cai no modo "efeitos leves").
  */
 import { ELEMENT_COLOR, type Element } from '../game/elements';
+import { FFA } from '../game/ffa';
 
 export const VFX_CAP = 220;
 export const VFX_CAP_LOW = 60;
@@ -161,15 +162,25 @@ export class AbilityVfx {
   private fx: Fx[] = [];
   private seed = 1;
   reduced = false;
+  /** Todos Contra Todos: teto extra, sem mexer em VFX_CAP nem VFX_CAP_LOW. */
+  crowd = false;
   /** pedido de tremor de câmera (o renderer lê e zera). Só nos golpes grandes. */
   kick = 0;
 
   cap() {
-    return this.reduced ? VFX_CAP_LOW : VFX_CAP;
+    const base = this.reduced ? VFX_CAP_LOW : VFX_CAP;
+    if (!this.crowd) return base;
+    return Math.min(base, FFA.fxCap);
   }
 
   setReduced(on: boolean) {
     this.reduced = on;
+    this.trim();
+  }
+
+  setCrowd(on: boolean) {
+    if (this.crowd === on) return;
+    this.crowd = on;
     this.trim();
   }
 

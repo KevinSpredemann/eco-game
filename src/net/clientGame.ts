@@ -349,7 +349,10 @@ export class ClientGame {
     this.smokes = (s.SM ?? []).map(([id, x, y, t, r]) => ({ id, x, y, t, r, owner: '' }));
     this.abilityOrbs = (s.AO ?? []).map(([id, ab, x, y, age]) => ({ id, ab, x, y, age }));
     this.hooks = (s.HK ?? []).map(([id, owner, x, y]) => ({ id, owner, x, y }));
-    for (const e of ev) this.events.push(e as GameEvent);
+    for (const e of ev) {
+      const evn = e as GameEvent;
+      this.events.push(evn.type === 'finisher' ? { ...evn, confirmed: true } : evn);
+    }
   }
 
   /** avança a visualização entre um pacote e outro */

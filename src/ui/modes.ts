@@ -44,6 +44,15 @@ export const PLAY_MODES: ModeCard[] = [
     teams: 'Azul × Vermelho',
   },
   {
+    id: 'todos',
+    name: 'Todos Contra Todos',
+    category: 'Arena',
+    desc: 'Entre na arena, domine seus poderes e elimine todos os adversários. Apenas o mais habilidoso será o vencedor.',
+    players: '4–8',
+    where: 'Online',
+    available: true,
+  },
+  {
     id: 'mundo',
     name: 'ECO Mundo',
     category: 'Exploração',

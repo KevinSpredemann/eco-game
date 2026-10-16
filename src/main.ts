@@ -7,7 +7,8 @@ import * as C from './game/constants';
 import { ACCESSORIES, CHAR_PRICES, MatchMode, SKINS, TRAILS, abilityLevel, acceptedLoadout, canEquipWeapon, coinText, itemView, missingCoinsText, owns, upgradePrice } from './game/economy';
 import { roundBanner, type DuelReason } from './game/duel';
 import type { RoundEchoLine } from './systems/echo/digest';
-import { Game, GameEvent, GameMode, Input, MIN_PLAYERS, MINION_INFO, MinionKind, MODE_RULES, OBJECTIVES, RosterEntry, TEAM_COLORS } from './game/sim';
+import { Game, GameEvent, GameMode, Input, MIN_PLAYERS, MINION_INFO, MinionKind, MODE_RULES, OBJECTIVES, RosterEntry, TEAM_COLORS, usesPowers } from './game/sim';
+import { FFA, spectateCycle } from './game/ffa';
 import { POWERS, getPower } from './game/powerups';
 import { WEAPONS, ITEMS, MAX_HP, GUN_Y, isPrimary, primaryOf } from './game/weapons';
 import { ClientGame } from './net/clientGame';
@@ -31,6 +32,7 @@ import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gea
 import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, catalogAim, cooldownOf, denyPlasma, denyPowerCast, describePower, energyReadout, formOf, kitOf, powerSlotIndex, studioOf } from './game/elements';
 import { comboReady } from './game/combos';
 import { comboDockState, comboDockTag } from './game/comboDock';
+import { playFinisher } from './game/finisher';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
 import { castAimShape, noteAim, solveAim, type AimShape } from './game/aimService';
@@ -80,6 +82,8 @@ const isOnline = () => game instanceof ClientGame;
 let controlLab = false;
 let labKeys: KeyBinds | null = null;
 let labScheme: MoveScheme | null = null;
+let spectateId: string | null = null;
+let spectateKiller = '';
 
 // ------------------------------------------------------------------ ícones
 const ICONS = {
@@ -484,6 +488,12 @@ function go(action: string, el?: HTMLElement) {
       leaveControlLab(true);
       show('screen-title');
       break;
+    case 'spec-prev':
+      focusSpectate(-1);
+      break;
+    case 'spec-next':
+      focusSpectate(1);
+      break;
     case 'combos':
       lastScreenBeforeOptions = currentScreen() ?? 'screen-title';
       show('screen-howto');
@@ -554,6 +564,9 @@ function go(action: string, el?: HTMLElement) {
       break;
     case 'quick-dupla':
       quickMatch('dupla');
+      break;
+    case 'quick-todos':
+      quickMatch('todos');
       break;
     case 'rules-ok':
       settings.rulesSeen = true;
@@ -789,6 +802,7 @@ const MODE_COLOR: Record<string, string> = {
   'x1-online': '#ff5a3c',
   'x1-offline': '#c084fc',
   dupla: '#3ea8ff',
+  todos: '#ffb35c',
   mundo: '#5dff8a',
 };
 
@@ -812,6 +826,7 @@ function modeTitle(mode: string, where?: 'online' | 'offline'): string {
   const w = where ?? (selectCtx === 'lobby' ? 'online' : playWhere);
   if (mode === 'duelo') return w === 'offline' ? 'X1 Offline' : 'X1 Online';
   if (mode === 'dupla') return w === 'offline' ? '2x2 Offline' : '2x2';
+  if (mode === 'todos') return 'Todos Contra Todos';
   return mode;
 }
 
@@ -825,7 +840,7 @@ function playLocal(mode: 'duelo' | 'dupla') {
   openSelect();
 }
 
-function playOnline(mode: 'duelo' | 'dupla') {
+function playOnline(mode: 'duelo' | 'dupla' | 'todos') {
   audio.click();
   playWhere = 'online';
   onlineMode = mode;
@@ -836,6 +851,7 @@ function runMode(m: ModeCard) {
   if (!m.available) return;
   if (m.id === 'x1-offline') playLocal('duelo');
   else if (m.id === 'x1-online') playOnline('duelo');
+  else if (m.id === 'todos') playOnline('todos');
   else if (m.id === 'mundo') openMundo();
 }
 
@@ -1788,7 +1804,7 @@ document.querySelectorAll<HTMLElement>('#online-modes .pill').forEach((p) =>
 async function createRoom() {
   try {
     const n = await ensureNet();
-    n.send({ t: 'create', mode: onlineMode, arena: settings.arena, bots: onlineMode === 'duelo' ? 0 : 3 });
+    n.send({ t: 'create', mode: onlineMode, arena: settings.arena, bots: onlineMode === 'duelo' || onlineMode === 'todos' ? 0 : 3 });
   } catch (e) {
     showOnlineError((e as Error).message, true);
   }
@@ -1857,14 +1873,14 @@ function renderLobby(r: RoomInfo, me: string) {
   for (let i = r.players.length; i < max; i++) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = r.bots > i - r.players.length && r.mode !== 'duelo' ? 'Vaga — um bot entra se ninguém vier' : 'Vaga livre — mande o convite para um amigo';
+    li.textContent = r.bots > i - r.players.length && r.mode === 'dupla' ? 'Vaga — um bot entra se ninguém vier' : 'Vaga livre — mande o convite para um amigo';
     list.appendChild(li);
   }
   $<HTMLSelectElement>('#lobby-mode').value = r.mode;
   arenaSel.value = r.arena;
   $<HTMLSelectElement>('#lobby-bots').value = String(r.bots);
   for (const sel of ['#lobby-mode', '#lobby-arena', '#lobby-bots']) $<HTMLSelectElement>(sel).disabled = !host;
-  $('#lobby-bots').closest('label')!.hidden = r.mode === 'duelo';
+  $('#lobby-bots').closest('label')!.hidden = r.mode === 'duelo' || r.mode === 'todos';
   $('#lobby-start').hidden = !showStartButton(host, !!r.public, r.autoIn);
   $('#lobby-config').hidden = !!r.public;
   // "pronto" vem do servidor (não fica preso de uma sala para outra)
@@ -2036,7 +2052,7 @@ function beginMatchView(g: AnyGame) {
   layout();
   input.clear();
   input.combat = g.combat;
-  input.powers = g.mode === 'duelo' || g.mode === 'dupla';
+  input.powers = usesPowers(g.mode);
   callShown = -1;
   $('#round-call').hidden = true;
   hintStage = training() ? 1 : 0;
@@ -2068,10 +2084,26 @@ function beginMatchView(g: AnyGame) {
   tryFullscreen();
 }
 
+function focusSpectate(dir: -1 | 0 | 1) {
+  if (!game || game.mode !== 'todos' || game.human.alive) {
+    spectateId = null;
+    renderer.followId = null;
+    return;
+  }
+  const ids = game.players.filter((p) => p.alive && p.id !== game!.human.id).map((p) => p.id);
+  if (dir === 0) spectateId = spectateId && ids.includes(spectateId) ? spectateId : ids[0] ?? null;
+  else spectateId = spectateCycle(ids, spectateId, dir);
+  renderer.followId = spectateId;
+}
+
 function endMatch() {
   game = null;
   controlLab = false;
+  spectateId = null;
+  spectateKiller = '';
+  renderer.followId = null;
   $('#control-lab').hidden = true;
+  $('#spec-bar').hidden = true;
   document.body.classList.remove('rewinding');
   $('#rw-sum').hidden = true;
   input.cancelAim();
@@ -2207,6 +2239,7 @@ function duelScore(g: AnyGame) {
 }
 
 function objectiveText(g: AnyGame) {
+  if (g.mode === 'todos') return `${FFA.desc} Meta: ${FFA.kills} eliminações ou 5 minutos.`;
   if (g.mode === 'dupla') return '2x2. O time que sobrar vence a rodada. Melhor de 5. Depois o ECO rebobina.';
   const L = (a: Action) => keyLabel(settings.keys[a]);
   return `X1 só com poderes. ${L('ability')}, ${L('skill')} e ${L('bonus')}, ${L('ult')} na ultimate e ${L('plasma')} no extra. Os elementos combinam. Quem zera a vida vence a rodada.`;
@@ -2221,6 +2254,7 @@ function teamWins(g: AnyGame, team: number) {
 
 function objectiveHud(g: AnyGame) {
   if (g.phase !== 'play') return '';
+  if (g.mode === 'todos') return `Eliminações ${g.human.kills} · meta ${FFA.kills}`;
   if (g.mode === 'dupla') return `Azul ${teamWins(g, 0)} × ${teamWins(g, 1)} Vermelho`;
   return duelScore(g);
 }
@@ -2255,7 +2289,7 @@ function vsBoss(_g: AnyGame, _id: string) {
 }
 /** os espaços de habilidade do jogador local (usados na barra e no aviso de "não dá para usar") */
 function powersMatch(g: AnyGame) {
-  return (g.mode === 'duelo' || g.mode === 'dupla') && !g.human.boss;
+  return usesPowers(g.mode) && !g.human.boss;
 }
 
 function powerHasTarget(me: { id: string; x: number; y: number; team: number }, reach: number) {
@@ -2511,7 +2545,7 @@ function deniedReason(slot: Slot): string {
     if ((game.bossPhase ?? 1) < BOSS.skills[k].phase) return `Fase ${BOSS.skills[k].phase}`;
     return `Recarga ${Math.ceil(me.bossCd[k])}s`;
   }
-  if (game.mode === 'duelo' || game.mode === 'dupla') {
+  if (usesPowers(game.mode)) {
     if (slot === 'plasma') return denyPlasma(!!me.plasmaOn, me.plasmaCd ?? 0, me.energy ?? ENERGY_MAX, studioOf(me.loadout.secondary)?.cost) ?? '';
     const why = denyPowerCast(slot, me.powerCd ?? [0, 0, 0, 0], me.energy ?? ENERGY_MAX, me.ultCharge ?? 0);
     if (why) return why;
@@ -2591,7 +2625,7 @@ function updateSkills(g: AnyGame) {
       drawCooldown('#btn-ult', (g.bossPhase ?? 1) < 2 ? 1 : me.bossCd.chuva / BOSS.skills.chuva.cooldown, '#ff4a5a');
       $('#btn-bonus').classList.toggle('empty', (g.bossPhase ?? 1) < 2 || me.bossCd.obsidiana > 0);
       setText('#btn-bonus .tlabel', 'MURALHA');
-    } else if (g.mode === 'duelo' || g.mode === 'dupla') {
+    } else if (usesPowers(g.mode)) {
       const kit = kitOf(me.char.id);
       const cds = me.powerCd ?? [0, 0, 0, 0];
       drawCooldown('#btn-ability', cds[0] / cooldownOf(me.char.id, kit.powers[0].cd), ELEMENT_COLOR[kit.powers[0].element]);
@@ -2607,7 +2641,7 @@ function updateSkills(g: AnyGame) {
     if (me.boss) $('#btn-ult').classList.toggle('ready', me.bossCd.chuva <= 0 && (g.bossPhase ?? 1) >= 2);
   }
   const ultSlot = slots.find((s) => s.id === 'ult');
-  const ready = !!ultSlot && ultSlot.charge !== undefined && ultSlot.charge >= 100 && !ultSlot.off && (g.mode === 'duelo' || g.mode === 'dupla');
+  const ready = !!ultSlot && ultSlot.charge !== undefined && ultSlot.charge >= 100 && !ultSlot.off && (usesPowers(g.mode));
   if (ready && !ultWasReady && g.phase === 'play') {
     audio.power('dobro');
     $('#hud').classList.add('ult-flash');
@@ -2623,11 +2657,23 @@ function updateHud() {
   if (!game) return;
   const g = game;
   rewindPanel(g);
-  const suddenOn = g.mode === 'duelo' && g.sudden && g.phase === 'play';
+  const suddenOn = (g.mode === 'duelo' || g.mode === 'todos') && g.sudden && g.phase === 'play';
   const roundLabel = controlLab ? 'TESTE DE CONTROLES' : suddenOn ? 'MORTE SÚBITA' : g.tiebreak ? 'DESEMPATE' : training() && !isOnline() ? `TREINO ${g.round}/${g.totalRounds}` : `RODADA ${g.round}/${g.totalRounds}`;
   if (controlLab) {
     $('#control-lab').hidden = false;
     setText('#control-lab-read', controlLabRead());
+  }
+  const watching = g.mode === 'todos' && !g.human.alive && g.phase !== 'results';
+  $('#spec-bar').hidden = !watching;
+  if (watching) {
+    focusSpectate(0);
+    const who = g.players.find((p) => p.id === spectateId);
+    setText('#spec-msg', spectateKiller ? `Eliminado por ${spectateKiller}` : 'Eliminado');
+    setText('#spec-who', who ? `Câmera: ${who.name}` : 'Câmera livre');
+  } else if (g.human.alive) {
+    spectateId = null;
+    spectateKiller = '';
+    renderer.followId = null;
   }
   setText('#hud-round', roundLabel);
   $('#hud-round').classList.toggle('sudden', suddenOn);
@@ -2685,16 +2731,16 @@ function updateHud() {
     const f = Math.max(0, me.hp / (me.maxHp || MAX_HP));
     const cls = f > 0.5 ? '' : f > 0.25 ? 'mid' : 'low';
     const w = WEAPONS[me.weapon];
-    const wTxt = g.mode === 'duelo' || g.mode === 'dupla' ? kitOf(me.char.id).passiveName : isPrimary(me.weapon) ? w.name : `${w.name} ${w.ammo ? me.ammo + 'x' : Math.ceil(me.weaponT) + 's'}`;
+    const wTxt = usesPowers(g.mode) ? kitOf(me.char.id).passiveName : isPrimary(me.weapon) ? w.name : `${w.name} ${w.ammo ? me.ammo + 'x' : Math.ceil(me.weaponT) + 's'}`;
     // no computador a barra de habilidades já mostra item e recargas
     const itTxt = me.item && input.touchMode ? `<span class="itm">${ITEMS[me.item].name} x${me.itemN}</span>` : '';
     const ePct = Math.max(0, Math.min(100, Math.round(((me.energy ?? ENERGY_MAX) / ENERGY_MAX) * 100)));
-    const energyBit = g.mode === 'duelo' || g.mode === 'dupla' ? `<span class="ebar" title="Energia"><i style="width:${ePct}%"></i></span><b class="en">${energyReadout(me.energy ?? 0)}</b>` : '';
+    const energyBit = usesPowers(g.mode) ? `<span class="ebar" title="Energia"><i style="width:${ePct}%"></i></span><b class="en">${energyReadout(me.energy ?? 0)}</b>` : '';
     setHTML(
       '#hud-status',
       `<span class="hpbar"><i class="${cls}" style="width:${Math.round(f * 100)}%"></i>${me.shieldHp > 0 ? `<s style="width:${Math.round((me.shieldHp / 50) * 100)}%"></s>` : ''}</span><b>${Math.ceil(me.hp)}${me.shieldHp > 0 ? `<small class="shv">+${Math.ceil(me.shieldHp)}⛉</small>` : ''}</b>${energyBit}<span class="wpn">${wTxt}</span>`,
     );
-    $('#hud-status').dataset.energy = g.mode === 'duelo' || g.mode === 'dupla' ? energyReadout(me.energy ?? 0) : '';
+    $('#hud-status').dataset.energy = usesPowers(g.mode) ? energyReadout(me.energy ?? 0) : '';
     // item, habilidades e poder já aparecem nos botões/barra de habilidades (HUD limpo)
     void itTxt;
     $('#btn-item .tlabel').textContent = me.item ? `${({ bomba: 'BOMBA', mina: 'MINA', gelo: 'GELO', kit: 'KIT', pulso: 'PULSO' } as Record<string, string>)[me.item] ?? 'ITEM'} ${me.itemN}` : 'ITEM';
@@ -2890,7 +2936,7 @@ function onEvents(events: GameEvent[]) {
         if (mine && hintStage === 3) hintStage = 4;
         break;
       case 'finisher':
-        if (settings.finisher !== false) {
+        if (settings.finisher !== false && playFinisher(isOnline(), !!e.confirmed)) {
           const seconds = settings.reduced ? Math.min(0.8, e.seconds) : e.seconds;
           showFinisher(e.name, e.id, seconds, e.x, e.y);
           audio.finisher(e.id);
@@ -2929,6 +2975,12 @@ function onEvents(events: GameEvent[]) {
       case 'kill':
         if (e.by === myId || e.pid === myId) audio.kill(e.by === myId);
         if (e.by === myId) banner('ELIMINOU!', `${g.players.find((p) => p.id === e.pid)?.char.name ?? ''} caiu`, 1.1);
+        if (e.pid === myId && g.mode === 'todos') {
+          const killer = e.by ? g.players.find((p) => p.id === e.by) : null;
+          spectateKiller = killer?.name ?? '';
+          spectateId = killer && killer.alive ? killer.id : null;
+          focusSpectate(0);
+        }
         break;
       case 'bonusPick':
         if (mine) {
@@ -3207,8 +3259,8 @@ async function showResults() {
   list.innerHTML = '';
   rank.forEach((p, i) => {
     const top = Object.entries(p.stats.uses).sort((a, b) => b[1] - a[1])[0];
-    const sub = g.mode === 'dupla' ? `Time ${p.team ? 'Vermelho' : 'Azul'} · ${p.kills} eliminações · ${p.roundWins} rodadas` : `${p.kills} eliminações · ${p.roundWins} rodadas`;
-    const pts = `${p.roundWins}`;
+    const sub = g.mode === 'dupla' ? `Time ${p.team ? 'Vermelho' : 'Azul'} · ${p.kills} eliminações · ${p.roundWins} rodadas` : g.mode === 'todos' ? `${p.kills} eliminações` : `${p.kills} eliminações · ${p.roundWins} rodadas`;
+    const pts = g.mode === 'todos' ? `${p.kills}` : `${p.roundWins}`;
     void top;
     list.appendChild(resultRow(i, p.id === me.id ? `Você (${p.char.name})` : p.name, p.char.id, p.skin, sub, pts, p.id === me.id));
   });
@@ -3452,7 +3504,7 @@ function slotInfo(slot: Slot): { kind: 'instant' | 'direction' | 'point'; range:
     const aim = catalogAim(extra);
     return { ...aim, name: extra.name, color: ELEMENT_COLOR[extra.element] };
   }
-  if ((game.mode === 'duelo' || game.mode === 'dupla') && powerSlotIndex(slot) !== null) {
+  if ((usesPowers(game.mode)) && powerSlotIndex(slot) !== null) {
     const i = powerSlotIndex(slot)!;
     const pw = kitOf(me.char.id).powers[i];
     const form = formOf(pw, i);
@@ -3536,7 +3588,7 @@ input.canUse = (slot) => {
     const k = map[slot];
     return !k || (me.bossCd[k] <= 0 && (game.bossPhase ?? 1) >= BOSS.skills[k].phase);
   }
-  if ((game.mode === 'duelo' || game.mode === 'dupla') && (powerSlotIndex(slot) !== null || slot === 'plasma')) return deniedReason(slot) === '';
+  if ((usesPowers(game.mode)) && (powerSlotIndex(slot) !== null || slot === 'plasma')) return deniedReason(slot) === '';
   if (slot === 'ability') return me.abilCd <= 0;
   if (slot === 'skill') return me.skillCd <= 0;
   if (slot === 'ult') return me.ultCharge >= 100;

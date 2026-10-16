@@ -831,6 +831,25 @@ input[type='checkbox'] {
   font-size: 0.92rem;
 }
 
+.spec-bar {
+  position: absolute;
+  left: 50%;
+  top: max(72px, calc(env(safe-area-inset-top) + 64px));
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(8, 6, 22, 0.82);
+  pointer-events: auto;
+  text-align: center;
+  z-index: 2;
+}
+.spec-bar[hidden] {
+  display: none;
+}
+.spec-bar p {
+  margin: 0 0 6px;
+}
 .control-lab {
   position: absolute;
   left: max(12px, env(safe-area-inset-left));

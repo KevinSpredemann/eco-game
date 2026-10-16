@@ -33,6 +33,7 @@ import { withSkin } from './characters';
 import { choosePortalExit, portalPairAt } from './portals';
 import { mirrorRest, spinEcho, tuneBlocks, tuneBody, tuneClock, tuneEchoDrag, tuneHides, tuneMove, tuneNeedle, tunePendulumHits, tunePush, tuneTouch } from './mapTune';
 import { DUEL, duelTiebreak, type DuelReason } from './duel';
+import { FFA, capAoe, ffaCall } from './ffa';
 import {
   AMBUSH_BONUS,
   AMBUSH_TIME,
@@ -96,15 +97,21 @@ export const OBJECTIVES: Record<ObjectiveId, string> = {
   intocavel: 'Termine a rodada sem levar dano (+1)',
 };
 
-export type GameMode = 'duelo' | 'dupla';
+export type GameMode = 'duelo' | 'dupla' | 'todos';
 
 /** X1 online e 2x2 (online ou com bots). Os dois fecham a rodada como um duelo. */
 export const MODE_RULES: Record<GameMode, { rounds: number; dur: number; respawn: boolean; teams: boolean; maxPlayers: number }> = {
   duelo: { rounds: 5, dur: DUEL.roundSec, respawn: false, teams: false, maxPlayers: 2 },
   dupla: { rounds: 5, dur: DUEL.roundSec, respawn: false, teams: true, maxPlayers: 4 },
+  todos: { rounds: 1, dur: FFA.dur, respawn: true, teams: false, maxPlayers: FFA.maxPlayers },
 };
 /** mínimo de participantes (pessoas + bots) para começar */
-export const MIN_PLAYERS: Partial<Record<GameMode, number>> = { duelo: 2, dupla: 2 };
+export const MIN_PLAYERS: Partial<Record<GameMode, number>> = { duelo: 2, dupla: 2, todos: FFA.minPlayers };
+
+/** X1, 2x2 e Todos Contra Todos usam o mesmo kit. */
+export function usesPowers(mode: GameMode): boolean {
+  return mode === 'duelo' || mode === 'dupla' || mode === 'todos';
+}
 export const TEAM_COLORS = ['#3ea8ff', '#ff4a5a'];
 export const TEAM_NAMES = ['Azul', 'Vermelho'];
 export const RESPAWN_TIME = 3;
@@ -795,7 +802,7 @@ export type GameEvent =
   /** a ultimate caiu: efeito grande no chão (mesmo ponto do efeito real) */
   | { type: 'ultland'; pid: string; x: number; y: number; el: string; r: number; role?: string }
   /** kill confirmado por um combo. O cliente só apresenta; o dano já foi aplicado. */
-  | { type: 'finisher'; pid: string; by: string; x: number; y: number; name: string; id: string; seconds: number }
+  | { type: 'finisher'; pid: string; by: string; x: number; y: number; name: string; id: string; seconds: number; confirmed?: boolean }
   /** piscar: de onde saiu para onde chegou (posição real) */
   | { type: 'blink'; pid: string; x0: number; y0: number; x1: number; y1: number; el: string }
   | { type: 'deny'; pid: string; msg: string; x?: number; y?: number };
@@ -933,13 +940,18 @@ export class Game {
   constructor(cfg: MatchConfig) {
     this.cfg = cfg;
     this.arena = cfg.arena;
-    this.mode = cfg.mode === 'dupla' ? 'dupla' : 'duelo';
+    this.mode = cfg.mode === 'dupla' ? 'dupla' : cfg.mode === 'todos' ? 'todos' : 'duelo';
     this.rules = MODE_RULES[this.mode];
     this.nav = new NavGrid(this.arena);
-    this.suddenLimit = cfg.suddenSec ?? DUEL.suddenSec;
+    this.suddenLimit = cfg.suddenSec ?? (this.mode === 'todos' ? FFA.suddenSec : DUEL.suddenSec);
     this.totalRounds = this.rules.rounds;
     if (cfg.roster) {
-      for (const r of cfg.roster) this.addPlayer(r.id, withLevel(getCharacter(r.char), r.lv, false), r.isBot, r.name, r.skin, r.trail, r.loadout);
+      for (const r of cfg.roster) {
+        if (this.mode === 'todos' && r.isBot) continue;
+        this.addPlayer(r.id, withLevel(getCharacter(r.char), r.lv, false), r.isBot, r.name, r.skin, r.trail, r.loadout);
+      }
+    } else if (this.mode === 'todos') {
+      this.addPlayer('p0', getCharacter(cfg.humanChar), false);
     } else {
       const human = getCharacter(cfg.humanChar);
       this.addPlayer('p0', human, false);
@@ -1488,6 +1500,10 @@ export class Game {
 
   /** X1 e 2x2 não usam o relógio do cliente: só este passo muda de fase. */
   private maybeEndRound() {
+    if (this.mode === 'todos') {
+      this.maybeEndFfa();
+      return;
+    }
     const playing = this.players.filter((p) => p.playing);
     const living = playing.filter((p) => p.alive);
     if (this.mode === 'dupla') {
@@ -1508,6 +1524,28 @@ export class Game {
       return;
     }
     if (this.sudden && this.suddenT >= this.suddenLimit) this.closeDuelTie();
+  }
+
+  private maybeEndFfa() {
+    if (this.phase !== 'play') return;
+    const playing = this.players.filter((p) => p.playing && !p.isBot);
+    const call = ffaCall({
+      kills: playing.map((p) => p.kills),
+      roundT: this.roundT,
+      dur: this.roundDur,
+      sudden: this.sudden,
+      suddenT: this.suddenT,
+      suddenLimit: this.suddenLimit,
+    });
+    if (call.call === 'sudden') {
+      this.enterSudden();
+      return;
+    }
+    if (call.call === 'win' || call.call === 'share') {
+      for (const p of playing) p.score = p.kills;
+      this.winners = call.leaders.map((i) => playing[i].id);
+      this.finishMatch();
+    }
   }
 
   private teamRoundWins(team: number) {
@@ -1667,7 +1705,7 @@ export class Game {
     p.phaseT = Math.max(0, p.phaseT - dt);
     p.shieldT = Math.max(0, p.shieldT - dt);
     p.portalCd = Math.max(0, p.portalCd - dt);
-    if (this.mode === 'duelo' || this.mode === 'dupla') {
+    if (usesPowers(this.mode)) {
       p.burnT = Math.max(0, p.burnT - dt);
       p.frozenT = Math.max(0, p.frozenT - dt);
       p.ruptureT = Math.max(0, (p.ruptureT ?? 0) - dt);
@@ -1748,6 +1786,7 @@ export class Game {
       this.castPower(p, c.slot, c.ang, { mx: 0, my: 0, dash: false, ability: false, ca: c.ca, cr: c.cr, ch: c.ch });
     }
     const free = p.stunT <= 0 && p.castT <= 0;
+    if (this.mode === 'todos' && (inp.ability || inp.skill || inp.ult || inp.bonus || inp.item || inp.plasma || inp.fire)) p.invulnT = 0;
 
     if (inp.dash && p.dashCd <= 0 && free && p.stasisT <= 0 && p.rootT <= 0) {
         if (!p.isBot && typeof inp.ca === 'number' && isFinite(inp.ca)) p.dir = inp.ca;
@@ -1756,7 +1795,7 @@ export class Game {
         p.dashT = (aimedDash ? Math.max(16, Math.min(full, inp.cr as number)) : full) / C.DASH_SPEED;
         p.dashCd = C.DASH_CD;
         p.dashHit = [];
-        if (this.mode === 'duelo' || this.mode === 'dupla') p.flowT = Math.max(p.flowT, FLOW_TIME);
+        if (usesPowers(this.mode)) p.flowT = Math.max(p.flowT, FLOW_TIME);
         p.recorder?.event(tms, 'dash');
         this.events.push({ type: 'dash', x: p.x, y: p.y, pid: p.id });
       }
@@ -1766,7 +1805,7 @@ export class Game {
         if (inp.ult) this.beginPower(p, 2, castAng, inp);
         if (inp.bonus || inp.item) this.beginPower(p, 3, castAng, inp);
         if (inp.plasma) this.castPlasma(p, castAng, inp);
-        if ((this.mode === 'duelo' || this.mode === 'dupla') && inp.fire) this.castBasic(p, castAng);
+        if (usesPowers(this.mode) && inp.fire) this.castBasic(p, castAng);
       }
 
     const inBush = (this.arena.bushes ?? []).some((b) => dist(p.x, p.y, b.x, b.y) < b.r);
@@ -1780,7 +1819,7 @@ export class Game {
     // lentidões não se multiplicam sem limite: a mais forte vale, e há uma velocidade mínima
     const slowK = Math.min(p.slowT > 0 ? 0.6 : 1, p.stasisT > 0 ? 0.35 : 1, sand ? 0.55 : 1, p.castT > 0 ? COMBAT.castMove : 1) * (inBush ? 0.92 : 1) * (carrying ? 0.92 : 1);
     let speed = C.SPEED * COMBAT.walkMul * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * Math.max(COMBAT.minSpeed, slowK) * (p.boss ? BOSS.speedMul * (p.exhaustT > 0 ? 0.5 : 1) : 1);
-    if (this.mode === 'duelo' || this.mode === 'dupla') speed *= speedMul(p.char.id, p.comboStacks);
+    if (usesPowers(this.mode)) speed *= speedMul(p.char.id, p.comboStacks);
     if (p.isBot) speed *= p.brain!.speedMul;
     speed *= tune.speed * holdSpeed;
 
@@ -2944,7 +2983,7 @@ export class Game {
 
   // ------------------------------------------------------------------ cristais de habilidade
   private updateAbilityOrbs(dt: number) {
-    if (this.mode === 'duelo' || this.mode === 'dupla') {
+    if (usesPowers(this.mode)) {
       this.abilityOrbs = [];
       return;
     }
@@ -3621,10 +3660,8 @@ export class Game {
       pay();
       abilityTrace(p.id, 'impact', def.name);
       this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: radius, form });
-      for (const o of this.players) {
-        if (!o.alive || !o.playing || !this.hostile(p, o)) continue;
-        if (dist(o.x, o.y, pt.x, pt.y) > radius) continue;
-        if (los && !this.sight(p.x, p.y, o.x, o.y, p.id)) continue;
+      const inArea = this.players.filter((o) => o.alive && o.playing && this.hostile(p, o) && dist(o.x, o.y, pt.x, pt.y) <= radius && (!los || this.sight(p.x, p.y, o.x, o.y, p.id)));
+      for (const o of capAoe(this.mode, inArea, pt.x, pt.y)) {
         this.deliverPower(p, o, def.element, dmg, form === 'rock' ? Math.max(knock, 200) : knock, true, cast);
         if (form === 'whirl') {
           const dx = pt.x - o.x;
@@ -4244,7 +4281,7 @@ export class Game {
     this.hurt(dst, damage + extra + move + bonus, src.id, 'pulse');
     this.noteCombat({ at: this.worldT, kind: 'hit', owner: src.id, target: dst.id, element, ability: cast?.ability ?? cast?.trick ?? element, dmg: damage + bonus, x: dst.x, y: dst.y, combo: reaction?.name ?? '' });
     if (!dst.alive && hpBefore > 0 && bonus > 0 && reaction) this.offerFinisher(src, dst, reaction.name, element, aura);
-    if ((this.mode === 'duelo' || this.mode === 'dupla') && !src.boss) src.ultCharge = Math.min(100, src.ultCharge + COMBAT.ult.perAbility);
+    if (usesPowers(this.mode) && !src.boss) src.ultCharge = Math.min(100, src.ultCharge + COMBAT.ult.perAbility);
     if (burst > 0 && dst.alive) {
       this.hurt(dst, burst, src.id, 'pulse');
       this.events.push({ type: 'combo', x: dst.x, y: dst.y, name: 'Explosão de Plasma', bonus: burst, pid: src.id, vfx: 'burst' });
@@ -4300,10 +4337,8 @@ export class Game {
         if (healN && src.alive) this.heal(src, src, healN);
       }
       if (reaction.aoe) {
-        for (const o of this.players) {
-          if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
-          if (dist(o.x, o.y, dst.x, dst.y) < reaction.aoe && this.sight(dst.x, dst.y, o.x, o.y)) this.hurt(o, reaction.bonus * 0.5, src.id, 'pulse');
-        }
+        const splash = this.players.filter((o) => o !== dst && o.alive && o.playing && this.hostile(src, o) && dist(o.x, o.y, dst.x, dst.y) < reaction.aoe! && this.sight(dst.x, dst.y, o.x, o.y));
+        for (const o of capAoe(this.mode, splash, dst.x, dst.y)) this.hurt(o, reaction.bonus * 0.5, src.id, 'pulse');
       }
       for (const o of this.players) {
         if (o === dst || !o.alive || !o.playing || !this.hostile(src, o)) continue;
@@ -4493,6 +4528,7 @@ export class Game {
       return;
     }
     const src = by ? this.players.find((o) => o.id === by) ?? null : null;
+    if (this.mode === 'todos' && src && src.id === p.id && (cause === 'shot' || cause === 'blast' || cause === 'pulse')) return;
     if (p.markT > 0) dmg *= COMBAT.markMult;
     const weak = false;
     if (p.exhaustT > 0) dmg *= BOSS.exhaustMult;
@@ -4554,11 +4590,14 @@ export class Game {
 
   /** Vizinhos do impacto, uma vez. Não passa de novo pelo combo do alvo principal. */
   private splashAround(src: Player, primary: Player, b: Bullet, radius: number, frac: number, wet: boolean, skip = 0) {
-    for (const o of this.players) {
-      if (o === primary || !o.alive || !o.playing || b.hit.includes(o.id) || !this.hostile(src, o)) continue;
-      if (dist(o.x, o.y, primary.x, primary.y) > radius) continue;
-      if (skip > 0 && dist(o.x, o.y, primary.x, primary.y) < skip) continue;
-      if (!this.sight(primary.x, primary.y, o.x, o.y)) continue;
+    const near = this.players.filter((o) => {
+      if (o === primary || !o.alive || !o.playing || b.hit.includes(o.id) || !this.hostile(src, o)) return false;
+      const d = dist(o.x, o.y, primary.x, primary.y);
+      if (d > radius) return false;
+      if (skip > 0 && d < skip) return false;
+      return this.sight(primary.x, primary.y, o.x, o.y);
+    });
+    for (const o of capAoe(this.mode, near, primary.x, primary.y)) {
       b.hit.push(o.id);
       if (wet) this.slow(o, 0.6);
       const n = Math.round(b.dmg * frac);

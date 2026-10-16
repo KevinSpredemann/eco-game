@@ -3,7 +3,9 @@ import { LATER_MODES, PLAY_MODES, modeById } from '../src/ui/modes';
 
 describe('tela de modos', () => {
   it('lista só os modos que existem, e deixa o resto indisponível', () => {
-    expect(PLAY_MODES.map((m) => m.id)).toEqual(['x1-online', 'x1-offline', 'dupla', 'mundo']);
+    expect(PLAY_MODES.map((m) => m.id)).toEqual(['x1-online', 'x1-offline', 'dupla', 'todos', 'mundo']);
+    expect(modeById('todos')?.desc).toBe('Entre na arena, domine seus poderes e elimine todos os adversários. Apenas o mais habilidoso será o vencedor.');
+    expect(modeById('todos')?.where).toBe('Online');
     expect(PLAY_MODES.every((m) => m.available)).toBe(true);
     const offline = modeById('x1-offline');
     expect(offline?.where).toBe('Offline');

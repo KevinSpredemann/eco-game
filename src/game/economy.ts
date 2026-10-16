@@ -315,7 +315,7 @@ export function acceptedLoadout(p: Profile, raw: Partial<Loadout> | null | undef
   return sanitizeLoadout(raw, (k) => owns(p, k));
 }
 
-export type MatchMode = 'duelo' | 'dupla';
+export type MatchMode = 'duelo' | 'dupla' | 'todos';
 
 export interface MatchResult {
   mode: MatchMode;

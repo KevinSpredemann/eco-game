@@ -112,6 +112,8 @@ export class Renderer {
   private lookY = WORLD_H / 2;
   /** vitrine chama setView e a câmera de jogo não empurra o enquadramento */
   private viewLock = false;
+  /** câmera de espectador: segue este id enquanto o jogador local está morto */
+  followId: string | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
@@ -1492,7 +1494,8 @@ export class Renderer {
     this.shake = Math.max(0, this.shake - dt * 40);
     if (!this.viewLock && !this.showcase) {
       const me = game.players.find((p) => p.id === this.meId(game));
-      const focus = me ?? game.players.find((p) => p.alive) ?? game.players[0];
+      const watched = this.followId ? game.players.find((p) => p.id === this.followId) : null;
+      const focus = me && !me.alive && watched ? watched : me ?? game.players.find((p) => p.alive) ?? game.players[0];
       if (focus) {
         this.lookX = focus.x;
         this.lookY = focus.y;
@@ -1542,6 +1545,7 @@ export class Renderer {
       if (game.combat) this.drawCombatAir(game, time);
       this.drawBeams(dt);
       this.abilityFx.setReduced(this.reducedEffects);
+      this.abilityFx.setCrowd(game.mode === 'todos');
       this.abilityFx.setAim(
         this.aimPreview && game.phase === 'play' && game.human.alive
           ? { x: this.aimPreview.x, y: this.aimPreview.y, ang: this.aimPreview.ang, dist: this.aimPreview.dist, color: this.aimPreview.color, charge: this.aimPreview.charge, outOfRange: this.aimPreview.outOfRange }
@@ -2397,7 +2401,7 @@ export class Renderer {
     const rk = an.recoil * an.recoil * 3;
     const rx = -Math.cos(p.aim) * rk;
     const ry = -Math.sin(p.aim) * rk * 0.5;
-    const powers = game.mode === 'duelo' || game.mode === 'dupla';
+    const powers = game.mode === 'duelo' || game.mode === 'dupla' || game.mode === 'todos';
     if (game.combat && human && p.alive && !powers) this.drawAimGuide(game, p, time);
     ctx.save();
     ctx.translate(rx, ry);

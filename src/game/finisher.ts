@@ -23,6 +23,11 @@ export function finisherStyle(primer: Element | '', finisher: Element | ''): Fin
  * Só quando o golpe que fechou o combo também confirmou a eliminação.
  * Competitivo fica mais curto. A simulação não pausa: o cliente só desenha.
  */
+/** Online só desenha o final que o servidor confirmou no evento. Offline a simulação local é a autoridade. */
+export function playFinisher(online: boolean, confirmed: boolean): boolean {
+  return !online || confirmed;
+}
+
 export function cinematicFinisher(opts: { comboKill: boolean; repeat: boolean; competitive: boolean }): { play: boolean; seconds: number } {
   if (!opts.comboKill || opts.repeat) return { play: false, seconds: 0 };
   const seconds = opts.competitive ? FINISHER_MIN : 1.8;

@@ -2,7 +2,8 @@
 export const QUICK_WAIT_MS = 25_000;
 
 /** Quantos participantes a sala abre. Busca (fill) completa até o máximo do modo. */
-export function plannedLobbySize(opts: { mode: 'duelo' | 'dupla'; humans: number; bots: number; fill: boolean }): number {
+export function plannedLobbySize(opts: { mode: 'duelo' | 'dupla' | 'todos'; humans: number; bots: number; fill: boolean }): number {
+  if (opts.mode === 'todos') return Math.min(8, Math.max(0, opts.humans));
   const cap = opts.mode === 'duelo' ? 2 : 4;
   const humans = Math.min(Math.max(0, opts.humans), cap);
   const bots = Math.max(0, opts.bots);

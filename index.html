@@ -33,6 +33,14 @@
       </div>
       <div class="hud-status" id="hud-status"></div>
       <div class="combo-dock" id="hud-combo" hidden></div>
+      <div class="spec-bar" id="spec-bar" hidden>
+        <p id="spec-msg">Eliminado</p>
+        <p id="spec-who"></p>
+        <div class="control-lab-actions">
+          <button type="button" data-action="spec-prev">Anterior</button>
+          <button type="button" data-action="spec-next">Próximo</button>
+        </div>
+      </div>
       <div class="control-lab" id="control-lab" hidden>
         <p class="control-lab-title">Teste de controles · Laboratório</p>
         <p id="control-lab-read">Parado</p>
@@ -232,6 +240,7 @@
           <div class="mode-pills" id="online-modes">
             <button class="pill on" data-omode="duelo">Duelo x1</button>
             <button class="pill" data-omode="dupla">2x2</button>
+            <button class="pill" data-omode="todos">Todos Contra Todos</button>
           </div>
           <button class="btn primary" data-action="create-room">Criar sala e chamar amigos</button>
           </div>
@@ -247,6 +256,7 @@
           <p class="form-note">Entra numa sala aberta. Começa quando lotar ou todos estiverem prontos; bots completam as vagas.</p>
           <button class="btn quick-btn" data-action="quick-duelo">Buscar partida · X1</button>
           <button class="btn quick-btn" data-action="quick-dupla">Buscar partida · 2x2</button>
+          <button class="btn quick-btn" data-action="quick-todos">Buscar partida · Todos Contra Todos</button>
           </div>
           <p class="form-error" id="online-error" role="alert" hidden></p>
           <button class="btn small" data-action="online-retry" id="online-retry" hidden>Tentar de novo</button>
@@ -268,7 +278,7 @@
         <ul class="lobby-list" id="lobby-list"></ul>
         <div class="lobby-config" id="lobby-config">
           <label class="opt">Modo
-            <select id="lobby-mode"><option value="duelo">Duelo x1</option><option value="dupla">2x2</option></select>
+            <select id="lobby-mode"><option value="duelo">Duelo x1</option><option value="dupla">2x2</option><option value="todos">Todos Contra Todos</option></select>
           </label>
           <label class="opt">Mapa <select id="lobby-arena"></select></label>
           <label class="opt">Bots <select id="lobby-bots"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>

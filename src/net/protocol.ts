@@ -200,7 +200,7 @@ export function encodeSnapshot(g: Game, withEchoMeta: boolean, withRoutes = with
     rd: g.roundDur,
     rt: r2(g.roundT),
     sd: g.sudden ? 1 : 0,
-    sl: r2(g.mode === 'duelo' && g.sudden ? Math.max(0, g.suddenLimit - g.suddenT) : 0),
+    sl: r2((g.mode === 'duelo' || g.mode === 'todos') && g.sudden ? Math.max(0, g.suddenLimit - g.suddenT) : 0),
     cw: g.phase === 'call' ? (g.callWinner ?? '') : '',
     wt: r2(g.worldT),
     core: [g.core.x, g.core.y],
