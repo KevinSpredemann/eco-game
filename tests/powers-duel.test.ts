@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { BASIC, kitOf } from '../src/game/elements';
+import { BASIC, ENERGY_MAX, kitOf } from '../src/game/elements';
 
 const STEP = 1 / 60;
 const idle: Input = { mx: 0, my: 0, dash: false, ability: false };
@@ -44,7 +44,7 @@ describe('X1 e 2x2 só com poderes', () => {
       expect(g.bullets.some((n) => n.el || n.plasma)).toBe(false);
       expect(a.powerCd.every((n) => n === 0)).toBe(true);
       expect(a.basicCd).toBeGreaterThan(0);
-      expect(a.energy).toBeLessThan(100);
+      expect(a.energy).toBeLessThan(ENERGY_MAX);
       for (let i = 0; i < 30 && b.hp === before; i++) g.step(STEP, { a: idle, b: idle });
       expect(before - b.hp).toBe(BASIC.dmg);
       expect(b.burnT).toBe(0);

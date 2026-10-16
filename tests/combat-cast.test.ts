@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { kitOf, resolvedDamage } from '../src/game/elements';
+import { ENERGY_MAX, kitOf, resolvedDamage } from '../src/game/elements';
 import { sweepCircle, segmentOpen } from '../src/game/sweep';
 import { abilityLog, clearAbilityLog, setAbilityTrace } from '../src/game/abilityTrace';
 import { queuesOnPress, queuesOnRelease, resolveCastStyle } from '../src/ui/input';
@@ -207,7 +207,7 @@ describe('colisão e ciclo do golpe', () => {
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 60 }, b: idle });
     expect(b.hp).toBe(b.maxHp);
     expect(a.powerCd[1]).toBe(0);
-    expect(a.energy).toBe(100);
+    expect(a.energy).toBe(ENERGY_MAX);
   });
 
   it('o impulso não atravessa uma parede fina', () => {
@@ -235,14 +235,14 @@ describe('colisão e ciclo do golpe', () => {
       b.y = 250;
       g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
       expect(a.powerCd[0]).toBe(0);
-      expect(a.energy).toBe(100);
+      expect(a.energy).toBe(ENERGY_MAX);
       expect(g.bullets.length).toBe(0);
       expect(a.castT).toBeGreaterThan(0);
       a.stunT = 0.4;
       g.step(STEP, { a: idle, b: idle });
       expect(a.pendingCast).toBeNull();
       expect(a.powerCd[0]).toBe(0);
-      expect(a.energy).toBe(100);
+      expect(a.energy).toBe(ENERGY_MAX);
     } finally {
       pw.windup = prev;
     }
@@ -263,7 +263,7 @@ describe('colisão e ciclo do golpe', () => {
       expect(a.powerCd[0]).toBe(0);
       g.step(0.25, { a: idle, b: idle });
       expect(a.powerCd[0]).toBeGreaterThan(0);
-      expect(a.energy).toBeLessThan(100);
+      expect(a.energy).toBeLessThan(ENERGY_MAX);
       expect(g.bullets.some((n) => n.el === 'ice') || b.hp < b.maxHp).toBe(true);
     } finally {
       pw.windup = prev;

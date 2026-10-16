@@ -28,7 +28,7 @@ import { avatarURL, drawMapPreview, drawPortrait } from './ui/portraits';
 import { Carousel, fitText } from './ui/carousel';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
-import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, catalogAim, cooldownOf, denyPlasma, denyPowerCast, describePower, formOf, kitOf, powerSlotIndex, studioOf } from './game/elements';
+import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, catalogAim, cooldownOf, denyPlasma, denyPowerCast, describePower, energyReadout, formOf, kitOf, powerSlotIndex, studioOf } from './game/elements';
 import { comboReady, listSynergies, pickComboRecipe } from './game/combos';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
@@ -91,7 +91,7 @@ refreshMuteIcon();
 // ------------------------------------------------------------------ áudio/opções
 function refreshKeyDocs() {
   const L = (a: Action) => keyLabel(settings.keys[a]);
-  const move = settings.moveScheme === 'esdf' ? 'ESDF anda' : settings.moveScheme === 'arrows' ? 'As setas andam' : 'WASD anda';
+  const move = settings.moveScheme === 'esdf' ? 'ESDF e as setas andam' : settings.moveScheme === 'arrows' ? 'As setas andam e as letras ficam para os poderes' : 'WASD e as setas andam';
   const powers = `${L('ability')}, ${L('skill')} e ${L('bonus')} são os poderes, ${L('ult')} é a ultimate, ${L('plasma')} é o extra`;
   const tabBound = Object.values(settings.keys).includes('Tab');
   const x1 = document.getElementById('howto-x1');
@@ -296,12 +296,18 @@ function renderKeybinds() {
   const warn = bindConflict
     ? `<p class="kb-warn">${keyLabel(bindConflict.code)} está em ${ACTION_LABEL[bindConflict.other]}. <button type="button" class="btn small" data-kb-replace>Substituir</button><button type="button" class="btn small ghost" data-kb-cancel>Cancelar</button></p>`
     : '';
+  const rowHtml = (row: (typeof BIND_ROWS)[number]) =>
+    `<div class="kb-row"><span class="kb-id"><i class="kb-ico" data-slot="${row.id}"></i><span class="kb-name"><b>${row.name}</b><small>${row.hint}</small></span></span><button type="button" class="kb-key${bindConflict?.action === row.id ? ' wait' : ''}" data-kb="${row.id}">${settings.keys[row.id] ? keyLabel(settings.keys[row.id]) : '—'}</button></div>`;
+  const group = (title: string, ids: Action[]) => {
+    const rows = ids.map((id) => BIND_ROWS.find((r) => r.id === id)).filter((r): r is (typeof BIND_ROWS)[number] => !!r);
+    return `<p class="kb-group">${title}</p>${rows.map(rowHtml).join('')}`;
+  };
+  const tabBound = Object.values(settings.keys).includes('Tab');
   box.innerHTML =
     warn +
-    BIND_ROWS.map(
-      (row) =>
-        `<div class="kb-row"><span class="kb-id"><i class="kb-ico" data-slot="${row.id}"></i><span class="kb-name"><b>${row.name}</b><small>${row.hint}</small></span></span><button type="button" class="kb-key${bindConflict?.action === row.id ? ' wait' : ''}" data-kb="${row.id}">${settings.keys[row.id] ? keyLabel(settings.keys[row.id]) : '—'}</button></div>`,
-    ).join('');
+    group('Movimentação', ['dash']) +
+    group('Combate', ['ability', 'skill', 'bonus', 'ult', 'plasma', 'fire', 'item']) +
+    `<p class="kb-group">Interface</p><div class="kb-row"><span class="kb-name"><b>Placar</b><small>${tabBound ? 'Tab está num poder' : 'segure para ver'}</small></span><span class="kb-fixed">Tab</span></div><div class="kb-row"><span class="kb-name"><b>Pausa</b><small>também vale a tecla P</small></span><span class="kb-fixed">Esc</span></div>`;
   box.querySelector<HTMLButtonElement>('[data-kb-cancel]')?.addEventListener('click', () => {
     bindConflict = null;
     input.capture = null;
@@ -316,7 +322,7 @@ function renderKeybinds() {
     b.addEventListener('click', () => {
       const a = b.dataset.kb as Action;
       bindConflict = null;
-      b.textContent = 'Pressione uma tecla...';
+      b.textContent = 'Pressione a nova tecla';
       b.classList.add('wait');
       audio.click();
       input.capture = (code) => {
@@ -436,9 +442,21 @@ function go(action: string, el?: HTMLElement) {
       renderKeybinds();
       show('screen-options');
       break;
+    case 'controls':
+      lastScreenBeforeOptions = currentScreen() ?? 'screen-title';
+      $<HTMLInputElement>('#opt-own').checked = settings.ownEcho;
+      renderKeybinds();
+      show('screen-options');
+      openOptPane('teclas');
+      requestAnimationFrame(() => document.getElementById('controls-anchor')?.scrollIntoView({ block: 'start' }));
+      break;
+    case 'combos':
+      lastScreenBeforeOptions = currentScreen() ?? 'screen-title';
+      show('screen-howto');
+      break;
     case 'back': {
       const cur = currentScreen();
-      if (cur === 'screen-options') show(lastScreenBeforeOptions);
+      if (cur === 'screen-options' || (cur === 'screen-howto' && !!game && lastScreenBeforeOptions === 'screen-pause')) show(lastScreenBeforeOptions);
       else if (cur === 'screen-map') {
         const prev = flowBack('map', { loadout: usesLoadout(), lobby: selectCtx === 'lobby' });
         if (prev === 'powers') openLoadout('pre');
@@ -1945,14 +1963,25 @@ function endMatch() {
 function pause() {
   if (!game || game.phase === 'results' || game.paused) return;
   if (!isOnline()) game.paused = true;
+  input.capture = null;
   input.clear();
+  $('#pause-online').hidden = !isOnline();
   $('#screen-pause .btn[data-action=restart]').textContent = isOnline() ? 'Voltar para a sala' : 'Reiniciar partida';
   show('screen-pause');
 }
 function resume() {
   if (!game) return;
+  input.capture = null;
+  input.clear();
   game.paused = false;
   show(null);
+}
+function openOptPane(name: string) {
+  const b = document.querySelector<HTMLElement>(`[data-tabset="opt"] [data-tab="${name}"]`);
+  if (!b) return;
+  const set = b.closest<HTMLElement>('[data-tabset]');
+  set?.querySelectorAll<HTMLElement>('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
+  document.querySelectorAll<HTMLElement>('[data-pane-of="opt"]').forEach((p) => (p.hidden = p.dataset.pane !== name));
 }
 input.onPause = () => {
   const cur = currentScreen();
@@ -2128,7 +2157,7 @@ function comboState(g: AnyGame): { phase: 'ready' | 'armed' | 'wait' | 'done'; k
   const why = (i: number): string => {
     if ((cds[i] ?? 0) > 0) return `recarga ${(cds[i] ?? 0).toFixed(1).replace('.', ',')}s`;
     if (i === 2) return (me.ultCharge ?? 100) < 100 ? 'suprema em carga' : '';
-    return (me.energy ?? 100) < SLOT_COST[i] ? 'sem energia' : '';
+    return (me.energy ?? ENERGY_MAX) < SLOT_COST[i] ? 'sem energia' : '';
   };
   const usable = [0, 1, 2, 3].map((i) => (why(i) ? 9 : 0));
   const keyOf = (_slot: number, key: string) => key;
@@ -2551,7 +2580,8 @@ function updateHud() {
     if (comboEl.dataset.sig !== sig) {
       comboEl.dataset.sig = sig;
       const ico = (el: string) => `<i class="cb-el" data-el="${escapeHtml(el)}" style="--el:${ELEMENT_COLOR[el as keyof typeof ELEMENT_COLOR] ?? '#fff'}">${EL_TAG[el] ?? '•'}</i>`;
-      const tag = cs.phase === 'done' ? 'FEITO' : cs.phase === 'wait' ? 'NÃO FECHOU' : cs.phase === 'armed' ? 'FECHE' : 'COMBO';
+      const tag =
+        cs.phase === 'done' ? 'COMBO EXECUTADO' : cs.need && /energia/i.test(cs.need) ? 'ENERGIA INSUFICIENTE' : cs.phase === 'wait' ? 'SEQUÊNCIA INTERROMPIDA' : cs.phase === 'armed' ? `PRÓXIMA HABILIDADE: ${cs.key || cs.bKey}` : 'COMBO DISPONÍVEL';
       comboEl.innerHTML = `<span class="cb-tag">${tag}</span><span class="cb-pair">${ico(cs.aEl)}<em>+</em>${ico(cs.bEl)}</span><span class="cb-go">→</span><b>${escapeHtml(cs.name)}</b>${cs.aKey ? `<kbd>${escapeHtml(cs.aKey)}</kbd>` : ''}${cs.bKey ? `<kbd class="cb-fin">${escapeHtml(cs.bKey)}</kbd>` : ''}<small class="cb-need"></small><i class="cb-bar"><i></i></i>`;
       if (cs.phase === 'armed' || cs.phase === 'done') {
         comboEl.classList.remove('pop');
@@ -2560,7 +2590,7 @@ function updateHud() {
       }
     }
     const needEl = comboEl.querySelector('.cb-need') as HTMLElement | null;
-    if (needEl) needEl.textContent = cs.need ?? '';
+    if (needEl) needEl.textContent = [`Energia ${energyReadout(g.human.energy ?? 0)}`, cs.need ?? ''].filter(Boolean).join(' · ');
     const bar = comboEl.querySelector('.cb-bar i') as HTMLElement | null;
     if (bar) bar.style.width = `${Math.round(cs.frac * 100)}%`;
     const barWrap = comboEl.querySelector('.cb-bar') as HTMLElement | null;
@@ -2586,12 +2616,12 @@ function updateHud() {
     // no computador a barra de habilidades já mostra item e recargas
     const itTxt = me.item && input.touchMode ? `<span class="itm">${ITEMS[me.item].name} x${me.itemN}</span>` : '';
     const ePct = Math.max(0, Math.min(100, Math.round(((me.energy ?? ENERGY_MAX) / ENERGY_MAX) * 100)));
-    const energyBit = g.mode === 'duelo' || g.mode === 'dupla' ? `<span class="ebar" title="Energia"><i style="width:${ePct}%"></i></span><b class="en">${Math.ceil(me.energy ?? 0)}</b>` : '';
+    const energyBit = g.mode === 'duelo' || g.mode === 'dupla' ? `<span class="ebar" title="Energia"><i style="width:${ePct}%"></i></span><b class="en">${energyReadout(me.energy ?? 0)}</b>` : '';
     setHTML(
       '#hud-status',
       `<span class="hpbar"><i class="${cls}" style="width:${Math.round(f * 100)}%"></i>${me.shieldHp > 0 ? `<s style="width:${Math.round((me.shieldHp / 50) * 100)}%"></s>` : ''}</span><b>${Math.ceil(me.hp)}${me.shieldHp > 0 ? `<small class="shv">+${Math.ceil(me.shieldHp)}⛉</small>` : ''}</b>${energyBit}<span class="wpn">${wTxt}</span>`,
     );
-    $('#hud-status').dataset.energy = g.mode === 'duelo' || g.mode === 'dupla' ? String(Math.ceil(me.energy ?? 0)) : '';
+    $('#hud-status').dataset.energy = g.mode === 'duelo' || g.mode === 'dupla' ? energyReadout(me.energy ?? 0) : '';
     // item, habilidades e poder já aparecem nos botões/barra de habilidades (HUD limpo)
     void itTxt;
     $('#btn-item .tlabel').textContent = me.item ? `${({ bomba: 'BOMBA', mina: 'MINA', gelo: 'GELO', kit: 'KIT', pulso: 'PULSO' } as Record<string, string>)[me.item] ?? 'ITEM'} ${me.itemN}` : 'ITEM';

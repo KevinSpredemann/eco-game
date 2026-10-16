@@ -291,9 +291,20 @@ export const WALL_REACH = 46;
 export const WALL_STUN = 0.7;
 export const WALL_BONUS = 6;
 
-/** energia da partida (X1 e 2x2). Começa cheia e volta sozinha. */
-export const ENERGY_MAX = 100;
+/** energia da partida (X1 e 2x2). 145 é 45% acima de 100. O custo de cada golpe fica no próprio poder. */
+export const ENERGY_MAX = 145;
 export const ENERGY_REGEN = 14;
+
+/** Energia sempre entre 0 e o máximo. Valor inválido vira 0. */
+export function clampEnergy(n: number, max = ENERGY_MAX): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(max, n));
+}
+
+/** Texto do HUD: valor atual e teto, no mesmo instante. */
+export function energyReadout(current: number, max = ENERGY_MAX): string {
+  return `${Math.round(clampEnergy(current, max))}/${max}`;
+}
 /** custo de Q, E, R e F. O projétil gasta ao sair; a área só gasta se acertar alguém. */
 export const SLOT_COST = [18, 24, 30, 16] as const;
 

@@ -3595,6 +3595,19 @@ button.lo-slot {
   margin: 14px 0 4px;
   font-size: 1rem;
 }
+.kb-group {
+  margin: 12px 0 2px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted, #9aa0c0);
+}
+.kb-fixed {
+  min-width: 52px;
+  text-align: center;
+  font-weight: 700;
+  color: #d7e6ff;
+}
 .keybinds {
   display: flex;
   flex-direction: column;

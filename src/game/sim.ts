@@ -22,7 +22,7 @@ import {
   windState,
 } from './arenas';
 import { AbilityId, CHARACTERS, CharacterDef, getCharacter, withLevel } from './characters';
-import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, Loadout, SKILLS, ULTS, botLoadout, cloneDamage, levelMult, sanitizeLoadout } from './balance';
+import { ABILITY_BAL, BOSS, BossSkill, COMBAT, DEFAULT_LOADOUT, Loadout, SKILLS, ULTS, botLoadout, cloneDamage, hazardDamage, levelMult, sanitizeLoadout, type HazardKind } from './balance';
 import * as C from './constants';
 import { botCombat, BotBrain, NavGrid } from './bot';
 import { PowerId, getPower, randomPower } from './powerups';
@@ -40,6 +40,7 @@ import {
   BURN_TIME,
   ENERGY_MAX,
   ENERGY_REGEN,
+  clampEnergy,
   EXTRA_CAP,
   FLOW_BONUS,
   FLOW_TIME,
@@ -874,6 +875,8 @@ export class Game {
   events: GameEvent[] = [];
   /** última posição em que o corpo cabia (para sair de uma parede sem teleporte aleatório) */
   private safePos = new Map<string, { x: number; y: number }>();
+  /** próximo tick de perigo, por jogador. Não vai no snapshot. */
+  private hazardClock = new Map<string, number>();
 
   phase: Phase = 'prep';
   phaseT = 0;
@@ -1435,7 +1438,7 @@ export class Game {
     this.separatePlayers();
     for (const p of this.players) {
       if (!p.playing || !p.alive) continue;
-      this.checkHazards(p);
+      this.checkHazards(p, dt);
       if (!p.alive) continue;
       this.checkEchoes(p);
       if (!p.alive) continue;
@@ -1682,7 +1685,7 @@ export class Game {
       p.flowT = Math.max(0, p.flowT - dt);
       p.ambushT = Math.max(0, p.ambushT - dt);
       p.healT = Math.max(0, p.healT - dt);
-      if (p.alive) p.energy = Math.min(ENERGY_MAX, p.energy + ENERGY_REGEN * dt);
+      if (p.alive) p.energy = clampEnergy(p.energy + ENERGY_REGEN * dt);
       if (p.burnT > 0 && p.alive) {
         p.burnAcc += dt;
         while (p.burnAcc >= BURN_TICK && p.alive) {
@@ -1770,7 +1773,7 @@ export class Game {
     p.hidden = inBush || p.phaseT > 0 || p.cloakT > 0;
     // lentidões não se multiplicam sem limite: a mais forte vale, e há uma velocidade mínima
     const slowK = Math.min(p.slowT > 0 ? 0.6 : 1, p.stasisT > 0 ? 0.35 : 1, sand ? 0.55 : 1, p.castT > 0 ? COMBAT.castMove : 1) * (inBush ? 0.92 : 1) * (carrying ? 0.92 : 1);
-    let speed = C.SPEED * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * Math.max(COMBAT.minSpeed, slowK) * (p.boss ? BOSS.speedMul * (p.exhaustT > 0 ? 0.5 : 1) : 1);
+    let speed = C.SPEED * COMBAT.walkMul * (p.turboT > 0 ? 1.45 : 1) * (p.overT > 0 ? 1.15 : 1) * Math.max(COMBAT.minSpeed, slowK) * (p.boss ? BOSS.speedMul * (p.exhaustT > 0 ? 0.5 : 1) : 1);
     if (this.mode === 'duelo' || this.mode === 'dupla') speed *= speedMul(p.char.id, p.comboStacks);
     if (p.isBot) speed *= p.brain!.speedMul;
     speed *= tune.speed * holdSpeed;
@@ -2587,59 +2590,127 @@ export class Game {
     return false;
   }
 
-  private checkHazards(p: Player) {
-    if (p.phaseT > 0) return;
-    if (!this.hazardAt(p.x, p.y, C.PLAYER_R)) return;
-    // poço: engole e reposiciona
-    for (const w of this.arena.wells ?? []) {
-      if (dist(p.x, p.y, w.x, w.y) < w.r + C.PLAYER_R * 0.4) {
-        this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: 'fall' });
-        const s = this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)];
-        p.recorder?.markJump();
-        p.x = s.x;
-        p.y = s.y;
-        p.vx = p.vy = 0;
-        if (p.invulnT <= 0) this.damage(p, 'fall', true);
-        return;
-      }
+  /** O contato mais grave. Poço e trem saem antes. Os outros compartilham um tick. */
+  private hazardContact(p: Player): 'well' | 'train' | HazardKind | null {
+    const a = this.arena;
+    const r = C.PLAYER_R;
+    const t = this.worldT;
+    for (const w of a.wells ?? []) {
+      if (dist(p.x, p.y, w.x, w.y) < w.r + r * 0.4) return 'well';
     }
-    // tornado: arremessa (derruba energia, pouco dano)
+    for (const tr of a.trains ?? []) {
+      const st = trainState(tr, t);
+      if (st.phase === 'pass' && p.y > tr.y - 8 && p.y < tr.y + tr.h + 8 && p.x > st.x0 - r && p.x < st.x1 + r) return 'train';
+    }
+    let best: HazardKind | null = null;
+    let bestN = -1;
+    const take = (kind: HazardKind) => {
+      const n = hazardDamage(kind);
+      if (n > bestN) {
+        best = kind;
+        bestN = n;
+      }
+    };
+    for (const td of a.tornados ?? []) {
+      const c = tornadoPos(td, t);
+      if (dist(p.x, p.y, c.x, c.y) < td.r + r * 0.5) take('tornado');
+    }
+    for (const pi of a.pistons ?? []) {
+      const s = pistonState(pi, t);
+      if (s.phase === 'slam' && s.ext > 0.25 && circleRect(p.x, p.y, r * 0.7, { x: pi.x, y: pi.y, w: pi.w, h: pi.h * s.ext })) take('piston');
+    }
+    for (const l of a.lasers ?? []) {
+      const lx = laserX(l, t);
+      if (Math.abs(p.x - lx) < r + 4 && p.y > l.y0 - r && p.y < l.y1 + r) take('laser');
+    }
+    for (const l of a.lava ?? []) {
+      if (dist(p.x, p.y, l.x, l.y) < l.r - 6) take('lava');
+    }
+    for (const b of a.beams ?? []) {
+      const ang = beamAngle(b, t);
+      if (distToSegment(p.x, p.y, b.x, b.y, b.x + Math.cos(ang) * b.len, b.y + Math.sin(ang) * b.len) < r + 7) take('beam');
+    }
+    for (let i = 0; i < a.zones.length; i++) {
+      if (this.zoneState(i) !== 'on') continue;
+      const z = a.zones[i];
+      if (dist(p.x, p.y, z.x, z.y) < z.r + r * 0.4) take('zone');
+    }
+    return best;
+  }
+
+  private tossTornado(p: Player) {
     for (const td of this.arena.tornados ?? []) {
       const c = tornadoPos(td, this.worldT);
       const d = dist(p.x, p.y, c.x, c.y);
-      if (d < td.r + C.PLAYER_R * 0.5) {
-        if (p.invulnT > 0) return;
-        const nx = (p.x - c.x) / (d || 1);
-        const ny = (p.y - c.y) / (d || 1);
-        p.vx = nx * 520 - ny * 520;
-        p.vy = ny * 520 + nx * 520;
-        p.stunT = Math.max(p.stunT, 0.45);
-        p.invulnT = Math.max(p.invulnT, 0.9);
-        this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: 'hazard' });
-        if (this.combat) this.hurt(p, 12, null, 'hazard');
-        else if (p.carry > 0) {
+      if (d >= td.r + C.PLAYER_R * 0.5) continue;
+      const nx = (p.x - c.x) / (d || 1);
+      const ny = (p.y - c.y) / (d || 1);
+      p.vx = nx * 520 - ny * 520;
+      p.vy = ny * 520 + nx * 520;
+      p.stunT = Math.max(p.stunT, 0.45);
+      this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: 'hazard' });
+      return;
+    }
+  }
+
+  private checkHazards(p: Player, dt: number) {
+    if (p.phaseT > 0 || p.invulnT > 1) {
+      this.hazardClock.delete(p.id);
+      return;
+    }
+    const kind = this.hazardContact(p);
+    if (!kind) {
+      this.hazardClock.delete(p.id);
+      return;
+    }
+    if (kind === 'well') {
+      for (const w of this.arena.wells ?? []) {
+        if (dist(p.x, p.y, w.x, w.y) < w.r + C.PLAYER_R * 0.4) {
+          this.events.push({ type: 'hit', x: p.x, y: p.y, pid: p.id, by: 'fall' });
+          const s = this.arena.spawns[Math.floor(Math.random() * this.arena.spawns.length)];
+          p.recorder?.markJump();
+          p.x = s.x;
+          p.y = s.y;
+          p.vx = p.vy = 0;
+          if (p.invulnT <= 0) this.damage(p, 'fall', true);
+          return;
+        }
+      }
+      return;
+    }
+    if (kind === 'train') {
+      for (const tr of this.arena.trains ?? []) {
+        const st = trainState(tr, this.worldT);
+        if (st.phase === 'pass' && p.y > tr.y - 8 && p.y < tr.y + tr.h + 8 && p.x > st.x0 - C.PLAYER_R && p.x < st.x1 + C.PLAYER_R) {
+          const up = p.y < tr.y + tr.h / 2;
+          p.recorder?.markJump();
+          p.y = up ? tr.y - C.PLAYER_R - 4 : tr.y + tr.h + C.PLAYER_R + 4;
+          p.vx = tr.dir * 600;
+          p.vy = up ? -300 : 300;
+          this.collideWorld(p);
+          return;
+        }
+      }
+      return;
+    }
+    const left = (this.hazardClock.get(p.id) ?? 0) - dt;
+    if (left > 0) {
+      this.hazardClock.set(p.id, left);
+      return;
+    }
+    this.hazardClock.set(p.id, COMBAT.hazard.tick);
+    if (kind === 'tornado') {
+      this.tossTornado(p);
+      if (!this.combat) {
+        if (p.carry > 0) {
           this.dropFragment(p.x, p.y, p.carry);
           p.carry = 0;
         }
         return;
       }
     }
-    // trem: joga para fora do trilho
-    for (const tr of this.arena.trains ?? []) {
-      const st = trainState(tr, this.worldT);
-      if (st.phase === 'pass' && p.y > tr.y - 8 && p.y < tr.y + tr.h + 8 && p.x > st.x0 - C.PLAYER_R && p.x < st.x1 + C.PLAYER_R) {
-        const up = p.y < tr.y + tr.h / 2;
-        p.recorder?.markJump();
-        p.y = up ? tr.y - C.PLAYER_R - 4 : tr.y + tr.h + C.PLAYER_R + 4;
-        p.vx = tr.dir * 600;
-        p.vy = up ? -300 : 300;
-        this.collideWorld(p);
-      }
-    }
-    if (p.invulnT > 0) return;
     if (this.combat) {
-      this.hurt(p, 25, null, 'hazard');
-      p.invulnT = Math.max(p.invulnT, 0.8);
+      this.hurt(p, hazardDamage(kind), null, 'hazard');
       return;
     }
     if (p.shieldT > 0) {
@@ -3241,7 +3312,7 @@ export class Game {
       abilityTrace(p.id, 'deny', 'energy');
       return;
     }
-    p.energy -= BASIC.cost;
+    p.energy = clampEnergy(p.energy - BASIC.cost);
     p.basicCd = BASIC.cd;
     const muzzle = 16;
     this.bullets.push({
@@ -3457,7 +3528,7 @@ export class Game {
     const knock = KNOCK[def.element];
     const pay = () => {
       if (ult) p.ultCharge = 0;
-      else p.energy -= cost;
+      else p.energy = clampEnergy(p.energy - cost);
       p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
     };
     if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone' || def.act === 'wall') {
@@ -3738,7 +3809,7 @@ export class Game {
       return;
     }
     const pay = (at?: { x: number; y: number; r?: number; form?: string }) => {
-      p.energy -= def.cost;
+      p.energy = clampEnergy(p.energy - def.cost);
       p.plasmaCd = def.cd;
       p.dir = ang;
       this.noteCombat({ at: this.worldT, kind: 'cast', owner: p.id, target: '', element: def.element, ability: def.id, dmg: 0, x: p.x, y: p.y, combo: '' });
@@ -3994,7 +4065,7 @@ export class Game {
         abilityTrace(p.id, 'deny', 'energy');
         return;
       }
-      p.energy -= PLASMA.cost;
+      p.energy = clampEnergy(p.energy - PLASMA.cost);
       p.plasmaCd = PLASMA.cd;
       const muzzle = 18;
       this.bullets.push({
@@ -4030,7 +4101,7 @@ export class Game {
       return;
     }
     if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone' || def.act === 'wall') {
-      p.energy -= def.cost;
+      p.energy = clampEnergy(p.energy - def.cost);
       p.plasmaCd = def.cd;
       abilityTrace(p.id, 'launch', def.name);
       this.playAct(p, def, ang, inp, def.dmg, undefined, -1);
@@ -4044,7 +4115,7 @@ export class Game {
         abilityTrace(p.id, 'deny', 'target');
         return;
       }
-      p.energy -= def.cost;
+      p.energy = clampEnergy(p.energy - def.cost);
       p.plasmaCd = def.cd;
       abilityTrace(p.id, 'impact', def.name);
       this.events.push({ type: 'skill', pid: p.id, x: pt.x, y: pt.y, skill: def.element, r: def.radius });
@@ -4065,7 +4136,7 @@ export class Game {
       }
       return;
     }
-    p.energy -= def.cost;
+    p.energy = clampEnergy(p.energy - def.cost);
     p.plasmaCd = def.cd;
     const muzzle = 18;
     this.bullets.push({

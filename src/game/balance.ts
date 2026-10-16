@@ -32,6 +32,20 @@ export const COMBAT = {
   minSpeed: 0.45,
   /** andando enquanto prepara golpe/ultimate */
   castMove: 0.6,
+  /**
+   * Passo normal. 0,82 tira cerca de 18%.
+   * Esquiva, piscar e investida não usam este fator. A diferença por personagem continua em cima.
+   */
+  walkMul: 0.82,
+  /**
+   * Perigos da arena. 0,70 tira 30%. Cada tipo tem o próprio número.
+   * O tick impede laser e lava de ferirem em todo quadro. Habilidade não usa isto.
+   */
+  hazard: {
+    mul: 0.7,
+    tick: 0.8,
+    dmg: { laser: 25, lava: 25, zone: 25, beam: 25, piston: 25, tornado: 12 },
+  },
   /** máximo de tiros de Eco ao mesmo tempo */
   maxEchoBullets: 36,
   /** máximo de projéteis na arena (desempenho) */
@@ -68,6 +82,14 @@ export const COMBAT = {
 /** Dano que um clone ou uma ilusão aplica. O número do poder em si fica como está. */
 export function cloneDamage(raw: number): number {
   const n = Math.max(0, raw) * COMBAT.cloneDmgMul;
+  return Math.max(1, Math.round(n));
+}
+
+export type HazardKind = keyof typeof COMBAT.hazard.dmg;
+
+/** Dano de um tick de perigo. O número base de cada tipo está em COMBAT.hazard. */
+export function hazardDamage(kind: HazardKind): number {
+  const n = Math.max(0, COMBAT.hazard.dmg[kind]) * COMBAT.hazard.mul;
   return Math.max(1, Math.round(n));
 }
 

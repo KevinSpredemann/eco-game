@@ -84,6 +84,7 @@
             <button class="btn" type="button" data-action="shop">Loja</button>
             <button class="btn home-edit" type="button" data-action="cosmetics">Personalizar</button>
             <button class="btn ghost" type="button" data-action="options">Opções</button>
+            <button class="btn ghost" type="button" data-action="controls">Controles e atalhos</button>
             <button class="btn ghost" type="button" data-action="howto">Como jogar</button>
             <button class="btn ghost" data-action="install" id="btn-install" hidden>Instalar app</button>
           </nav>
@@ -483,8 +484,8 @@
           </label>
           <label class="row">Movimento
             <select id="opt-move">
-              <option value="wasd">WASD (padrão: Q E F, R e Z)</option>
-              <option value="arrows">Setas (Q W E R e Z)</option>
+              <option value="wasd">WASD e setas (Q, E, F, R e Z)</option>
+              <option value="arrows">Setas + habilidades</option>
               <option value="esdf">ESDF (Q W R, A e Z)</option>
             </select>
           </label>
@@ -514,8 +515,8 @@
           </label>
           <div id="opt-manual"></div>
           <p class="form-note" id="opt-control-note"></p>
-          <h3 class="kb-title">Atalhos de habilidades</h3>
-          <p class="form-note">Vale só neste aparelho. O servidor continua conferindo o golpe, não a tecla.</p>
+          <h3 class="kb-title" id="controls-anchor">Controles e atalhos</h3>
+          <p class="form-note">Padrão: WASD e as setas andam. Q, E e F são os poderes, R a ultimate, Z o extra, Espaço a esquiva, Tab o placar e Esc a pausa. O perfil Setas + habilidades deixa as letras livres. Vale só neste aparelho. O servidor continua conferindo o golpe, não a tecla.</p>
           <div class="keybinds" id="keybinds"></div>
           <button class="btn small ghost" id="keys-reset">Voltar ao padrão deste estilo</button>
         </div>
@@ -526,12 +527,15 @@
     <section id="screen-pause" class="screen dim" hidden>
       <div class="sheet narrow center">
         <h2>Pausado</h2>
+        <p class="form-note" id="pause-online" hidden>A pausa só trava o seu controle. Os adversários continuam se movendo e você não fica invulnerável.</p>
         <div class="menu">
           <button class="btn primary" data-action="resume">Continuar</button>
+          <button class="btn" data-action="controls">Controles e atalhos</button>
+          <button class="btn" data-action="options">Opções</button>
+          <button class="btn" data-action="combos">Habilidades e combos</button>
           <button class="btn" data-action="pause-loadout" id="pause-loadout">Poderes da partida</button>
           <button class="btn" data-action="restart">Reiniciar partida</button>
-          <button class="btn" data-action="options">Opções</button>
-          <button class="btn ghost" data-action="quit">Sair para o menu</button>
+          <button class="btn ghost" data-action="quit">Voltar ao menu</button>
         </div>
       </div>
     </section>

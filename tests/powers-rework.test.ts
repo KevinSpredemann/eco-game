@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { kitOf, resolvedDamage } from '../src/game/elements';
+import { ENERGY_MAX, kitOf, resolvedDamage } from '../src/game/elements';
 import { FIELD_BONUS, MARK_WINDOW, ROOT_FIRM_BONUS, ROOT_FIRM_TIME, ULT_CONTROL_BONUS, officialSlot } from '../src/game/combos';
 import { DEFAULT_LOADOUT, stageSecondary } from '../src/game/balance';
 import { encodeSnapshot } from '../src/net/protocol';
@@ -176,7 +176,7 @@ describe('sinergias oficiais', () => {
     const [a, b] = place(g, 400);
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 80 }, b: idle });
     expect(a.powerCd[1]).toBe(0);
-    expect(a.energy).toBe(100);
+    expect(a.energy).toBe(ENERGY_MAX);
     expect(g.drainEvents().some((x) => x.type === 'deny' && x.msg === 'Nenhum alvo válido')).toBe(true);
 
     const late = fight();

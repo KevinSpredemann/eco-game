@@ -155,8 +155,8 @@ export function nearestAim(ox: number, oy: number, foes: { id: string; x: number
 }
 
 /**
- * Mira pelo teclado. As setas escolhem a direção do tiro.
- * Sem seta, a mira acompanha o passo. WASD continua só o movimento.
+ * Mira pelo teclado. As setas escolhem a direção do tiro quando a mira por tecla está ligada.
+ * Sem seta, a mira acompanha o passo. WASD e as setas também andam.
  */
 export function keyboardAimAngle(prev: number, arrows: { x: number; y: number }, move: { x: number; y: number }, precision = false): number {
   if (arrows.x || arrows.y) {
@@ -169,8 +169,9 @@ export function keyboardAimAngle(prev: number, arrows: { x: number; y: number },
 }
 
 /**
- * WASD e ESDF andam. As setas miram e não empurram o corpo.
- * No layout de setas, as setas continuam andando. Shift fino gira a mira devagar.
+ * WASD (ou ESDF) e as setas andam juntos. A diagonal não passa de 1.
+ * Com a mira pelo teclado, a seta também escolhe a direção do golpe.
+ * No perfil de setas, as letras ficam livres e só as setas empurram o corpo.
  */
 export function stickIntent(o: {
   moveScheme: MoveScheme;
@@ -182,13 +183,14 @@ export function stickIntent(o: {
   stick: { x: number; y: number };
   prevAim: number;
 }): { mx: number; my: number; aim: number; arrows: boolean } {
-  let mx = o.keys.x;
-  let my = o.keys.y;
-  const schemeAims = o.moveScheme === 'wasd' || o.moveScheme === 'esdf';
-  if (!schemeAims && !o.keyboardAim) {
-    mx += o.arrows.x;
-    my += o.arrows.y;
+  let mx = o.keys.x + o.arrows.x;
+  let my = o.keys.y + o.arrows.y;
+  const len = Math.hypot(mx, my);
+  if (len > 1) {
+    mx /= len;
+    my /= len;
   }
+  const schemeAims = o.moveScheme === 'wasd' || o.moveScheme === 'esdf';
   if (o.stick.x || o.stick.y) {
     mx = o.stick.x;
     my = o.stick.y;

@@ -42,7 +42,7 @@ describe('mira, carga e leitura do golpe', () => {
     expect(resolveCastStyle({ castMode: 'instant', control: 'classic', touch: false, manual: false, kind: 'direction' })).toBe('instant');
   });
 
-  it('WASD anda e as setas só miram', () => {
+  it('WASD e as setas andam juntos, com a diagonal em 1', () => {
     const aim = stickIntent({
       moveScheme: 'wasd',
       keyboardAim: false,
@@ -53,8 +53,9 @@ describe('mira, carga e leitura do golpe', () => {
       stick: { x: 0, y: 0 },
       prevAim: Math.PI,
     });
-    expect(aim.mx).toBe(0);
-    expect(aim.my).toBe(-1);
+    expect(aim.mx).toBeCloseTo(Math.SQRT1_2);
+    expect(aim.my).toBeCloseTo(-Math.SQRT1_2);
+    expect(Math.hypot(aim.mx, aim.my)).toBeCloseTo(1);
     expect(aim.aim).toBeCloseTo(0);
     expect(aim.arrows).toBe(true);
     const walk = stickIntent({

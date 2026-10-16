@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { BASIC, kitOf, resolvedDamage } from '../src/game/elements';
+import { BASIC, ENERGY_MAX, kitOf, resolvedDamage } from '../src/game/elements';
 import { COMBO_WINDOW } from '../src/game/combos';
 import { acceptedLoadout, newProfile, owns } from '../src/game/economy';
 
@@ -314,12 +314,12 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     a.ultCharge = 100;
     g.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0, cr: 70 }, b: idle });
     expect(a.pendingCast).not.toBeNull();
-    expect(a.energy).toBe(100);
+    expect(a.energy).toBe(ENERGY_MAX);
     expect(a.powerCd[2]).toBe(0);
     a.stunT = 0.4;
     g.step(STEP, { a: idle, b: idle });
     expect(a.pendingCast).toBeNull();
-    expect(a.energy).toBe(100);
+    expect(a.energy).toBe(ENERGY_MAX);
     expect(a.powerCd[2]).toBe(0);
 
     const go = fight([
@@ -334,10 +334,10 @@ describe('natureza, sombra, plasma e o ataque básico', () => {
     s.ultCharge = 100;
     const hp = t.hp;
     go.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0, cr: 70 }, b: idle });
-    expect(s.energy).toBe(100);
+    expect(s.energy).toBe(ENERGY_MAX);
     for (let i = 0; i < 50; i++) go.step(STEP, { a: idle, b: idle });
     expect(s.powerCd[2]).toBeGreaterThan(0);
-    expect(s.energy).toBe(100);
+    expect(s.energy).toBe(ENERGY_MAX);
     expect(hp - t.hp).toBe(30);
   });
 
