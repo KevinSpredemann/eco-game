@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
 import { KITS, formOf, isPlainStreak, kitOf, resolvedDamage } from '../src/game/elements';
-import { COMBO_WINDOW } from '../src/game/combos';
+import { COMBO_WINDOW, listSynergies, pickComboRecipe } from '../src/game/combos';
 
 const STEP = 1 / 60;
 const idle: Input = { mx: 0, my: 0, dash: false, ability: false };
@@ -219,5 +219,16 @@ describe('janela do combo no acerto', () => {
     expect(charged).toHaveLength(1);
     expect(hp - z.hp).toBe(resolvedDamage(kitOf('vortex').powers[0], 0) + 12);
     expect(z.shockT).toBe(0);
+  });
+});
+
+describe('painel de combo', () => {
+  it('mostra Q depois E quando o kit fecha, e não o mesmo golpe duas vezes', () => {
+    const rows = listSynergies('kai', null).filter((row) => row.state === 'active' && row.slots.length === 2);
+    const pick = pickComboRecipe(rows);
+    expect(pick?.name).toBe('Descarga Condutora');
+    expect(pick?.slots).toEqual([0, 1]);
+    expect(rows.some((row) => row.slots[0] === row.slots[1])).toBe(true);
+    expect(pickComboRecipe([{ slots: [0, 0], name: 'Congelamento' }, { slots: [0, 1], name: 'Descarga Condutora' }])?.name).toBe('Descarga Condutora');
   });
 });

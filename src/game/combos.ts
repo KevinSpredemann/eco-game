@@ -561,6 +561,25 @@ function iconsFor(card: SynergyCard, powers: readonly PowerDef[]): [PowerDef, Po
  * Sinergias que resolveReaction e as três cartas oficiais realmente fecham.
  * O Z entra no estado; a tela não compara elemento por conta própria.
  */
+/**
+ * Combo que o painel mostra parado: duas teclas diferentes, de preferência Q e depois E.
+ * O mesmo golpe duas vezes (Congelamento no Q) não cabe na janela, porque a recarga é maior.
+ */
+export function pickComboRecipe<T extends { slots: number[] }>(rows: readonly T[]): T | null {
+  const playable = rows.filter((row) => row.slots.length === 2 && row.slots[0] !== row.slots[1]);
+  const score = (row: T) => {
+    const [a, b] = row.slots;
+    if (a === 0 && b === 1) return 0;
+    if (a === 0 && b === 3) return 1;
+    if (a === 1 && b === 3) return 2;
+    if (a === 1 && b === 0) return 3;
+    if (a === 3 && b === 0) return 4;
+    if (a === 2 || b === 2) return 8;
+    return 5;
+  };
+  return playable.slice().sort((a, b) => score(a) - score(b))[0] ?? null;
+}
+
 export function listSynergies(charId: string, secondary: string | null): SynergyRow[] {
   const powers = kitOf(charId).powers;
   const extra = studioOf(secondary);

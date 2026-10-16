@@ -28,7 +28,7 @@ import { Carousel, fitText } from './ui/carousel';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
 import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, cooldownOf, denyPlasma, denyPowerCast, describePower, formOf, kitOf, powerSlotIndex, studioOf } from './game/elements';
-import { comboReady, listSynergies } from './game/combos';
+import { comboReady, listSynergies, pickComboRecipe } from './game/combos';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
 import { castAimShape, noteAim, solveAim, type AimShape } from './game/aimService';
@@ -2016,7 +2016,7 @@ function powerHasTarget(me: { id: string; x: number; y: number; team: number }, 
   return game.players.some((o) => o.alive && o.id !== me.id && game!.hostile(me, o) && Math.hypot(o.x - me.x, o.y - me.y) <= reach);
 }
 
-const EL_TAG: Record<string, string> = { fire: 'FG', ice: 'AG', nature: 'TR', wind: 'AR', lightning: 'RA', plasma: 'PL', shadow: 'SO' };
+const EL_TAG: Record<string, string> = { fire: 'FOGO', ice: 'ÁGUA', nature: 'TERRA', wind: 'AR', lightning: 'RAIO', plasma: 'PLASMA', shadow: 'SOMBRA' };
 let comboDone: { name: string; aEl: string; bEl: string; until: number } | null = null;
 let lastComboEls: [string, string] = ['fire', 'lightning'];
 
@@ -2049,16 +2049,16 @@ function comboState(g: AnyGame): { phase: 'ready' | 'armed' | 'wait' | 'done'; k
     };
   };
   const rows = listSynergies(me.char.id, me.loadout?.secondary ?? null).filter((row) => row.state === 'active' && row.slots.length === 2);
-  const recipe = rows.find((row) => row.slots.every((s) => s === 0 || s === 1 || s === 3)) ?? null;
+  const recipe = pickComboRecipe(rows);
+  if (comboDone && performance.now() < comboDone.until) {
+    return { phase: 'done', key: '', name: comboDone.name, frac: 1, aKey: '', bKey: '', aEl: comboDone.aEl, bEl: comboDone.bEl };
+  }
   const hit = comboReady(me.char.id, usable, foes, labels);
   if (hit) {
     const row = rows.find((r) => r.name === hit.name) ?? recipe;
     const base = row ? pairOf(row) : { aKey: '', bKey: keyOf(hit.slot, hit.key), aEl: 'ice', bEl: 'lightning', name: hit.name };
     lastComboEls = [base.aEl, base.bEl];
     return { phase: 'armed', key: keyOf(hit.slot, hit.key), frac: hit.total ? Math.min(1, hit.left / hit.total) : 0, ...base, bKey: keyOf(hit.slot, hit.key), name: hit.name };
-  }
-  if (comboDone && performance.now() < comboDone.until) {
-    return { phase: 'done', key: '', name: comboDone.name, frac: 1, aKey: '', bKey: '', aEl: comboDone.aEl, bEl: comboDone.bEl };
   }
   // o alvo já está preparado, mas falta algo: mostra o que falta (sem fingir que dá)
   const armed = comboReady(me.char.id, [0, 0, 0, 0], foes, labels);
