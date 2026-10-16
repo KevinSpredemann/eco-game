@@ -126,7 +126,7 @@ describe('quatro elementos', () => {
 
   it('a tela de poderes lista os combos novos que o kit fecha', () => {
     const names = listSynergies('kai', null).map((r) => r.name);
-    expect(names).toEqual(expect.arrayContaining(['Congelamento', 'Vórtice', 'Eletrocutar']));
+    expect(names).toEqual(expect.arrayContaining(['Congelamento', 'Vórtice', 'Descarga Condutora']));
   });
 });
 

@@ -24,6 +24,7 @@ export interface VfxBullet {
   plasma?: boolean;
   basic?: boolean;
   fromEcho?: boolean;
+  form?: string;
 }
 
 export interface VfxImpact {
@@ -53,6 +54,7 @@ interface LiveShot {
   /** últimas posições (rastro) */
   trail: number[];
   seed: number;
+  form?: string;
 }
 
 type PKind = 'spark' | 'ember' | 'flake' | 'leaf' | 'smoke' | 'shard' | 'dot' | 'star' | 'drop' | 'rock';
@@ -134,6 +136,8 @@ const COMBO_COLORS: Record<string, [string, string]> = {
   freeze: ['#bfeaff', '#2f9bff'],
   vortex: ['#2f9bff', '#7dffe0'],
   shards: ['#b07a34', '#7dffe0'],
+  frostline: ['#9fe8ff', '#c99a52'],
+  charged: ['#ffe14a', '#d24cff'],
   cascade: ['#d24cff', '#ffe9ff'],
   ambush: ['#8a7cff', '#c4b6ff'],
 };
@@ -174,7 +178,7 @@ export class AbilityVfx {
   }
 
   /** eventos reais da simulação → efeitos no mesmo ponto */
-  note(e: { type: string; x?: number; y?: number; k?: string; msg?: string; skill?: string; pts?: number[]; name?: string; el?: string; r?: number; aoe?: boolean; t?: number; x0?: number; y0?: number; x1?: number; y1?: number; id?: string; vfx?: string; wall?: boolean; ang?: number; ult?: boolean | string; tx?: number; ty?: number; lane?: boolean }) {
+  note(e: { type: string; x?: number; y?: number; k?: string; msg?: string; skill?: string; pts?: number[]; name?: string; el?: string; r?: number; aoe?: boolean; t?: number; x0?: number; y0?: number; x1?: number; y1?: number; id?: string; vfx?: string; wall?: boolean; ang?: number; ult?: boolean | string; tx?: number; ty?: number; lane?: boolean; form?: string }) {
     const x = e.x ?? 0;
     const y = e.y ?? 0;
     if (e.type === 'dmg' && (e.k === 'hp' || e.k === 'shield')) {
@@ -218,6 +222,10 @@ export class AbilityVfx {
       this.burst(x, y - 10, e.el, 8, 140, 0.4);
     } else if (e.type === 'skill' && e.skill) {
       const el = e.skill;
+      if (e.form === 'pillar' || e.form === 'fissure') this.addFx({ kind: 'spikes', x, y: y + 10, r: Math.min(e.r ?? 48, 90), el, t: 0, max: 0.55 });
+      else if (e.form === 'breath' || e.form === 'gust') this.addFx({ kind: 'shock', x, y: y - BODY, r: Math.min((e.r ?? 90) * 0.45, 70), el, t: 0, max: 0.28 });
+      else if (e.form === 'whirl') this.addFx({ kind: 'ripple', x, y: y + 8, r: Math.min(e.r ?? 72, 110), el, t: 0, max: 0.55 });
+      else if (e.form === 'wave') this.addFx({ kind: 'ripple', x, y: y + 8, r: Math.min(e.r ?? 60, 90), el, t: 0, max: 0.45 });
       if ((e.r ?? 0) > 30 && el in ELEMENT_COLOR) {
         // área: desenha a área real no chão e a animação do elemento dentro dela
         this.addFx({ kind: 'area', x, y, r: Math.min(e.r!, 160), el, t: 0, max: 0.75 });
@@ -245,9 +253,10 @@ export class AbilityVfx {
         prev.x = b.x;
         prev.y = b.y;
         prev.el = el || prev.el;
+        prev.form = b.form || prev.form;
         prev.trail.unshift(b.x, b.y);
         if (prev.trail.length > 16) prev.trail.length = 16;
-      } else this.live.set(b.id, { x: b.x, y: b.y, px: b.x - b.vx / 60, py: b.y - b.vy / 60, el, trail: [b.x, b.y], seed: this.seed++ });
+      } else this.live.set(b.id, { x: b.x, y: b.y, px: b.x - b.vx / 60, py: b.y - b.vy / 60, el, form: b.form, trail: [b.x, b.y], seed: this.seed++ });
     }
     for (const id of this.live.keys()) if (!seen.has(id)) this.live.delete(id);
   }
@@ -516,6 +525,106 @@ export class AbilityVfx {
     ctx.fill();
   }
 
+  /** Silhueta do comportamento. A cor continua sendo a do elemento. */
+  private drawForm(ctx: CanvasRenderingContext2D, s: LiveShot, time: number, core: string, edge: string): boolean {
+    const f = s.form;
+    if (f === 'bolt' || f === 'chain' || f === 'beam') {
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = f === 'beam' ? 3.2 : 2;
+      ctx.beginPath();
+      ctx.moveTo(f === 'beam' ? -30 : -16, 0);
+      ctx.lineTo(8, 0);
+      ctx.stroke();
+      if (f === 'chain') {
+        ctx.beginPath();
+        ctx.moveTo(2, 0);
+        ctx.lineTo(14, -7);
+        ctx.stroke();
+      }
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(6, 0, f === 'beam' ? 2.2 : 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      return true;
+    }
+    if (f === 'blast') {
+      const r = 7 + Math.sin(time * 18 + s.seed) * 1.1;
+      ctx.fillStyle = edge;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(-1, 0, r * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      return true;
+    }
+    if (f === 'wave') {
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(-2, 0, 12, -1.15, 1.15);
+      ctx.stroke();
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(-8, 0, 7, -0.9, 0.9);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      return true;
+    }
+    if (f === 'blade') {
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 2.4;
+      const sway = Math.sin(time * 9 + s.seed) * 5;
+      ctx.beginPath();
+      ctx.moveTo(-16, sway * 0.2);
+      ctx.quadraticCurveTo(-4, -9 + sway, 12, sway * 0.35);
+      ctx.stroke();
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.moveTo(-10, 2);
+      ctx.quadraticCurveTo(0, 8 - sway * 0.4, 8, 1);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      return true;
+    }
+    if (f === 'fissure') {
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-14, 3);
+      ctx.lineTo(-2, -2);
+      ctx.lineTo(12, 4);
+      ctx.stroke();
+      return true;
+    }
+    if (f === 'rock') {
+      ctx.fillStyle = edge;
+      ctx.beginPath();
+      ctx.moveTo(7, 0);
+      ctx.lineTo(0, 6);
+      ctx.lineTo(-8, 1);
+      ctx.lineTo(-3, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = core;
+      ctx.fillRect(-2, -2, 3, 3);
+      return true;
+    }
+    if (f === 'jet') {
+      ctx.fillStyle = edge;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 9, 3.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(3, -1, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+      return true;
+    }
+    return false;
+  }
+
   private drawShot(ctx: CanvasRenderingContext2D, s: LiveShot, time: number) {
     const { core, edge } = elementCore(s.el);
     const ang = Math.atan2(s.y - s.py, s.x - s.px);
@@ -528,6 +637,10 @@ export class AbilityVfx {
     // poderes um pouco maiores que um tiro comum: dá para ver o que vem
     if (s.el !== 'basic') ctx.scale(1.7, 1.7);
     else ctx.scale(1.3, 1.3);
+    if (s.form && this.drawForm(ctx, s, time, core, edge)) {
+      ctx.restore();
+      return;
+    }
     if (s.el === 'lightning') {
       // núcleo branco-azulado com ramificações elétricas que mudam a cada quadro
       ctx.strokeStyle = edge;
@@ -724,6 +837,14 @@ export class AbilityVfx {
     if (id === 'combustao') {
       this.addFx({ kind: 'spikes', x, y: y + BODY, r: 60, el: 'fire', t: 0, max: 0.6 });
       this.burst(x, y, 'fire', 14, 260, 0.6, 'ember', -40);
+    }
+    if (id === 'frostline') {
+      this.addFx({ kind: 'spikes', x, y: y + BODY, r: 64, el: 'ice', t: 0, max: 0.6 });
+      this.burst(x, y, '#9fe8ff', 10, 200, 0.5, 'shard', 180);
+    }
+    if (id === 'charged') {
+      this.addFx({ kind: 'shock', x, y, r: 70, el: 'plasma', t: 0, max: 0.4 });
+      this.addFx({ kind: 'bolt', x, y, r: 64, el: 'lightning', t: 0, max: 0.28 });
     }
     if (id === 'cascade') {
       this.addFx({ kind: 'shock', x, y, r: 72, el: 'plasma', t: 0, max: 0.45 });

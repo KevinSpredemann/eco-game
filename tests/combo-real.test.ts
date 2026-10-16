@@ -4,8 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
 import { getArena } from '../src/game/arenas';
-import { KITS, MARK_TIME, kitOf, mainElementOf, resolvedDamage } from '../src/game/elements';
-import { CASCADE_BONUS, CONTROL_GRACE, TOCAIA_BONUS, ULT_CONTROL_BONUS, listSynergies } from '../src/game/combos';
+import { KITS, kitOf, mainElementOf, resolvedDamage } from '../src/game/elements';
+import { CASCADE_BONUS, COMBO_WINDOW, CONTROL_GRACE, TOCAIA_BONUS, ULT_CONTROL_BONUS, listSynergies } from '../src/game/combos';
 import { encodeSnapshot } from '../src/net/protocol';
 import { ClientGame } from '../src/net/clientGame';
 
@@ -196,7 +196,8 @@ describe('combos no combate real', () => {
     const t = duel('vortex', 90);
     t.run(press(0, 90), 40);
     expect(t.log.combos).toEqual([]);
-    expect(t.b.plasmaPrimeT).toBeGreaterThan(2);
+    expect(t.b.plasmaPrimeT).toBeGreaterThan(0.2);
+    expect(t.b.plasmaPrimeT).toBeLessThanOrEqual(COMBO_WINDOW);
     t.a.powerCd[0] = 0;
     t.a.energy = 100;
     t.run(press(0, 90), 40);
@@ -241,8 +242,9 @@ describe('combos no combate real', () => {
     const row = encodeSnapshot(chain.g, false).P[1];
     chain.b.plasmaPrimeT = 2.4;
     const sent = encodeSnapshot(chain.g, false).P[1];
-    expect(sent.at(-1)).toBe(2.4);
-    expect(row.at(-1)).toBe(0);
+    expect(sent.at(-2)).toBe(2.4);
+    expect(row.at(-2)).toBe(0);
+    expect(sent.at(-1)).toBe(row.at(-1));
     const cg = new ClientGame({
       you: 'a',
       mode: 'duelo',
@@ -254,7 +256,8 @@ describe('combos no combate real', () => {
     });
     cg.applySnapshot(encodeSnapshot(chain.g, false), []);
     expect(cg.players.find((p) => p.id === 'b')!.plasmaPrimeT).toBe(2.4);
-    expect(MARK_TIME).toBeGreaterThan(2);
+    expect(COMBO_WINDOW).toBeGreaterThanOrEqual(0.8);
+    expect(COMBO_WINDOW).toBeLessThanOrEqual(1.5);
   });
 
   it('Vexa: Q depois E é Tocaia, e o piscar prepara a Emboscada do golpe seguinte', () => {

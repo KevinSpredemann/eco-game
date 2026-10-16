@@ -659,7 +659,7 @@ export function botCombat(game: Game, p: Player, dt: number): Input {
         out.aim = ang + b.aimOff;
         out.ca = out.aim;
         out.cr = Math.max(24, d * (1 + b.aimOff * 0.35));
-        const aura = { burn: foe.burnT, frozen: foe.frozenT, gust: foe.gustT, shock: foe.shockT, root: foe.rootT, marked: foe.markedT, field: foe.fieldT, fieldEl: foe.fieldEl, stun: foe.stunT };
+        const aura = { burn: foe.burnT, frozen: foe.frozenT, gust: foe.gustT, shock: foe.shockT, root: foe.rootT, marked: foe.markedT, field: foe.fieldT, fieldEl: foe.fieldEl, stun: foe.stunT, combo: foe.comboT, plasma: foe.plasmaPrimeT };
         let slot = officialSlot(p.char.id, kitOf(p.char.id), p.powerCd, aura, d);
         if (slot === null) {
           slot = botPower(

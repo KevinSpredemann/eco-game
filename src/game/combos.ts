@@ -21,9 +21,16 @@ import {
   type PowerDef,
 } from './elements';
 
-/** Janela da marca e do campo. O mesmo número do MARK_TIME do elemento. */
-export const MARK_WINDOW = MARK_TIME;
-export const FIELD_WINDOW = MARK_TIME;
+/**
+ * Janela do segundo golpe. Começa no acerto, não no lançamento.
+ * 1,5 s é o topo da faixa pedida (0,8–1,5): um tiro lento (~0,4 s a 140 px)
+ * ainda cabe depois que a pessoa aperta a segunda tecla. 3,2 s parecia dois golpes soltos.
+ * Queimadura e molhado duram mais; só o combo lê este relógio.
+ */
+export const COMBO_WINDOW = 1.5;
+/** Marca e campo fecham no mesmo relógio do combo. */
+export const MARK_WINDOW = COMBO_WINDOW;
+export const FIELD_WINDOW = COMBO_WINDOW;
 /** Raiz do combo, mais longa que a raiz comum. */
 export const ROOT_FIRM_TIME = 2.2;
 export const ROOT_FIRM_BONUS = 10;
@@ -144,7 +151,8 @@ export function resolveReaction(q: HitQuery): Reaction | null {
       vfx: 'burst',
     };
   }
-  if (elemental) {
+  const fresh = (q.aura.combo ?? 1) > 0;
+  if (elemental && fresh) {
     const rupture = elemental.id === 'chill';
     return {
       id: elemental.id,
@@ -160,6 +168,27 @@ export function resolveReaction(q: HitQuery): Reaction | null {
       spreadBurn: elemental.spreadBurn,
       reactLock: rupture ? REACT_LOCK : undefined,
       vfx: 'element',
+    };
+  }
+  // Água + Terra: a fissura (ou o alvo molhado) solta espinhos de gelo
+  if (q.element === 'ice' && root > 0 && q.reactCd <= 0) {
+    return { id: 'frostline', name: 'Espinhos Glaciais', bonus: 10, aoe: 68, reactLock: REACT_LOCK, vfx: 'burst' };
+  }
+  if (fresh && q.element === 'nature' && q.aura.frozen > 0 && q.reactCd <= 0 && !q.appliesMark) {
+    return { id: 'frostline', name: 'Espinhos Glaciais', bonus: 10, aoe: 68, reactLock: REACT_LOCK, vfx: 'burst' };
+  }
+  // Raio + Plasma: o disparo carregado explode uma vez no acerto
+  if (fresh && q.element === 'plasma' && q.projectile && (q.aura.shock ?? 0) > 0 && q.reactCd <= 0) {
+    return { id: 'charged', name: 'Raio Carregado', bonus: 12, aoe: 72, clearShock: true, reactLock: REACT_LOCK, vfx: 'burst' };
+  }
+  // O campo da área aceita o projétil antes da ruptura do alvo só lento.
+  if (q.field > 0 && q.projectile && fieldAccepts(q.fieldEl, q.element)) {
+    return {
+      id: 'field-shot',
+      name: 'Descarga',
+      bonus: FIELD_BONUS,
+      clearField: true,
+      vfx: 'burst',
     };
   }
   if (q.element === 'plasma' && (q.slow ?? 0) > 0 && q.reactCd <= 0) {
@@ -184,15 +213,6 @@ export function resolveReaction(q: HitQuery): Reaction | null {
       clearRoot: true,
       reactLock: REACT_LOCK,
       vfx: 'root',
-    };
-  }
-  if (q.field > 0 && q.projectile && fieldAccepts(q.fieldEl, q.element)) {
-    return {
-      id: 'field-shot',
-      name: 'Descarga',
-      bonus: FIELD_BONUS,
-      clearField: true,
-      vfx: 'burst',
     };
   }
   if (ctrl > 0 && q.slot !== 2 && q.reactCd <= 0 && isOffense(q)) {
@@ -231,20 +251,21 @@ function queryOf(charId: string, pw: PowerDef, slot: number, foe: Aura, distRead
     stun: foe.stun ?? 0,
     ctrl: foe.ctrl ?? 0,
     reactCd: distReady ? 0 : 1,
+    slow: 0,
   };
 }
 
 /** quanto falta da janela que arma este combo (e o total), para a barra da tela */
 export function comboWindow(id: string, foe: Aura): { left: number; total: number } {
   const pick = (left: number, total: number) => ({ left: Math.max(0, left), total });
-  if (id === 'shatter' || id === 'steam' || id === 'chill' || id === 'freeze' || id === 'vortex') return pick(foe.frozen, FROZEN_TIME);
-  if (id === 'cinder' || id === 'thermal') return pick(foe.burn, BURN_TIME);
-  if (id === 'storm') return pick(foe.gust, MARK_TIME);
-  if (id === 'arc') return pick(foe.shock, MARK_TIME);
+  if (id === 'shatter' || id === 'steam' || id === 'chill' || id === 'freeze' || id === 'vortex') return pick(foe.combo ?? foe.frozen, COMBO_WINDOW);
+  if (id === 'cinder' || id === 'thermal') return pick(foe.combo ?? foe.burn, COMBO_WINDOW);
+  if (id === 'storm') return pick(foe.combo ?? foe.gust, COMBO_WINDOW);
+  if (id === 'arc' || id === 'charged') return pick(foe.combo ?? foe.shock, COMBO_WINDOW);
   if (id === 'mark-root' || id === 'ambush') return pick(foe.marked ?? 0, MARK_WINDOW);
-  if (id === 'cascade') return pick(foe.plasma ?? 0, MARK_TIME);
+  if (id === 'cascade') return pick(foe.plasma ?? 0, COMBO_WINDOW);
   if (id === 'field-shot') return pick(foe.field ?? 0, FIELD_WINDOW);
-  if (id === 'combustao' || id === 'root-aoe' || id === 'shards') return pick(foe.root ?? 0, ROOT_TIME);
+  if (id === 'combustao' || id === 'root-aoe' || id === 'shards' || id === 'frostline') return pick(foe.root ?? foe.combo ?? 0, id === 'frostline' ? COMBO_WINDOW : ROOT_TIME);
   if (id === 'ult-control' || id === 'execute') return pick(Math.max(foe.ctrl ?? 0, foe.stun ?? 0, foe.root ?? 0), CONTROL_GRACE + 0.8);
   return pick(0, 1);
 }
@@ -467,7 +488,7 @@ function delivers(pw: PowerDef): boolean {
 
 /** O que o golpe deixa num alvo limpo, do mesmo jeito que o combate grava. */
 function auraAfter(pw: PowerDef, slot = -1): Aura {
-  const aura: Aura = { burn: 0, frozen: 0, gust: 0, shock: 0, root: 0, marked: 0, field: 0, fieldEl: '', stun: 0, plasma: 0 };
+  const aura: Aura = { burn: 0, frozen: 0, gust: 0, shock: 0, root: 0, marked: 0, field: 0, fieldEl: '', stun: 0, plasma: 0, combo: 0 };
   if (!delivers(pw)) return aura;
   const aoe = pw.act === 'wall' || (pw.speed <= 0 && pw.act !== 'dash' && pw.act !== 'blink');
   if (pw.element === 'fire') aura.burn = 1;
@@ -485,6 +506,7 @@ function auraAfter(pw: PowerDef, slot = -1): Aura {
   }
   // Só o disparo do kit (Q/E/F). A Rajada do Z usa a outra marca (Explosão de Plasma).
   if (pw.element === 'plasma' && pw.speed > 0 && !pw.act && slot >= 0 && slot !== 2) aura.plasma = 1;
+  if (aura.burn || aura.frozen || aura.gust || aura.shock || aura.root || aura.marked || aura.field || aura.plasma || aura.stun) aura.combo = COMBO_WINDOW;
   return aura;
 }
 
@@ -496,6 +518,8 @@ function reactionBetween(charId: string, first: PowerDef, firstSlot: number, sec
 function needOf(hit: Reaction): string {
   if (hit.id === 'root-aoe') return 'alvo preso';
   if (hit.id === 'chill' || hit.id === 'shatter' || hit.id === 'steam' || hit.id === 'freeze' || hit.id === 'vortex') return 'alvo molhado';
+  if (hit.id === 'frostline') return 'fissura ou alvo molhado';
+  if (hit.id === 'charged') return 'alvo no raio';
   if (hit.id === 'shards') return 'alvo preso na terra';
   if (hit.id === 'cinder' || hit.id === 'thermal') return 'alvo queimando';
   if (hit.id === 'storm') return 'alvo no vento';
@@ -520,7 +544,9 @@ export function effectOf(hit: Reaction): string {
   if (hit.id === 'cascade') return `a onda fecha a cadeia e ${tail}`;
   if (hit.id === 'ambush') return `sai da marca e ${tail}`;
   if (hit.id === 'steam') return `vapor em volta, ${tail}`;
-  if (hit.id === 'shatter') return `choque na água, ${tail}`;
+  if (hit.id === 'shatter') return `descarga na água, ${tail}`;
+  if (hit.id === 'frostline') return `espinhos de gelo na fissura, ${tail}`;
+  if (hit.id === 'charged') return `o raio carregado explode, ${tail}`;
   return tail;
 }
 

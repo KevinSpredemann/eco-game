@@ -185,7 +185,7 @@ export function drawTraps(ctx: Ctx, game: Game, time: number) {
 
 /** prévia da habilidade que está sendo mirada (só o jogador local vê) */
 export interface AimPreview {
-  shape: 'line' | 'circle' | 'arrow' | 'self' | 'wall';
+  shape: 'line' | 'circle' | 'arrow' | 'self' | 'wall' | 'cone';
   x: number;
   y: number;
   ang: number;
@@ -274,6 +274,22 @@ export function drawAimPreview(ctx: Ctx, a: AimPreview, time: number) {
         ctx.stroke();
       }
     }
+  } else if (a.shape === 'cone') {
+    const len = Math.max(8, Math.min(a.range, a.dist || a.range));
+    const arc = 0.62;
+    ctx.save();
+    ctx.translate(a.x, a.y);
+    ctx.rotate(a.ang);
+    ctx.fillStyle = hexA(end, 0.2);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, len, -arc, arc);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = hexA(end, 0.9);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
   } else if (a.shape === 'circle') {
     const d = Math.min(a.range, a.dist);
     const ex = a.x + Math.cos(a.ang) * d;

@@ -39,7 +39,7 @@ describe('poderes elementais', () => {
   });
 
   it('a sequência de marcas vira o combo certo, e sem marca não há combo', () => {
-    expect(comboOf({ ...clear, frozen: 1 }, 'lightning')).toMatchObject({ id: 'shatter', name: 'Eletrocutar', bonus: 16, clearFrozen: true });
+    expect(comboOf({ ...clear, frozen: 1 }, 'lightning')).toMatchObject({ id: 'shatter', name: 'Descarga Condutora', bonus: 16, clearFrozen: true });
     expect(comboOf({ ...clear, frozen: 1 }, 'fire')).toMatchObject({ id: 'steam', name: 'Vapor', bonus: 14, clearFrozen: true, aoe: 72 });
     expect(comboOf({ ...clear, burn: 1 }, 'wind')).toMatchObject({ id: 'cinder', name: 'Inferno Espiral', bonus: 10 });
     expect(comboOf({ ...clear, gust: 1 }, 'lightning')).toMatchObject({ id: 'storm', name: 'Tempestade', bonus: 12 });
@@ -94,7 +94,7 @@ describe('poderes elementais', () => {
     expect(denyPowerCast('fire', [9, 9, 9, 9])).toBeNull();
     const frozen = { ...clear, frozen: 2 };
     expect(comboReady('kai', [0, 0, 0, 0], [frozen])).toMatchObject({ slot: 0, key: 'Q', name: 'Congelamento' });
-    expect(comboReady('kai', [2, 0, 0, 0], [frozen])).toMatchObject({ slot: 1, key: 'E', name: 'Eletrocutar' });
+    expect(comboReady('kai', [2, 0, 0, 0], [frozen])).toMatchObject({ slot: 1, key: 'E', name: 'Descarga Condutora' });
     expect(comboReady('kai', [2, 2, 0, 0], [frozen])).toMatchObject({ slot: 2, key: 'R', name: 'Vapor' });
     expect(comboReady('kai', [2, 2, 2, 0], [frozen])).toMatchObject({ slot: 3, key: 'F', name: 'Vórtice' });
     expect(comboReady('kai', [2, 2, 2, 2], [frozen])).toBeNull();

@@ -90,7 +90,7 @@ describe('ficha e sinergia da tela', () => {
       expect(nara.find((row) => row.name === name)?.state).toBe('active');
     }
     const kai = listSynergies('kai', null);
-    expect(kai.find((row) => row.name === 'Eletrocutar')?.state).toBe('active');
+    expect(kai.find((row) => row.name === 'Descarga Condutora')?.state).toBe('active');
     expect(kai.find((row) => row.name === 'Raiz firme')?.state).toBe('locked');
     expect(kai.find((row) => row.name === 'Ruptura')?.state).toBe('possible');
     expect(listSynergies('kai', 'plasma').find((row) => row.name === 'Ruptura')?.state).toBe('active');

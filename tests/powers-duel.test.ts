@@ -84,7 +84,7 @@ describe('X1 e 2x2 só com poderes', () => {
     expect(a.bonusAb).toBeNull();
   });
 
-  it('Q lança o poder e gelo seguido de raio vira Eletrocutar', () => {
+  it('Q lança o poder e gelo seguido de raio vira Descarga Condutora', () => {
     const g = fight('duelo', 'kai', 'luna');
     const [a, b] = g.players;
     a.x = 640;
@@ -103,7 +103,7 @@ describe('X1 e 2x2 só com poderes', () => {
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 120 }, b: idle });
     const ev = g.drainEvents();
     const combo = ev.find((e) => e.type === 'combo');
-    expect(combo).toMatchObject({ name: 'Eletrocutar', bonus: 24 });
+    expect(combo).toMatchObject({ name: 'Descarga Condutora', bonus: 24 });
     expect(b.hp).toBeLessThan(before - 20);
     expect(kitOf('kai').passive).toBe('shatter');
   });
@@ -126,7 +126,7 @@ describe('X1 e 2x2 só com poderes', () => {
     expect(b.stunT).toBeGreaterThan(0);
   });
 
-  it('gelo que já passou não vira Eletrocutar', () => {
+  it('gelo que já passou não vira Descarga Condutora', () => {
     const g = fight('duelo', 'kai', 'luna');
     const [a, b] = g.players;
     a.x = 640;

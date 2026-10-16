@@ -18,9 +18,51 @@ export interface Aura {
   ctrl?: number;
   /** disparo de plasma recente. A onda do kit consome uma vez. */
   plasma?: number;
+  /**
+   * Relógio do combo, a partir do acerto. Ausente (testes antigos) ainda vale.
+   * Zero explícito: a janela fechou, mesmo que a queimadura ou o molhado continuem.
+   */
+  combo?: number;
 }
 
 export type PowerCategory = 'attack' | 'defense' | 'mobility' | 'control' | 'support';
+
+/**
+ * Comportamento do golpe. Cada um anda, acerta ou marca o chão de um jeito.
+ * Raio preciso é o único "risco" que fica: é o golpe de Raio, não uma recoloração.
+ */
+export type PowerForm =
+  | 'bolt'
+  | 'blast'
+  | 'jet'
+  | 'wave'
+  | 'breath'
+  | 'pillar'
+  | 'fissure'
+  | 'chain'
+  | 'gust'
+  | 'whirl'
+  | 'beam'
+  | 'rock'
+  | 'blade';
+
+export const POWER_FORMS: readonly PowerForm[] = ['bolt', 'blast', 'jet', 'wave', 'breath', 'pillar', 'fissure', 'chain', 'gust', 'whirl', 'beam', 'rock', 'blade'];
+
+export const FORM_PT: Record<PowerForm, string> = {
+  bolt: 'raio preciso e rápido',
+  blast: 'projétil que explode no impacto',
+  jet: 'jato líquido com respingo',
+  wave: 'onda que avança',
+  breath: 'cone à frente',
+  pillar: 'pilar que sobe do chão',
+  fissure: 'fissura que corre no chão',
+  chain: 'salta uma vez para um alvo perto',
+  gust: 'rajada em cone que empurra',
+  whirl: 'redemoinho que puxa',
+  beam: 'feixe rápido em linha',
+  rock: 'pedra arremessada',
+  blade: 'lâmina de vento em curva',
+};
 
 export interface PowerDef {
   name: string;
@@ -44,6 +86,11 @@ export interface PowerDef {
   home?: boolean;
   /** dash, blink, decoy, zone e wall saem no lugar do projétil ou da área. */
   act?: 'dash' | 'blink' | 'decoy' | 'zone' | 'wall';
+  /**
+   * Como o golpe se move. Ausente: o elemento e o espaço escolhem.
+   * Não é uma segunda simulação — o cast e o desenho leem este campo.
+   */
+  form?: PowerForm;
   /** zone de cura. O campo dmg é o quanto cura por pulso. */
   zone?: 'heal';
   /** distância do piscar, em unidades do mapa. */
@@ -104,6 +151,7 @@ export function resolvedDamage(pw: PowerDef, slot?: number): number {
 export function describePower(pw: PowerDef, key: string, cost: number, slot?: number): string {
   const dmg = resolvedDamage(pw, slot);
   const act = pw.act ?? (pw.speed <= 0 ? 'aoe' : 'shot');
+  const form = formOf(pw, slot ?? 0);
   const kind =
     act === 'dash'
       ? `arrancada de até ${pw.range}, para na parede, até ${dmg} se encostar`
@@ -115,9 +163,11 @@ export function describePower(pw: PowerDef, key: string, cost: number, slot?: nu
           ? `ilusão que segura um tiro e estoura ${dmg}`
           : act === 'zone' && pw.zone === 'heal'
             ? `bosque, raio ${pw.radius}, cura ${dmg} por pulso`
-            : pw.speed <= 0
-              ? `área, raio ${pw.radius}`
-              : `projétil, velocidade ${pw.speed}, primeiro inimigo${pw.home ? ', teleguiado' : ''}`;
+            : form
+              ? `${FORM_PT[form]}, alcance ${pw.range}, raio ${pw.radius}`
+              : pw.speed <= 0
+                ? `área, raio ${pw.radius}`
+                : `projétil, velocidade ${pw.speed}, primeiro inimigo${pw.home ? ', teleguiado' : ''}`;
   const wall = pw.pass ? 'atravessa paredes' : 'para na parede';
   const prep = pw.charge || pw.windup ? `, segura para carregar${pw.windup ? ` (até ${pw.windup}s)` : ''}` : '';
   const marked = pw.mark ? ', marca o alvo em vez de enraizar' : '';
@@ -284,6 +334,85 @@ const BASE: Omit<PowerDef, 'name' | 'element'>[] = [
   { cd: 3.6, dmg: 8, range: 240, speed: 680, radius: 16 },
 ];
 
+/**
+ * Forma pelo elemento e pelo espaço. Q, E, F e R do mesmo kit não repetem o movimento.
+ * Área (velocidade 0) nunca vira o mesmo risco do projétil.
+ */
+export function defaultForm(el: Element, slot: number, speed: number): PowerForm {
+  if (slot === 2 && speed <= 0) {
+    if (el === 'plasma') return 'pillar';
+    if (el === 'nature') return 'fissure';
+    if (el === 'ice') return 'wave';
+    if (el === 'wind') return 'whirl';
+    if (el === 'lightning') return 'chain';
+    if (el === 'fire') return 'pillar';
+    return 'pillar';
+  }
+  if (speed <= 0) {
+    if (el === 'fire') return 'breath';
+    if (el === 'ice') return 'wave';
+    if (el === 'wind') return 'gust';
+    if (el === 'lightning') return 'chain';
+    if (el === 'nature') return 'pillar';
+    if (el === 'plasma') return 'whirl';
+    if (el === 'shadow') return 'breath';
+    return 'breath';
+  }
+  if (slot === 3) {
+    if (el === 'fire') return 'blast';
+    if (el === 'ice') return 'wave';
+    if (el === 'wind') return 'blade';
+    if (el === 'lightning') return 'chain';
+    if (el === 'nature') return 'fissure';
+    if (el === 'plasma') return 'blast';
+    if (el === 'shadow') return 'blast';
+    return 'blast';
+  }
+  if (slot === 2) {
+    if (el === 'fire') return 'blast';
+    if (el === 'ice') return 'wave';
+    if (el === 'wind') return 'whirl';
+    if (el === 'lightning') return 'chain';
+    if (el === 'nature') return 'fissure';
+    if (el === 'plasma') return 'beam';
+    return 'blast';
+  }
+  if (el === 'fire') return 'blast';
+  if (el === 'ice') return 'jet';
+  if (el === 'wind') return 'blade';
+  if (el === 'lightning') return 'bolt';
+  if (el === 'nature') return 'rock';
+  if (el === 'plasma') return 'beam';
+  if (el === 'shadow') return 'beam';
+  return 'bolt';
+}
+
+/** Mantém o sinal da velocidade (área continua área) e troca alcance visual do golpe. */
+function tuneForm(b: { speed: number; radius: number }, form: PowerForm): { speed: number; radius: number } {
+  // A área guarda o raio escrito: é ele que define alcance do bot e do acerto.
+  if (b.speed <= 0) return { speed: 0, radius: b.radius };
+  if (form === 'bolt' || form === 'beam') return { speed: Math.max(b.speed, 1040), radius: Math.min(b.radius, 10) };
+  if (form === 'chain') return { speed: Math.max(b.speed, 900), radius: Math.min(b.radius, 12) };
+  if (form === 'wave' || form === 'whirl') return { speed: Math.max(420, Math.min(b.speed, 640)), radius: Math.max(b.radius, 28) };
+  return { speed: b.speed, radius: b.radius };
+}
+
+export function formOf(pw: PowerDef, slot = 0): PowerForm | undefined {
+  if (pw.act) return undefined;
+  return pw.form ?? defaultForm(pw.element, slot, pw.speed);
+}
+
+/**
+ * "Mesmo risco, outra cor": projétil que para no primeiro corpo e não explode, não curva,
+ * não avança em onda e não salta. O raio preciso do elemento Raio não entra na conta.
+ */
+export function isPlainStreak(pw: PowerDef, slot: number): boolean {
+  if (pw.act) return false;
+  const form = formOf(pw, slot);
+  if (!form) return pw.speed > 0;
+  return form === 'bolt' && pw.element !== 'lightning';
+}
+
 /** Geada era gelo; agora o elemento é Água: o golpe em linha vira jato, o de área vira onda. */
 function waterName(name: string, i: number): string {
   if (name !== 'Geada' && name !== 'Gelo Sombrio') return name;
@@ -293,7 +422,11 @@ function waterName(name: string, i: number): string {
 
 function kit(els: [Element, Element, Element, Element], names: [string, string, string, string], passive: PassiveId, passiveName: string, passiveDesc: string): Kit {
   return {
-    powers: BASE.map((b, i) => ({ ...b, name: waterName(names[i], i), element: els[i] })) as Kit['powers'],
+    powers: BASE.map((b, i) => {
+      const element = els[i];
+      const form = defaultForm(element, i, b.speed);
+      return { ...b, ...tuneForm(b, form), form, name: waterName(names[i], i), element };
+    }) as Kit['powers'],
     passive,
     passiveName,
     passiveDesc,
@@ -312,7 +445,7 @@ export const KITS: Record<string, Kit> = {
   rex: kit(['fire', 'lightning', 'wind', 'ice'], ['Fornalha', 'Faísca', 'Rajada', 'Geada'], 'tick', 'Fornalha', 'A queimadura dele dói mais.'),
   iris: kit(['ice', 'wind', 'lightning', 'fire'], ['Geada', 'Brisa', 'Faísca', 'Brasa'], 'heal', 'Alívio', 'Cada combo cura um pouco.'),
   tara: kit(['wind', 'lightning', 'fire', 'ice'], ['Rajada', 'Faísca', 'Labareda', 'Geada'], 'stunhunt', 'Quebra-guarda', 'Golpeia mais forte quem está tonto.'),
-  kai: kit(['ice', 'lightning', 'fire', 'wind'], ['Geada', 'Estilhaço', 'Labareda', 'Rajada'], 'shatter', 'Água profunda', 'Eletrocutar causa mais dano.'),
+  kai: kit(['ice', 'lightning', 'fire', 'wind'], ['Geada', 'Estilhaço', 'Labareda', 'Rajada'], 'shatter', 'Água profunda', 'Descarga Condutora causa mais dano.'),
   leo: kit(['lightning', 'wind', 'ice', 'fire'], ['Descarga', 'Vendaval', 'Geada', 'Brasa'], 'chain', 'Condutor', 'Tempestade causa mais dano.'),
   mei: kit(['fire', 'ice', 'wind', 'lightning'], ['Caldeira', 'Geada', 'Vapor', 'Faísca'], 'steam', 'Pressão', 'A explosão de vapor alcança mais longe.'),
   duda: kit(['lightning', 'fire', 'wind', 'ice'], ['Centelha', 'Faísca', 'Rajada', 'Geada'], 'haste', 'Oficina', 'As recargas dos poderes são mais curtas.'),
@@ -543,7 +676,7 @@ const EMPTY: Aura = { burn: 0, frozen: 0, gust: 0, shock: 0 };
 
 /** Um combo de sequência por golpe. A pancada na parede é à parte. */
 export function comboOf(aura: Aura, next: Element): Combo | null {
-  if (aura.frozen > 0 && next === 'lightning') return { id: 'shatter', name: 'Eletrocutar', bonus: 16, clearFrozen: true };
+  if (aura.frozen > 0 && next === 'lightning') return { id: 'shatter', name: 'Descarga Condutora', bonus: 16, clearFrozen: true };
   if (aura.frozen > 0 && next === 'fire') return { id: 'steam', name: 'Vapor', bonus: 14, clearFrozen: true, aoe: 72 };
   // Água + Água: o alvo molhado congela de verdade (fica parado e sem conjurar)
   if (aura.frozen > 0 && next === 'ice') return { id: 'freeze', name: 'Congelamento', bonus: 8, clearFrozen: true, hold: FREEZE_HOLD };
