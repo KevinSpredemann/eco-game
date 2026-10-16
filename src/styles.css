@@ -7151,6 +7151,13 @@ canvas.stage,
   overflow-wrap: normal;
 }
 #screen-loadout .pw-syn-dot { font-style: normal; color: #9fb4ff; }
+#screen-loadout .pw-grid .pw-card { position: relative; }
+#screen-loadout .pw-grid .pw-key {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+}
 #screen-loadout .pw-key {
   flex: 0 0 auto;
   min-width: 22px;

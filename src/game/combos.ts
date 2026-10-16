@@ -383,6 +383,21 @@ export function trainLine(charId: string): string {
 }
 
 export function powerRole(pw: PowerDef): string {
+  if (pw.trick === 'lance') return 'Lança rápida que queima';
+  if (pw.trick === 'volcano') return 'O dano cai só nos pulsos';
+  if (pw.trick === 'ash') return 'Cone de cinza, visão local';
+  if (pw.trick === 'tide') return 'Lâmina que molha e empurra';
+  if (pw.trick === 'glacial') return 'Cristais com tempo de sair';
+  if (pw.trick === 'mirror') return 'Barreira que racha';
+  if (pw.trick === 'fist') return 'Onda de pedra no chão';
+  if (pw.trick === 'roots') return 'Raízes que prendem e quebram';
+  if (pw.trick === 'guardian') return 'Muralha que segura o tiro';
+  if (pw.trick === 'gale') return 'Corte e lâmina de vento';
+  if (pw.trick === 'step') return 'Avanço curto, sem intangível';
+  if (pw.trick === 'updraft') return 'Puxa ao centro e dispersa';
+  if (pw.trick === 'stormchain') return 'Raio que salta e enfraquece';
+  if (pw.trick === 'rupture') return 'Marca o alvo. Sozinha dói pouco';
+  if (pw.trick === 'collapse') return 'Só com o que está equipado';
   if (pw.mark) return 'Marca o alvo';
   if (pw.act === 'dash' || pw.act === 'blink') return 'Desloca você';
   if (pw.act === 'decoy') return 'Segura um tiro';
@@ -463,6 +478,10 @@ export function relevantFacts(pw: PowerDef, slot: number, cost: number): Fact[] 
 }
 
 export function useLine(pw: PowerDef): string {
+  if (pw.trick === 'ash' || pw.trick === 'stormchain') return 'Sem alvo válido, não gasta.';
+  if (pw.trick === 'volcano' || pw.trick === 'glacial' || pw.trick === 'fist') return 'O aviso sai na hora. O dano só cai se o alvo ficar.';
+  if (pw.trick === 'step') return 'Avança de verdade. Não fica intangível.';
+  if (pw.trick === 'rupture') return 'O projétil marca e para na parede. Não deixa tonto.';
   if (pw.charge || pw.windup) return 'Segure para mirar e solte.';
   if (pw.act === 'dash' || pw.act === 'blink') return 'Aponte a direção. O deslocamento para na parede.';
   if (pw.speed <= 0) return 'Aponte o centro. Sem alvo na área, não gasta.';
@@ -476,6 +495,11 @@ export function aimLine(pw: PowerDef): string {
 }
 
 export function targetLine(pw: PowerDef): string {
+  if (pw.trick === 'rupture') return 'A marca fica acima do alvo por poucos segundos. O acerto seguinte compatível consome.';
+  if (pw.trick === 'ash') return 'A cinza baixa a visão só na área. O HUD continua visível.';
+  if (pw.trick === 'lance') return 'Queima no acerto e para na parede.';
+  if (pw.trick === 'collapse') return 'Só junta elementos das habilidades que estão equipadas.';
+  if (pw.trick === 'mirror' || pw.trick === 'guardian') return 'A barreira racha e cai. Não atravessa a parede do mapa.';
   if (pw.zone === 'heal' || pw.act === 'zone') return 'Cura quem está no bosque.';
   if (pw.grove === 'heal') return 'Dano no impacto e um bosque de cura.';
   if (pw.act === 'decoy') return 'Segura um tiro e estoura.';
