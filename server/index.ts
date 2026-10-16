@@ -11,6 +11,7 @@ import { Loadout, botLoadout, DEFAULT_LOADOUT, sanitizeLoadout } from '../src/ga
 import { abilityLevel, acceptedLoadout, buy, canEquipWeapon, equip, matchReward, newProfile, normalizeProfile, owns, Profile, EquipSlot, MatchMode, levelOf } from '../src/game/economy';
 import { BTN, ClientMsg, encodeSnapshot, echoSignature, EndInfo, LobbyPlayer, RoomInfo, ServerMsg, StartInfo, PROTO } from '../src/net/protocol';
 import { rematchStatus, RematchVote } from '../src/net/rematch';
+import { QUICK_WAIT_MS, publicLobbyAction, plannedLobbySize } from '../src/net/quickLobby';
 import { checkPassword, hashPassword, signToken, validPassword, validUsername, verifyToken } from './auth';
 import { FileStore, PgStore, Store, UserRecord } from './store';
 
@@ -344,10 +345,12 @@ type RosterRow = { id: string; char: string; skin: string; trail: string; name: 
 
 /** quantos participantes a sala terá (pessoas + bots) */
 function plannedSize(r: Room, fill = false) {
-  const humans = Math.min(r.members.length, maxPlayers(r.mode));
-  const min = MIN_PLAYERS[r.mode] ?? 2;
-  const want = r.mode === 'duelo' ? 2 : Math.max(humans, Math.min(maxPlayers(r.mode), humans + r.bots));
-  return fill ? Math.max(want, min) : want;
+  return plannedLobbySize({
+    mode: r.mode === 'dupla' ? 'dupla' : 'duelo',
+    humans: r.members.length,
+    bots: r.bots,
+    fill,
+  });
 }
 
 function startGame(r: Room, fill = false) {
@@ -437,9 +440,20 @@ setInterval(() => {
   for (const r of rooms.values()) {
     if (r.game || !r.members.length) continue;
     if (r.public) {
-      const full = r.members.length >= maxPlayers(r.mode);
-      const allReady = r.members.length >= 2 && r.members.every((m) => m.ready || m.gone);
-      if (full || allReady || (r.autoAt && Date.now() >= r.autoAt)) {
+      const plan = publicLobbyAction({
+        members: r.members.length,
+        max: maxPlayers(r.mode),
+        ready: r.members.filter((m) => m.ready || m.gone).length,
+        autoAt: r.autoAt,
+        now,
+      });
+      if (plan.action === 'arm') {
+        // partida anterior apagou o relógio: sem isso a sala fica em 0s e ninguém começa
+        r.autoAt = plan.autoAt;
+        broadcastRoom(r);
+        continue;
+      }
+      if (plan.action === 'start') {
         startGame(r, true);
         continue;
       }
@@ -542,6 +556,7 @@ wss.on('connection', (ws) => {
       return;
     }
     if (!m || typeof m !== 'object' || c.ws !== ws) return;
+    try {
     switch (m.t) {
       case 'hello': {
         const sid = typeof m.sid === 'string' && /^[a-z0-9]{8,40}$/i.test(m.sid) ? m.sid : '';
@@ -645,7 +660,7 @@ wss.on('connection', (ws) => {
         if (r.game) return; // já começou (toque duplo): ignora
         if (r.host !== c.id) return sendTo(c, { t: 'error', msg: 'Só o dono da sala pode começar.' });
         if (r.members.length > maxPlayers(r.mode)) return sendTo(c, { t: 'error', msg: `Gente demais para este modo (máximo ${maxPlayers(r.mode)}).` });
-        startGame(r);
+        startGame(r, !!r.public);
         break;
       }
       case 'loadout': {
@@ -685,7 +700,7 @@ wss.on('connection', (ws) => {
         let r = [...rooms.values()].find((x) => x.public && !x.game && x.mode === mode && x.members.length < maxPlayers(mode));
         if (!r) {
           const arena = ARENAS[Math.floor(Math.random() * ARENAS.length)].id;
-          r = { code: newCode(), host: c.id, mode, arena, bots: 0, members: [], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: true, autoAt: Date.now() + 25_000, roster: [], rematchVotes: new Map(), rematchAt: 0 };
+          r = { code: newCode(), host: c.id, mode, arena, bots: 0, members: [], game: null, loop: null, ticks: 0, pending: [], echoSig: '', skipVotes: new Set(), public: true, autoAt: Date.now() + QUICK_WAIT_MS, roster: [], rematchVotes: new Map(), rematchAt: 0 };
           rooms.set(r.code, r);
         }
         r.members.push(c);
@@ -727,6 +742,14 @@ wss.on('connection', (ws) => {
       case 'ping':
         sendTo(c, { t: 'pong', at: m.at });
         break;
+    }
+    } catch (err) {
+      console.error('ECO mensagem', m.t, err);
+      try {
+        sendTo(c, { t: 'error', msg: 'Não consegui completar isso. Tente de novo.' });
+      } catch {
+        /* socket já fechado */
+      }
     }
   });
   ws.on('close', () => {
