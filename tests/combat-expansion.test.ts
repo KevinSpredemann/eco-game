@@ -61,10 +61,10 @@ describe('catálogo de combate', () => {
   it('a lança para na parede e um erro não abre combo', () => {
     const g = duel('kai', 'lanca-solar');
     const [a, b] = g.players;
-    a.x = 80;
-    a.y = 360;
-    b.x = 420;
-    b.y = 360;
+    a.x = 160;
+    a.y = 480;
+    b.x = 400;
+    b.y = 480;
     const hp = b.hp;
     press(g, 'a', { plasma: true, aim: 0, ca: 0 });
     for (let i = 0; i < 40; i++) g.step(STEP, { a: idle, b: idle });
@@ -78,9 +78,9 @@ describe('catálogo de combate', () => {
     const g = duel('kai', 'lanca-solar');
     const [a, b] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     b.x = 460;
-    b.y = 220;
+    b.y = 360;
     press(g, 'a', { plasma: true, aim: 0, ca: 0 });
     for (let i = 0; i < 30; i++) g.step(STEP, { a: idle, b: idle });
     expect(b.hp).toBeLessThan(b.maxHp);
@@ -93,9 +93,9 @@ describe('catálogo de combate', () => {
     const g = duel('maya', 'ruptura-vulcanica');
     const [a, b] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     b.x = 430;
-    b.y = 220;
+    b.y = 360;
     const hp = b.hp;
     press(g, 'a', { plasma: true, aim: 0, ca: 0 });
     for (let i = 0; i < 12; i++) g.step(STEP, { a: idle, b: idle });
@@ -107,9 +107,9 @@ describe('catálogo de combate', () => {
     const stay = duel('maya', 'ruptura-vulcanica');
     const [c, d] = stay.players;
     c.x = 300;
-    c.y = 220;
+    c.y = 360;
     d.x = 430;
-    d.y = 220;
+    d.y = 360;
     press(stay, 'a', { plasma: true, aim: 0, ca: 0 });
     for (let i = 0; i < 90; i++) stay.step(STEP, { a: idle, b: idle });
     expect(d.hp).toBeLessThan(d.maxHp);
@@ -119,9 +119,9 @@ describe('catálogo de combate', () => {
     const g = duel('kai', 'marca-ruptura');
     const [a, b] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     b.x = 460;
-    b.y = 220;
+    b.y = 360;
     press(g, 'a', { plasma: true, aim: 0, ca: 0 });
     for (let i = 0; i < 30; i++) g.step(STEP, { a: idle, b: idle });
     expect(b.ruptureT).toBeGreaterThan(0);
@@ -148,9 +148,9 @@ describe('catálogo de combate', () => {
     const late = duel('kai', 'marca-ruptura');
     const [c, d] = late.players;
     c.x = 300;
-    c.y = 220;
+    c.y = 360;
     d.x = 460;
-    d.y = 220;
+    d.y = 360;
     press(late, 'a', { plasma: true, aim: 0, ca: 0 });
     for (let i = 0; i < 30; i++) late.step(STEP, { a: idle, b: idle });
     const wait = Math.ceil((d.ruptureT + 0.2) / STEP);
@@ -167,7 +167,7 @@ describe('catálogo de combate', () => {
     const g = duel('kael', 'passo-fantasma');
     const [a] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     const x = a.x;
     press(g, 'a', { plasma: true, aim: 0, ca: 0 });
     for (let i = 0; i < 8; i++) g.step(STEP, { a: idle, b: idle });
@@ -180,9 +180,9 @@ describe('catálogo de combate', () => {
     const g = duel('kael', 'espelho-gelo');
     const [a, b] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     b.x = 520;
-    b.y = 220;
+    b.y = 360;
     press(g, 'a', { plasma: true, aim: 0, ca: 0 });
     expect(g.iceWalls.some((w) => w.crack && (w.hp ?? 0) > 0)).toBe(true);
     const hp = a.hp;
@@ -195,10 +195,10 @@ describe('catálogo de combate', () => {
     const chain = duel('zed', 'corrente-tempestuosa');
     const [c, d] = chain.players;
     c.x = 200;
-    c.y = 220;
+    c.y = 360;
     d.x = 360;
-    d.y = 220;
-    chain.players.push({ ...d, id: 'c', x: 470, y: 240, isBot: false, name: 'C' });
+    d.y = 360;
+    chain.players.push({ ...d, id: 'c', x: 470, y: 380, isBot: false, name: 'C' });
     const far = chain.players[2];
     const nearHp = d.hp;
     const farHp = far.hp;
@@ -211,9 +211,9 @@ describe('catálogo de combate', () => {
     const g = duel('kai', 'colapso-elemental');
     const [a, b] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     b.x = 380;
-    b.y = 220;
+    b.y = 360;
     press(g, 'a', { plasma: true, aim: 0, ca: 0 });
     expect(g.drainEvents().some((e) => e.type === 'combo' && e.name === 'Colapso Elemental')).toBe(false);
     g.combatLog.push(
@@ -235,9 +235,9 @@ describe('catálogo de combate', () => {
     const g = duel('kai', 'plasma');
     const [a, b] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     b.x = 380;
-    b.y = 220;
+    b.y = 360;
     b.hp = 40;
     press(g, 'a', { ability: true, aim: 0, ca: 0 });
     for (let i = 0; i < 25; i++) g.step(STEP, { a: idle, b: idle });

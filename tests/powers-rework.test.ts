@@ -35,9 +35,9 @@ function fight(a = 'nara', b = 'luna', bot = false) {
 function place(g: Game, dx = 80) {
   const [a, b] = g.players;
   a.x = 400;
-  a.y = 250;
+  a.y = 360;
   b.x = 400 + dx;
-  b.y = 250;
+  b.y = 360;
   return [a, b] as const;
 }
 

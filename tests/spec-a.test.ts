@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
-import { getArena } from '../src/game/arenas';
+import { ARENAS, ARENA_SCALE, VIEW_H, VIEW_W, WORLD_H, WORLD_W, cameraFocus, duelPoints, getArena } from '../src/game/arenas';
+import { NavGrid } from '../src/game/bot';
 import { COMBAT, hazardDamage } from '../src/game/balance';
 import { ENERGY_MAX, SLOT_COST, clampEnergy, energyReadout, kitOf, resolvedDamage } from '../src/game/elements';
 import { DASH_SPEED, SPEED } from '../src/game/constants';
@@ -161,5 +162,71 @@ describe('SPEC A — perigo, energia, passo e setas', () => {
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 40 && b.hp === hp; i++) g.step(STEP, { a: idle, b: idle });
     expect(hp - b.hp).toBe(dmg);
+  });
+});
+
+describe('SPEC A — arenas maiores', () => {
+  it('o mundo cresce 40% e a colisão do lab acompanha', () => {
+    expect(ARENA_SCALE).toBeGreaterThanOrEqual(1.3);
+    expect(ARENA_SCALE).toBeLessThanOrEqual(1.5);
+    expect(WORLD_W).toBe(Math.round(VIEW_W * ARENA_SCALE));
+    expect(WORLD_H).toBe(Math.round(VIEW_H * ARENA_SCALE));
+    const lab = getArena('lab');
+    expect(lab.walls[0].x).toBeCloseTo(250 * ARENA_SCALE, 5);
+    expect(lab.walls[0].w).toBeCloseTo(200 * ARENA_SCALE, 5);
+    expect(lab.spawns[0].x).toBeCloseTo(90 * ARENA_SCALE, 5);
+    expect(lab.pillars[0].r).toBeCloseTo(22 * ARENA_SCALE, 5);
+    const again = getArena('lab');
+    again.walls[0].x += 1;
+    expect(getArena('lab').walls[0].x).toBe(again.walls[0].x);
+    again.walls[0].x -= 1;
+  });
+
+  it('o X1 nasce na distância antiga e o 2x2 usa o mapa largo', () => {
+    const lab = getArena('lab');
+    const [a, b] = duelPoints(lab);
+    const sep = Math.hypot(b.x - a.x, b.y - a.y);
+    expect(sep).toBeCloseTo(lab.duelSep!, 0);
+    expect(sep).toBeLessThan(Math.hypot(lab.spawns[1].x - lab.spawns[0].x, lab.spawns[1].y - lab.spawns[0].y) - 100);
+    const g = duel();
+    const [p, q] = g.players;
+    expect(Math.hypot(q.x - p.x, q.y - p.y)).toBeCloseTo(sep, 0);
+    const wide = Math.hypot(lab.spawns[1].x - lab.spawns[0].x, lab.spawns[1].y - lab.spawns[0].y);
+    expect(wide).toBeGreaterThan(sep * 1.25);
+  });
+
+  it('nascimentos ficam fora de parede, lava e poço', () => {
+    for (const arena of ARENAS) {
+      const spots = [...arena.spawns, ...duelPoints(arena)];
+      for (const s of spots) {
+        expect(s.x).toBeGreaterThan(20);
+        expect(s.y).toBeGreaterThan(20);
+        expect(s.x).toBeLessThan(WORLD_W - 20);
+        expect(s.y).toBeLessThan(WORLD_H - 20);
+        for (const w of arena.walls) {
+          const inside = s.x > w.x && s.x < w.x + w.w && s.y > w.y && s.y < w.y + w.h;
+          expect(inside).toBe(false);
+        }
+        for (const c of arena.pillars) expect(Math.hypot(s.x - c.x, s.y - c.y)).toBeGreaterThan(c.r);
+        for (const l of arena.lava ?? []) expect(Math.hypot(s.x - l.x, s.y - l.y)).toBeGreaterThan(l.r);
+        for (const well of arena.wells ?? []) expect(Math.hypot(s.x - well.x, s.y - well.y)).toBeGreaterThan(well.r);
+      }
+    }
+  });
+
+  it('a nav alcança a faixa nova e a câmera não sai do mundo', () => {
+    const lab = getArena('lab');
+    const nav = new NavGrid(lab);
+    expect(nav.walkableAt(1600, 500, 0)).toBe(true);
+    expect(nav.walkableAt(20, 20, 0)).toBe(false);
+    const edge = cameraFocus(80, 80, VIEW_W, VIEW_H);
+    expect(edge.x - VIEW_W / 2).toBeGreaterThanOrEqual(-0.01);
+    expect(edge.y - VIEW_H / 2).toBeGreaterThanOrEqual(-0.01);
+    const far = cameraFocus(WORLD_W - 10, WORLD_H - 10, VIEW_W, VIEW_H);
+    expect(far.x + VIEW_W / 2).toBeLessThanOrEqual(WORLD_W + 0.01);
+    expect(far.y + VIEW_H / 2).toBeLessThanOrEqual(WORLD_H + 0.01);
+    const mid = cameraFocus(WORLD_W / 2, WORLD_H / 2, VIEW_W, VIEW_H);
+    expect(mid.x).toBeCloseTo(WORLD_W / 2, 5);
+    expect(VIEW_W).toBeLessThan(WORLD_W);
   });
 });

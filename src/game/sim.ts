@@ -5,6 +5,7 @@ import { assignUniqueColors, assignUniqueNames } from './colors';
 import { digestRecording, EchoDigest, nextMark, RoundEchoLine, summarizeRound } from '../systems/echo/digest';
 import { POINTS, deliveryPoints, ranking } from '../systems/scoring';
 import {
+  ARENA_SCALE,
   ArenaDef,
   BORDER,
   Pt,
@@ -13,6 +14,7 @@ import {
   beamAngle,
   bridgeState,
   distToSegment,
+  duelPoints,
   inRect,
   isGround,
   laserX,
@@ -862,8 +864,8 @@ export class Game {
   wave = 0;
   gameWon: boolean | null = null;
   private waveQueue: { at: number; kind: EnemyKind }[] = [];
-  private stormFrom = { x: 640, y: 360, r: 800 };
-  private stormTo = { x: 640, y: 360, r: 90 };
+  private stormFrom = { x: WORLD_W / 2, y: WORLD_H / 2, r: 800 * ARENA_SCALE };
+  private stormTo = { x: WORLD_W / 2, y: WORLD_H / 2, r: 90 * ARENA_SCALE };
   readonly mode: GameMode;
   readonly rules: (typeof MODE_RULES)[GameMode];
   private prevTms = 0;
@@ -902,7 +904,7 @@ export class Game {
   tuneHold = new Map<string, { until: number; speed: number; pulse: string }>();
   private tuneSilent = new Set<string>();
   private tunePhase = '';
-  core: Pt = { x: 640, y: 360 };
+  core: Pt = { x: WORLD_W / 2, y: WORLD_H / 2 };
   coreNext: Pt | null = null;
   coreMoveAt = -1;
   objective: ObjectiveId = 'dourado';
@@ -1248,12 +1250,16 @@ export class Game {
         const sp = this.teamSpawn(p.team, i % 2);
         p.x = sp.x;
         p.y = sp.y;
+      } else if (this.mode === 'duelo') {
+        const sp = duelPoints(this.arena)[i % 2];
+        p.x = sp.x;
+        p.y = sp.y;
       } else {
         const sp = [spawns[0], spawns[1]][i % 2];
         p.x = sp.x;
         p.y = sp.y;
       }
-      p.dir = Math.atan2(360 - p.y, 640 - p.x);
+      p.dir = Math.atan2(WORLD_H / 2 - p.y, WORLD_W / 2 - p.x);
       p.aim = p.dir;
       p.playing = (!this.tiebreak || this.winners.includes(p.id) || this.rules.teams) && !(this.cfg.spectator && p.id === 'p0');
       p.alive = p.playing;

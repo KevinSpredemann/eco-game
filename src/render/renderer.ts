@@ -1,4 +1,4 @@
-import { ArenaDef, BORDER, WORLD_H, WORLD_W, beamAngle, bridgeState, laserX, pistonState, tornadoPos, trainState, windState } from '../game/arenas';
+import { ARENA_SCALE, ArenaDef, BORDER, VIEW_H, VIEW_W, WORLD_H, WORLD_W, beamAngle, bridgeState, cameraFocus, laserX, pistonState, tornadoPos, trainState, windState } from '../game/arenas';
 import { tuneGlow, tuneHides, tuneShapes, type TuneShape } from '../game/mapTune';
 import { CHARACTERS, getCharacter } from '../game/characters';
 import * as C from '../game/constants';
@@ -106,6 +106,12 @@ export class Renderer {
   showTrails = true;
   private cssW = 0;
   private cssH = 0;
+  private padTop = 0;
+  private padBottom = 0;
+  private lookX = WORLD_W / 2;
+  private lookY = WORLD_H / 2;
+  /** vitrine chama setView e a câmera de jogo não empurra o enquadramento */
+  private viewLock = false;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
@@ -121,12 +127,31 @@ export class Renderer {
     this.canvas.height = Math.round(h * this.dpr);
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
+    this.padTop = padTop;
+    this.padBottom = padBottom;
     const availH = h - padTop - padBottom;
-    this.scale = Math.min(w / WORLD_W, availH / WORLD_H);
-    this.ox = (w - WORLD_W * this.scale) / 2;
-    this.oy = padTop + (availH - WORLD_H * this.scale) / 2;
+    // o zoom continua o da arena antiga: o mapa maior aparece andando, sem encolher o personagem
+    this.scale = Math.min(w / VIEW_W, availH / VIEW_H);
     this.sprites.setScale(this.scale * this.dpr * SPRITE_SCALE);
+    this.applyLook();
     if (this.arena) this.buildBase(this.arena);
+  }
+
+  /** enquadra lookX/lookY no centro do vão, sem desenhar fora do mundo */
+  private applyLook() {
+    const availH = Math.max(1, this.cssH - this.padTop - this.padBottom);
+    const visW = this.scale > 0 ? this.cssW / this.scale : VIEW_W;
+    const visH = this.scale > 0 ? availH / this.scale : VIEW_H;
+    const c = cameraFocus(this.lookX, this.lookY, visW, visH);
+    this.ox = this.cssW / 2 - c.x * this.scale;
+    this.oy = this.padTop + availH / 2 - c.y * this.scale;
+  }
+
+  lookAt(x: number, y: number) {
+    this.lookX = x;
+    this.lookY = y;
+    this.viewLock = false;
+    if (this.cssW > 0) this.applyLook();
   }
 
   /** vitrine (tela inicial): ninguém é "você" — sem rótulo, sem tremor/flash nem setas de dano */
@@ -137,6 +162,7 @@ export class Renderer {
 
   /** câmera fixa da vitrine: escala e deslocamento definidos de fora (só reconstrói o chão se a escala mudar) */
   setView(scale: number, ox: number, oy: number) {
+    this.viewLock = true;
     this.scale = scale;
     // chão e desenhos dos personagens só são refeitos quando o zoom muda bastante (zoom suave sem travar)
     if (!this.builtScale || Math.abs(scale / this.builtScale - 1) > 0.3) {
@@ -525,7 +551,7 @@ export class Renderer {
           g.lineTo(x + 80 + rand() * 120, y + 30);
           g.stroke();
         }
-        const gr = g.createRadialGradient(640, 360, 10, 640, 360, 300);
+        const gr = g.createRadialGradient(WORLD_W / 2, WORLD_H / 2, 10, WORLD_W / 2, WORLD_H / 2, 300 * ARENA_SCALE);
         gr.addColorStop(0, hexA(P.accent, 0.1));
         gr.addColorStop(1, 'rgba(0,0,0,0)');
         g.fillStyle = gr;
@@ -535,9 +561,9 @@ export class Renderer {
       case 'templo': {
         g.strokeStyle = 'rgba(255,200,120,0.12)';
         g.lineWidth = 5;
-        for (const r of [90, 150, 320]) {
+        for (const r of [90, 150, 320].map((n) => n * ARENA_SCALE)) {
           g.beginPath();
-          g.ellipse(640, 360, r * 1.15, r, 0, 0, Math.PI * 2);
+          g.ellipse(WORLD_W / 2, WORLD_H / 2, r * 1.15, r, 0, 0, Math.PI * 2);
           g.stroke();
         }
         g.strokeStyle = 'rgba(0,0,0,0.25)';
@@ -601,9 +627,9 @@ export class Renderer {
       case 'espaco': {
         g.strokeStyle = 'rgba(200,120,255,0.18)';
         g.lineWidth = 2;
-        for (const r of [120, 200, 260]) {
+        for (const r of [120, 200, 260].map((n) => n * ARENA_SCALE)) {
           g.beginPath();
-          g.arc(640, 360, r, 0, Math.PI * 2);
+          g.arc(WORLD_W / 2, WORLD_H / 2, r, 0, Math.PI * 2);
           g.stroke();
         }
         break;
@@ -1464,6 +1490,15 @@ export class Renderer {
     this.drawnShakeX = sx;
     this.drawnShakeY = sy;
     this.shake = Math.max(0, this.shake - dt * 40);
+    if (!this.viewLock && !this.showcase) {
+      const me = game.players.find((p) => p.id === this.meId(game));
+      const focus = me ?? game.players.find((p) => p.alive) ?? game.players[0];
+      if (focus) {
+        this.lookX = focus.x;
+        this.lookY = focus.y;
+        this.applyLook();
+      }
+    }
     const k = this.scale * this.dpr;
     const now = time;
     const fin = this.finisher && now < this.finisher.until ? this.finisher : null;

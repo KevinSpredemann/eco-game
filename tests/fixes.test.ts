@@ -104,8 +104,9 @@ describe('portais, gelo, morte e colisão', () => {
   it('jogador enterrado numa parede volta para um lugar livre', () => {
     const g = started();
     const p = g.players[0];
-    p.x = 350;
-    p.y = 178;
+    const buried = g.arena.walls[0];
+    p.x = buried.x + buried.w / 2;
+    p.y = buried.y + buried.h / 2;
     p.vx = 200;
     p.vy = 0;
     expect(g.isFree(p.x, p.y, 4)).toBe(false);

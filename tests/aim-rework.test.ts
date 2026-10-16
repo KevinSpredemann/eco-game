@@ -84,9 +84,9 @@ describe('mira, carga e leitura do golpe', () => {
     const g = fight();
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 520;
-    b.y = 250;
+    b.y = 360;
     const before = b.hp;
     const dmg = resolvedDamage(kitOf('kai').powers[0], 0);
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
@@ -97,10 +97,10 @@ describe('mira, carga e leitura do golpe', () => {
     const blocked = fight();
     const [s, t] = blocked.players;
     s.x = 400;
-    s.y = 250;
+    s.y = 360;
     t.x = 620;
-    t.y = 250;
-    blocked.iceWalls.push(wall(480, 180, 8, 140));
+    t.y = 360;
+    blocked.iceWalls.push(wall(480, 290, 8, 140));
     blocked.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 40; i++) blocked.step(STEP, { a: idle, b: idle });
     expect(t.hp).toBe(t.maxHp);
@@ -109,7 +109,7 @@ describe('mira, carga e leitura do golpe', () => {
     const dry = fight();
     dry.players[0].energy = 0;
     dry.players[0].x = 400;
-    dry.players[0].y = 250;
+    dry.players[0].y = 360;
     dry.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     expect(dry.players[0].energy).toBeLessThan(1);
     expect(dry.players[0].powerCd[0]).toBe(0);
@@ -146,9 +146,9 @@ describe('mira, carga e leitura do golpe', () => {
     ]);
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 480;
-    b.y = 250;
+    b.y = 360;
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 40 && b.markedT <= 0; i++) g.step(STEP, { a: idle, b: idle });
     expect(b.markedT).toBeGreaterThan(0);
@@ -168,9 +168,9 @@ describe('mira, carga e leitura do golpe', () => {
     const [a, b] = early.players;
     a.ultCharge = 40;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 460;
-    b.y = 250;
+    b.y = 360;
     const hp = b.hp;
     early.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0, cr: 60 }, b: idle });
     expect(b.hp).toBe(hp);
@@ -185,9 +185,9 @@ describe('mira, carga e leitura do golpe', () => {
     const [s, t] = full.players;
     s.ultCharge = 100;
     s.x = 400;
-    s.y = 250;
+    s.y = 360;
     t.x = 440;
-    t.y = 250;
+    t.y = 360;
     full.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0, cr: 40, ch: 1 }, b: idle });
     const fullHit = t.maxHp - t.hp;
     expect(s.ultCharge).toBe(0);
@@ -200,9 +200,9 @@ describe('mira, carga e leitura do golpe', () => {
     const [u, v] = low.players;
     u.ultCharge = 100;
     u.x = 400;
-    u.y = 250;
+    u.y = 360;
     v.x = 440;
-    v.y = 250;
+    v.y = 360;
     low.step(STEP, { a: { ...idle, ult: true, aim: 0, ca: 0, cr: 40, ch: 0 }, b: idle });
     expect(v.maxHp - v.hp).toBeLessThan(fullHit);
     expect(v.maxHp - v.hp).toBe(Math.round(resolvedDamage(kitOf('nara').powers[2], 2) * chargeFactor(0)));
@@ -225,9 +225,9 @@ describe('mira, carga e leitura do golpe', () => {
     for (const g of [easy, hard]) {
       const [a, b] = g.players;
       a.x = 400;
-      a.y = 250;
+      a.y = 360;
       b.x = 520;
-      b.y = 250;
+      b.y = 360;
     }
     const beforeE = easy.players[1].hp;
     const beforeH = hard.players[1].hp;

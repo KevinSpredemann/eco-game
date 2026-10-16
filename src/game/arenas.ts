@@ -1,8 +1,12 @@
 import { STUDIO_ARENAS } from './studioArenas';
 
-export const WORLD_W = 1280;
-export const WORLD_H = 720;
-export const BORDER = 30;
+/** 40% maior que o mapa de 1280×720. Colisão, limites, spawns e nav usam este fator. */
+export const ARENA_SCALE = 1.4;
+export const VIEW_W = 1280;
+export const VIEW_H = 720;
+export const WORLD_W = Math.round(VIEW_W * ARENA_SCALE);
+export const WORLD_H = Math.round(VIEW_H * ARENA_SCALE);
+export const BORDER = Math.round(30 * ARENA_SCALE);
 
 export type Rect = { x: number; y: number; w: number; h: number };
 export type Circle = { x: number; y: number; r: number };
@@ -121,6 +125,8 @@ export interface ArenaDef {
   /** 1 = normal; menor = mais escorregadio */
   grip: number;
   music: { root: number; scale: number[]; bpm: number };
+  /** distância original entre os dois nascimentos do X1, antes da escala */
+  duelSep?: number;
 }
 
 const MINOR = [0, 3, 5, 7, 10];
@@ -786,11 +792,156 @@ const ALL_ARENAS: ArenaDef[] = [
 /** Mapas de ilhas ligadas por pontes estreitas ("tubos"): saíram da escolha de mapa. */
 export const RETIRED_ARENAS: ReadonlySet<string> = new Set(['cidade', 'recife']);
 
-/** Mapas que dá para escolher e sortear (offline, sala e servidor). */
-export const ARENAS: ArenaDef[] = ALL_ARENAS.filter((a) => !RETIRED_ARENAS.has(a.id));
+const PLAYABLE_RAW = ALL_ARENAS.filter((a) => !RETIRED_ARENAS.has(a.id));
+const scaledCache = new Map<string, ArenaDef>();
 
+function scaleArena(raw: ArenaDef): ArenaDef {
+  const a = structuredClone(raw);
+  const s0 = raw.spawns[0];
+  const s1 = raw.spawns[1];
+  a.duelSep = s0 && s1 ? Math.hypot(s1.x - s0.x, s1.y - s0.y) : 0;
+  const S = ARENA_SCALE;
+  const pt = (p: Pt) => {
+    p.x *= S;
+    p.y *= S;
+  };
+  const rect = (r: Rect) => {
+    r.x *= S;
+    r.y *= S;
+    r.w *= S;
+    r.h *= S;
+  };
+  const circ = (c: Circle) => {
+    c.x *= S;
+    c.y *= S;
+    c.r *= S;
+  };
+  for (const w of a.walls) rect(w);
+  for (const c of a.pillars) circ(c);
+  for (const p of a.spawns) pt(p);
+  for (const p of a.cores) pt(p);
+  for (const z of a.zones) circ(z);
+  for (const pair of a.portals ?? []) {
+    pt(pair[0]);
+    pt(pair[1]);
+  }
+  for (const i of a.islands ?? []) rect(i);
+  for (const b of a.bridges ?? []) rect(b);
+  for (const c of a.conveyors ?? []) {
+    rect(c);
+    c.vx *= S;
+    c.vy *= S;
+  }
+  for (const p of a.pistons ?? []) rect(p);
+  for (const b of a.beams ?? []) {
+    b.x *= S;
+    b.y *= S;
+    b.len *= S;
+  }
+  for (const l of a.lasers ?? []) {
+    l.x0 *= S;
+    l.x1 *= S;
+    l.y0 *= S;
+    l.y1 *= S;
+    l.speed *= S;
+  }
+  for (const b of a.bushes ?? []) circ(b);
+  for (const w of a.wells ?? []) {
+    w.x *= S;
+    w.y *= S;
+    w.r *= S;
+    w.range *= S;
+  }
+  for (const l of a.lava ?? []) circ(l);
+  for (const i of a.ice ?? []) rect(i);
+  for (const s of a.sand ?? []) circ(s);
+  for (const t of a.trains ?? []) {
+    t.y *= S;
+    t.h *= S;
+    t.len *= S;
+  }
+  for (const td of a.tornados ?? []) {
+    td.cx *= S;
+    td.cy *= S;
+    td.rx *= S;
+    td.ry *= S;
+    td.r *= S;
+  }
+  for (const p of a.spawns) {
+    const free = freeSpawn(a, p.x, p.y);
+    p.x = free.x;
+    p.y = free.y;
+  }
+  return a;
+}
+
+function freeSpawn(a: ArenaDef, x: number, y: number): Pt {
+  if (!spawnBlocked(a, x, y, 14)) return { x, y };
+  for (let r = 10; r <= 180; r += 10) {
+    for (let i = 0; i < 16; i++) {
+      const ang = (i / 16) * Math.PI * 2;
+      const nx = x + Math.cos(ang) * r;
+      const ny = y + Math.sin(ang) * r;
+      if (!spawnBlocked(a, nx, ny, 14)) return { x: nx, y: ny };
+    }
+  }
+  return { x, y };
+}
+
+/** Mapas que dá para escolher e sortear (offline, sala e servidor). */
 export function getArena(id: string): ArenaDef {
-  return ALL_ARENAS.find((a) => a.id === id) ?? ARENAS[0];
+  const raw = ALL_ARENAS.find((a) => a.id === id) ?? PLAYABLE_RAW[0];
+  let hit = scaledCache.get(raw.id);
+  if (!hit) {
+    hit = scaleArena(raw);
+    scaledCache.set(raw.id, hit);
+  }
+  return hit;
+}
+
+export const ARENAS: ArenaDef[] = PLAYABLE_RAW.map((a) => getArena(a.id));
+
+function spawnBlocked(a: ArenaDef, x: number, y: number, r = 16): boolean {
+  if (x < BORDER + r || y < BORDER + r || x > WORLD_W - BORDER - r || y > WORLD_H - BORDER - r) return true;
+  for (const w of a.walls) if (x > w.x - r && x < w.x + w.w + r && y > w.y - r && y < w.y + w.h + r) return true;
+  for (const c of a.pillars) if (Math.hypot(x - c.x, y - c.y) < c.r + r) return true;
+  for (const l of a.lava ?? []) if (Math.hypot(x - l.x, y - l.y) < l.r + r) return true;
+  for (const w of a.wells ?? []) if (Math.hypot(x - w.x, y - w.y) < w.r + r) return true;
+  if (a.islands) {
+    const onIsle = a.islands.some((i) => x >= i.x + r && x <= i.x + i.w - r && y >= i.y + r && y <= i.y + i.h - r);
+    const onBridge = (a.bridges ?? []).some((b) => !b.period && x >= b.x + 4 && x <= b.x + b.w - 4 && y >= b.y + 4 && y <= b.y + b.h - 4);
+    if (!onIsle && !onBridge) return true;
+  }
+  return false;
+}
+
+/** Os dois nascimentos do X1: a separação de antes da escala, afastados só o bastante para sair de parede e lava. */
+export function duelPoints(a: ArenaDef): [Pt, Pt] {
+  const s0 = a.spawns[0];
+  const s1 = a.spawns[1] ?? s0;
+  if (!s0 || !s1) return [s0, s1];
+  const dx = s1.x - s0.x;
+  const dy = s1.y - s0.y;
+  const full = Math.hypot(dx, dy) || 1;
+  const ux = dx / full;
+  const uy = dy / full;
+  const mx = (s0.x + s1.x) / 2;
+  const my = (s0.y + s1.y) / 2;
+  let gap = Math.min(a.duelSep ?? full, full);
+  while (gap < full - 1) {
+    const p0 = { x: mx - ux * (gap / 2), y: my - uy * (gap / 2) };
+    const p1 = { x: mx + ux * (gap / 2), y: my + uy * (gap / 2) };
+    if (!spawnBlocked(a, p0.x, p0.y) && !spawnBlocked(a, p1.x, p1.y)) return [p0, p1];
+    gap += 12;
+  }
+  return [{ x: s0.x, y: s0.y }, { x: s1.x, y: s1.y }];
+}
+
+/** Centro da câmera que segue o jogador sem mostrar fora do mundo. visW/visH são o recorte em unidades de mundo. */
+export function cameraFocus(x: number, y: number, visW: number, visH: number): Pt {
+  const cx = visW >= WORLD_W ? WORLD_W / 2 : Math.min(WORLD_W - visW / 2, Math.max(visW / 2, x));
+  const cy = visH >= WORLD_H ? WORLD_H / 2 : Math.min(WORLD_H - visH / 2, Math.max(visH / 2, y));
+  return { x: cx, y: cy };
 }
 
 /** id salvo de um mapa que saiu vira o primeiro mapa da lista */

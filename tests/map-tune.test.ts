@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
-import { getArena } from '../src/game/arenas';
+import { ARENA_SCALE, WORLD_W, getArena } from '../src/game/arenas';
 import { PROFILES } from '../src/game/bot';
 import {
   TUNE_IDS,
@@ -22,6 +22,8 @@ import type { EchoRecording } from '../src/shared/types';
 
 const STEP = 1 / 60;
 const idle: Input = { mx: 0, my: 0, dash: false, ability: false };
+/** coordenadas da folha (1280×720) viram o mapa escalado */
+const w = (n: number) => n * ARENA_SCALE;
 
 function open(id: string) {
   const g = new Game({
@@ -51,8 +53,8 @@ function who(g: Game, id: string) {
 
 function place(g: Game, id: string, x: number, y: number) {
   const p = who(g, id);
-  p.x = x;
-  p.y = y;
+  p.x = w(x);
+  p.y = w(y);
   p.vx = 0;
   p.vy = 0;
   return p;
@@ -130,10 +132,10 @@ describe('relógio dos mapas', () => {
 describe('efeitos, uma vez e sem dano', () => {
   it('o anel acelera quem está em cima e abafa quem está fora, sem tirar vida', () => {
     const arena = getArena('anfiteatro');
-    expect(tuneMove(arena, 780, 360, 2)).toMatchObject({ speed: 1.08, grip: 1.25 });
-    expect(tuneMove(arena, 900, 360, 2).speed).toBe(0.92);
-    expect(tuneMove(arena, 700, 360, 2)).toMatchObject({ speed: 1, grip: 1 });
-    expect(tuneMove(arena, 640, 220, 2).speed).toBe(1);
+    expect(tuneMove(arena, w(780), w(360), 2)).toMatchObject({ speed: 1.08, grip: 1.25 });
+    expect(tuneMove(arena, w(900), w(360), 2).speed).toBe(0.92);
+    expect(tuneMove(arena, w(700), w(360), 2)).toMatchObject({ speed: 1, grip: 1 });
+    expect(tuneMove(arena, w(640), w(220), 2).speed).toBe(1);
 
     const walk = (x: number) => {
       const g = open('anfiteatro');
@@ -142,7 +144,7 @@ describe('efeitos, uma vez e sem dano', () => {
       const hp = p.hp;
       go(g, 2, { a: { ...idle, mx: 1 }, b: idle }, 24);
       expect(p.hp).toBe(hp);
-      return p.x - x;
+      return p.x - w(x);
     };
     const on = walk(780);
     const off = walk(900);
@@ -175,7 +177,7 @@ describe('efeitos, uma vez e sem dano', () => {
       ],
     });
     expect(who(bot, 'b').brain!.speedMul).toBe(1);
-    const spot = tuneMove(getArena('anfiteatro'), 780, 360, 2);
+    const spot = tuneMove(getArena('anfiteatro'), w(780), w(360), 2);
     expect(spot.speed).toBe(1.08);
   });
 
@@ -186,7 +188,7 @@ describe('efeitos, uma vez e sem dano', () => {
     place(g, 'b', 200, 120);
     const hp = p.hp;
     go(g, 1.5);
-    expect(p.x).toBeLessThan(500);
+    expect(p.x).toBeLessThan(w(500));
     expect(p.hp).toBe(hp);
     expect(g.tuneOnce.has('a:pagina-0')).toBe(true);
     const x = p.x;
@@ -196,8 +198,8 @@ describe('efeitos, uma vez e sem dano', () => {
     expect(Math.abs(p.x - x)).toBeLessThan(4);
     expect(g.tuneOnce.size).toBe(1);
 
-    expect(tuneBlocks(book, 500, 360, 760, 360, 2)).toBe(true);
-    expect(tuneBlocks(book, 500, 360, 760, 360, 4)).toBe(false);
+    expect(tuneBlocks(book, w(500), w(360), w(760), w(360), 2)).toBe(true);
+    expect(tuneBlocks(book, w(500), w(360), w(760), w(360), 4)).toBe(false);
 
     const blocked = open('biblioteca');
     const src = place(blocked, 'a', 600, 360);
@@ -215,10 +217,10 @@ describe('efeitos, uma vez e sem dano', () => {
 
   it('a cabine fechada corta o tiro na borda e não grava quem está dentro', () => {
     const room = getArena('camara');
-    expect(tuneBlocks(room, 320, 96, 140, 96, 2)).toBe(true);
-    expect(tuneBlocks(room, 180, 96, 120, 96, 2)).toBe(false);
-    expect(tuneHides(room, 140, 120, 2)).toBe(true);
-    expect(tuneHides(room, 140, 120, 0.4)).toBe(false);
+    expect(tuneBlocks(room, w(320), w(96), w(140), w(96), 2)).toBe(true);
+    expect(tuneBlocks(room, w(180), w(96), w(120), w(96), 2)).toBe(false);
+    expect(tuneHides(room, w(140), w(120), 2)).toBe(true);
+    expect(tuneHides(room, w(140), w(120), 0.4)).toBe(false);
 
     const blocked = open('camara');
     place(blocked, 'a', 320, 120);
@@ -255,7 +257,7 @@ describe('efeitos, uma vez e sem dano', () => {
     expect(cave.tuneHold.get('a')!.until).toBe(until);
     expect(cave.tuneOnce.size).toBe(marked);
     expect(p.hp).toBe(p.maxHp);
-    expect(tuneTouch(getArena('caverna'), 438, 180, 1.55)?.pulse).toBe('gongo-0');
+    expect(tuneTouch(getArena('caverna'), w(438), w(180), 1.55)?.pulse).toBe('gongo-0');
 
     const garden = open('jardim');
     const q = place(garden, 'a', 300, 360);
@@ -274,7 +276,7 @@ describe('efeitos, uma vez e sem dano', () => {
     place(disc, 'b', 200, 140);
     const hp = p.hp;
     go(disc, 0, { a: idle, b: idle }, 60);
-    expect(p.y).toBeGreaterThan(375);
+    expect(p.y).toBeGreaterThan(w(360));
     expect(p.hp).toBe(hp);
     expect(getArena('vinil').conveyors).toEqual([]);
 
@@ -282,12 +284,12 @@ describe('efeitos, uma vez e sem dano', () => {
     const q = place(label, 'a', 680, 360);
     place(label, 'b', 200, 140);
     go(label, 0, { a: idle, b: idle }, 60);
-    expect(Math.hypot(q.x - 680, q.y - 360)).toBeLessThan(2);
+    expect(Math.hypot(q.x - w(680), q.y - w(360))).toBeLessThan(2);
 
-    const spun = spinEcho(790, 360, 0, 0, 1);
-    expect(spun.y).toBeGreaterThan(370);
-    expect(spinEcho(680, 360, 0, 0, 1)).toEqual({ x: 680, y: 360 });
-    expect(spinEcho(200, 360, 0, 0, 1)).toEqual({ x: 200, y: 360 });
+    const spun = spinEcho(w(790), w(360), 0, 0, 1);
+    expect(spun.y).toBeGreaterThan(w(360));
+    expect(spinEcho(w(680), w(360), 0, 0, 1)).toEqual({ x: w(680), y: w(360) });
+    expect(spinEcho(w(200), w(360), 0, 0, 1)).toEqual({ x: w(200), y: w(360) });
 
     const sweep = open('vinil');
     const r = place(sweep, 'a', 716, 334);
@@ -309,18 +311,18 @@ describe('efeitos, uma vez e sem dano', () => {
     const hpA = bank.hp;
     const hpB = isle.hp;
     go(g, 7, { a: { ...idle, mx: 1 }, b: { ...idle, mx: 1 } }, 12);
-    const da = bank.x - 410;
-    const db = isle.x - 200;
+    const da = bank.x - w(410);
+    const db = isle.x - w(200);
     expect(da).toBeGreaterThan(8);
     expect(db).toBeGreaterThan(da * 1.2);
     expect(bank.hp).toBe(hpA);
     expect(isle.hp).toBe(hpB);
     expect(bank.deaths).toBe(0);
     expect(isle.deaths).toBe(0);
-    expect(tuneMove(getArena('recife'), 450, 264, 7).speed).toBe(0.65);
-    expect(tuneMove(getArena('recife'), 120, 120, 7).speed).toBe(1);
-    expect(tuneSteer(getArena('recife'), 450, 264, 7).avoid).toBe(true);
-    expect(tuneSteer(getArena('recife'), 450, 264, 2).avoid).toBe(false);
+    expect(tuneMove(getArena('recife'), w(450), w(264), 7).speed).toBe(0.65);
+    expect(tuneMove(getArena('recife'), w(120), w(120), 7).speed).toBe(1);
+    expect(tuneSteer(getArena('recife'), w(450), w(264), 7).avoid).toBe(true);
+    expect(tuneSteer(getArena('recife'), w(450), w(264), 2).avoid).toBe(false);
   });
 
   it('o pêndulo empurra uma vez por meia batida e a marca firme não tira vida', () => {
@@ -346,13 +348,13 @@ describe('efeitos, uma vez e sem dano', () => {
     g.step(STEP, { a: idle, b: idle });
     expect(Math.abs(p.x - x)).toBeLessThan(4);
 
-    expect(tuneMove(getArena('metronomo'), 640, 500, 2)).toMatchObject({ speed: 1.1, grip: 1.3 });
+    expect(tuneMove(getArena('metronomo'), w(640), w(500), 2)).toMatchObject({ speed: 1.1, grip: 1.3 });
     const mark = open('metronomo');
     const m = place(mark, 'a', 640, 500);
     place(mark, 'b', 200, 600);
     go(mark, 2, { a: { ...idle, mx: 1 }, b: idle }, 8);
     expect(m.hp).toBe(m.maxHp);
-    expect(m.x).toBeGreaterThan(640);
+    expect(m.x).toBeGreaterThan(w(640));
   });
 
   it('a rota no livro espelha uma vez', () => {
@@ -362,29 +364,29 @@ describe('efeitos, uma vez e sem dano', () => {
       color: '#fff',
       characterId: 'lyra',
       frames: [
-        { t: 0, x: 560, y: 360, direction: 0, moving: true },
-        { t: 100, x: 600, y: 360, direction: 0, moving: true },
+        { t: 0, x: w(560), y: w(360), direction: 0, moving: true },
+        { t: 100, x: w(600), y: w(360), direction: 0, moving: true },
       ],
       events: [],
       endT: 100,
     };
     expect(mirrorRest(rec, 0, 'pagina-0')).toBe(true);
-    expect(rec.frames[0].x).toBe(1280 - 560);
-    expect(rec.frames[1].x).toBe(1280 - 600);
+    expect(rec.frames[0].x).toBe(WORLD_W - w(560));
+    expect(rec.frames[1].x).toBe(WORLD_W - w(600));
     expect(mirrorRest(rec, 0, 'pagina-0')).toBe(false);
   });
 });
 
 describe('bots, desenho e snapshot', () => {
   it('o bot desvia do livro e procura o anel, o diapasão e a cabine', () => {
-    expect(tuneSteer(getArena('biblioteca'), 640, 360, 1).avoid).toBe(true);
-    expect(tuneSteer(getArena('biblioteca'), 200, 120, 1).avoid).toBe(false);
-    const ring = tuneSteer(getArena('anfiteatro'), 780, 360, 1).seek;
+    expect(tuneSteer(getArena('biblioteca'), w(640), w(360), 1).avoid).toBe(true);
+    expect(tuneSteer(getArena('biblioteca'), w(200), w(120), 1).avoid).toBe(false);
+    const ring = tuneSteer(getArena('anfiteatro'), w(780), w(360), 1).seek;
     expect(ring).not.toBeNull();
-    expect(Math.hypot(ring!.x - 640, ring!.y - 360)).toBeCloseTo(140, 0);
-    expect(tuneSteer(getArena('jardim'), 400, 360, 0.5).seek).toEqual({ x: 200, y: 360 });
-    expect(tuneSteer(getArena('camara'), 400, 300, 0.4).seek).toEqual({ x: 100, y: 100 });
-    expect(tuneSteer(getArena('metronomo'), 640, 400, 0).avoid).toBe(true);
+    expect(Math.hypot(ring!.x - w(640), ring!.y - w(360))).toBeCloseTo(w(140), 0);
+    expect(tuneSteer(getArena('jardim'), w(400), w(360), 0.5).seek).toEqual({ x: w(200), y: w(360) });
+    expect(tuneSteer(getArena('camara'), w(400), w(300), 0.4).seek).toEqual({ x: w(100), y: w(100) });
+    expect(tuneSteer(getArena('metronomo'), w(640), w(400), 0).avoid).toBe(true);
   });
 
   it('Reduzir efeitos tira o enfeite e deixa o aviso', () => {

@@ -854,6 +854,38 @@ export class InputManager {
     });
   }
 
+  /** Analógico e teclas seguradas, sem consumir o toque da habilidade. */
+  live(): { mx: number; my: number; aim: number; held: Action[] } {
+    const k = this.keys;
+    const bound = new Set(Object.values(this.binds));
+    const free = (code: string) => k.has(code) && !bound.has(code);
+    let ax = 0;
+    let ay = 0;
+    if (k.has('ArrowLeft')) ax -= 1;
+    if (k.has('ArrowRight')) ax += 1;
+    if (k.has('ArrowUp')) ay -= 1;
+    if (k.has('ArrowDown')) ay += 1;
+    let kx = 0;
+    let ky = 0;
+    if (this.moveScheme === 'wasd') {
+      if (free('KeyA')) kx -= 1;
+      if (free('KeyD')) kx += 1;
+      if (free('KeyW')) ky -= 1;
+      if (free('KeyS')) ky += 1;
+    } else if (this.moveScheme === 'esdf') {
+      if (free('KeyS')) kx -= 1;
+      if (free('KeyF')) kx += 1;
+      if (free('KeyE')) ky -= 1;
+      if (free('KeyD')) ky += 1;
+    }
+    const stick = this.stickIntentNow(ax, ay, kx, ky);
+    const held = (Object.keys(this.binds) as Action[]).filter((a) => {
+      const code = this.binds[a];
+      return !!code && k.has(code);
+    });
+    return { mx: stick.mx, my: stick.my, aim: stick.aim, held };
+  }
+
   /** Lê o estado do passo atual (habilidades são "um toque" e se consomem). */
   read(): Input & { touchCast?: { ang: number; ratio: number } | null; castScreen?: { x: number; y: number } | null } {
     const k = this.keys;

@@ -42,10 +42,10 @@ describe('Z do catálogo', () => {
     const g = duel('kai', 'lanca-solar');
     const [a, b] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     a.dir = Math.PI;
     b.x = 460;
-    b.y = 220;
+    b.y = 360;
     press(g, 'a', { plasma: true, aim: 0, ca: 0 });
     for (let i = 0; i < 30; i++) g.step(STEP, { a: idle, b: idle });
     expect(b.hp).toBeLessThan(b.maxHp);
@@ -62,21 +62,21 @@ describe('Z do catálogo', () => {
   it('a lança para o norte acerta o alvo do norte e erra o do leste', () => {
     const north = duel('kai', 'lanca-solar');
     const [a, b] = north.players;
-    a.x = 400;
+    a.x = 320;
     a.y = 360;
     a.dir = 0;
-    b.x = 400;
-    b.y = 220;
+    b.x = 320;
+    b.y = 160;
     press(north, 'a', { plasma: true, aim: -Math.PI / 2, ca: -Math.PI / 2 });
     for (let i = 0; i < 30; i++) north.step(STEP, { a: idle, b: idle });
     expect(b.hp).toBeLessThan(b.maxHp);
 
     const east = duel('kai', 'lanca-solar');
     const [c, d] = east.players;
-    c.x = 400;
+    c.x = 320;
     c.y = 360;
-    d.x = 400;
-    d.y = 220;
+    d.x = 320;
+    d.y = 160;
     const hp = d.hp;
     press(east, 'a', { plasma: true, aim: 0, ca: 0 });
     for (let i = 0; i < 30; i++) east.step(STEP, { a: idle, b: idle });
@@ -87,11 +87,11 @@ describe('Z do catálogo', () => {
     const g = duel('zed', 'corrente-tempestuosa');
     const [a, b] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     a.dir = Math.PI;
     b.x = 470;
-    b.y = 220;
-    g.players.push({ ...b, id: 'c', x: 180, y: 220, name: 'Atrás' });
+    b.y = 360;
+    g.players.push({ ...b, id: 'c', x: 180, y: 360, name: 'Atrás' });
     const behind = g.players[2];
     const aheadHp = b.hp;
     const behindHp = behind.hp;
@@ -104,7 +104,7 @@ describe('Z do catálogo', () => {
     const roots = duel('nara', 'prisao-raizes');
     const [a] = roots.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     press(roots, 'a', { plasma: true, aim: 0, ca: 0, cr: 140 });
     const area = roots.drainEvents().filter((e) => e.type === 'skill' && (e.r ?? 0) > 30);
     expect(area.some((e) => e.type === 'skill' && e.x > a.x + 50)).toBe(true);
@@ -113,9 +113,9 @@ describe('Z do catálogo', () => {
     const fire = duel('maya', 'ruptura-vulcanica');
     const [c, d] = fire.players;
     c.x = 300;
-    c.y = 220;
+    c.y = 360;
     d.x = 430;
-    d.y = 220;
+    d.y = 360;
     const hp = d.hp;
     press(fire, 'a', { plasma: true, aim: 0, ca: 0 });
     const wind = fire.drainEvents().filter((e) => e.type === 'windup');
@@ -129,9 +129,9 @@ describe('Z do catálogo', () => {
     const g = duel('nara', 'prisao-raizes');
     const [a, b] = g.players;
     a.x = 300;
-    a.y = 220;
+    a.y = 360;
     b.x = 440;
-    b.y = 220;
+    b.y = 360;
     press(g, 'a', { plasma: true, aim: 0, ca: 0, cr: 140 });
     const snap = encodeSnapshot(g, false);
     expect(PROTO).toBe(12);

@@ -33,6 +33,16 @@
       </div>
       <div class="hud-status" id="hud-status"></div>
       <div class="combo-dock" id="hud-combo" hidden></div>
+      <div class="control-lab" id="control-lab" hidden>
+        <p class="control-lab-title">Teste de controles · Laboratório</p>
+        <p id="control-lab-read">Parado</p>
+        <div class="control-lab-actions">
+          <button type="button" data-action="lab-back">Voltar</button>
+          <button type="button" data-action="lab-reset">Restaurar padrão</button>
+          <button type="button" data-action="lab-save">Salvar e continuar</button>
+          <button type="button" data-action="lab-quit">Sair</button>
+        </div>
+      </div>
       <div class="skillbar" id="skillbar" aria-label="Habilidades"></div>
       <div class="boss-hud" id="boss-hud" hidden>
         <div class="bh-top"><b id="bh-name">CHEFE</b><span id="bh-phase">FASE 1</span></div>
@@ -519,6 +529,7 @@
           <p class="form-note">Padrão: WASD e as setas andam. Q, E e F são os poderes, R a ultimate, Z o extra, Espaço a esquiva, Tab o placar e Esc a pausa. O perfil Setas + habilidades deixa as letras livres. Vale só neste aparelho. O servidor continua conferindo o golpe, não a tecla.</p>
           <div class="keybinds" id="keybinds"></div>
           <button class="btn small ghost" id="keys-reset">Voltar ao padrão deste estilo</button>
+          <button class="btn" type="button" data-action="try-controls">Testar controles</button>
         </div>
       </div>
     </section>

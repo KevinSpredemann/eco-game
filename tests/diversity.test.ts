@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game, Input } from '../src/game/sim';
-import { getArena } from '../src/game/arenas';
+import { ARENA_SCALE, getArena } from '../src/game/arenas';
 import { KITS, formOf, isPlainStreak, kitOf, resolvedDamage } from '../src/game/elements';
 import { COMBO_WINDOW, listSynergies, pickComboRecipe } from '../src/game/combos';
 
@@ -121,7 +121,7 @@ describe('formas de golpe', () => {
     a.y = lab.spawns[0].y;
     b.x = a.x + 180;
     b.y = a.y;
-    const wall = lab.walls.find((w) => w.x === 170 && w.y === 290);
+    const wall = lab.walls.find((w) => w.x === 170 * ARENA_SCALE && w.y === 290 * ARENA_SCALE);
     expect(wall).toBeTruthy();
     expect(a.y < wall!.y || a.y > wall!.y + wall!.h).toBe(true);
     const hp = b.hp;

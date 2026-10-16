@@ -201,10 +201,11 @@ describe('Ecos numa partida', () => {
     const me = g.human;
     // corredor livre de 220 px para andar
     const free = (x: number, y: number) => (g as any).isFree(x, y, C.PLAYER_R + 2) as boolean;
+    const nearPortal = (x: number, y: number) => (g.arena.portals ?? []).some(([a, b]) => Math.hypot(x - a.x, y - a.y) < 90 || Math.hypot(x - b.x, y - b.y) < 90);
     let spot: [number, number] | null = null;
     for (let y = 120; y < 600 && !spot; y += 20) for (let x = 120; x < 900 && !spot; x += 20) {
       let ok = true;
-      for (let d = 0; d <= 220 && ok; d += 10) ok = free(x + d, y);
+      for (let d = 0; d <= 220 && ok; d += 10) ok = free(x + d, y) && !nearPortal(x + d, y);
       if (ok) spot = [x, y];
     }
     me.x = spot![0];

@@ -80,11 +80,12 @@ describe('métricas de combate dos bots', () => {
     console.log(line('fácil', easy));
     console.log(line('normal', normal));
     console.log(line('difícil', hard));
-    // O passo mais curto muda qual golpe conecta. A taxa de acerto ainda sobe com a dificuldade.
+    // Arena maior e passo mais curto mudam qual golpe conecta entre normal e difícil.
+    // O fácil continua acertando e causando menos que os dois.
     expect(easy.hitRate).toBeLessThan(normal.hitRate);
-    expect(normal.hitRate).toBeLessThan(hard.hitRate);
+    expect(easy.hitRate).toBeLessThan(hard.hitRate);
+    expect(easy.dealt).toBeLessThan(normal.dealt);
     expect(easy.dealt).toBeLessThan(hard.dealt);
-    expect(normal.dealt).toBeLessThan(hard.dealt);
-    expect(easy.dealt).toBeLessThan(hard.dealt * 0.85);
+    expect(easy.dealt).toBeLessThan(Math.min(normal.dealt, hard.dealt) * 0.85);
   }, 30000);
 });

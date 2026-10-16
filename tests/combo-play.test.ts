@@ -78,13 +78,13 @@ describe('combos com efeito de verdade', () => {
     ]);
     const [a, b, c, d] = g.players;
     a.x = 300;
-    a.y = 250;
+    a.y = 360;
     b.x = 460;
-    b.y = 250;
+    b.y = 360;
     c.x = 500;
-    c.y = 250;
+    c.y = 360;
     d.x = 760;
-    d.y = 250;
+    d.y = 360;
     b.rootT = 1.5;
     const base = resolvedDamage(kitOf('maya').powers[0], 0);
     const hb = b.hp;
@@ -116,9 +116,9 @@ describe('combos com efeito de verdade', () => {
     ]);
     const [a, b] = slow.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 520;
-    b.y = 250;
+    b.y = 360;
     b.slowT = 1.2;
     const before = b.hp;
     slow.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
@@ -131,9 +131,9 @@ describe('combos com efeito de verdade', () => {
       { id: 'b', char: 'kael' },
     ]);
     far.players[0].x = 80;
-    far.players[0].y = 250;
+    far.players[0].y = 360;
     far.players[1].x = 1100;
-    far.players[1].y = 250;
+    far.players[1].y = 360;
     far.players[1].frozenT = 2;
     const hp = far.players[1].hp;
     far.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
@@ -149,9 +149,9 @@ describe('combos com efeito de verdade', () => {
     ]);
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 540;
-    b.y = 250;
+    b.y = 360;
     b.stunT = 1.2;
     const base = resolvedDamage(kitOf('duda').powers[0], 0);
     const before = b.hp;

@@ -1,4 +1,4 @@
-import { distToSegment, inRect, type ArenaDef, type Rect } from './arenas';
+import { ARENA_SCALE, WORLD_H, WORLD_W, distToSegment, inRect, type ArenaDef, type Rect } from './arenas';
 import type { EchoRecording } from '../shared/types';
 
 /** Relógio dos truques do Estúdio. Só depende da arena e de worldT: cliente e servidor coincidem. */
@@ -30,8 +30,10 @@ export function tuneHint(id: string): string {
   return HINT[id] ?? '';
 }
 
-const CX = 640;
-const CY = 360;
+const S = ARENA_SCALE;
+const sc = (n: number) => n * S;
+const CX = WORLD_W / 2;
+const CY = WORLD_H / 2;
 
 function wrap(t: number, period: number) {
   const n = Math.floor(t / period);
@@ -89,35 +91,35 @@ export function tuneClock(arena: ArenaDef, t: number): TuneClock {
   return clockOf(arena.id, t);
 }
 
-const RINGS = [140, 220, 300];
-const RING_W = 24;
-const NEUTRAL = 76;
+const RINGS = [140, 220, 300].map(sc);
+const RING_W = sc(24);
+const NEUTRAL = sc(76);
 
 const GONGS = [
-  { x: 400, y: 180 },
-  { x: 880, y: 180 },
-  { x: 400, y: 500 },
-  { x: 880, y: 500 },
+  { x: sc(400), y: sc(180) },
+  { x: sc(880), y: sc(180) },
+  { x: sc(400), y: sc(500) },
+  { x: sc(880), y: sc(500) },
 ];
 const FORKS = [
-  { x: 200, y: 360 },
-  { x: 1080, y: 360 },
-  { x: 640, y: 130 },
-  { x: 640, y: 590 },
-  { x: 400, y: 220 },
-  { x: 880, y: 500 },
+  { x: sc(200), y: sc(360) },
+  { x: sc(1080), y: sc(360) },
+  { x: sc(640), y: sc(130) },
+  { x: sc(640), y: sc(590) },
+  { x: sc(400), y: sc(220) },
+  { x: sc(880), y: sc(500) },
 ];
 const BOOTHS: Rect[] = [
-  { x: 60, y: 60, w: 200, h: 120 },
-  { x: 1020, y: 60, w: 200, h: 120 },
-  { x: 60, y: 540, w: 200, h: 120 },
-  { x: 1020, y: 540, w: 200, h: 120 },
+  { x: sc(60), y: sc(60), w: sc(200), h: sc(120) },
+  { x: sc(1020), y: sc(60), w: sc(200), h: sc(120) },
+  { x: sc(60), y: sc(540), w: sc(200), h: sc(120) },
+  { x: sc(1020), y: sc(540), w: sc(200), h: sc(120) },
 ];
-const BOOK: Rect = { x: 500, y: 300, w: 280, h: 120 };
-const PAGE_WALL: Rect = { x: 632, y: 300, w: 16, h: 120 };
-const DISC = { x: CX, y: CY, r: 215, label: 70 };
-const ARM = { x: 880, y: 150, len: 300 };
-const PEND = { x: CX, y: 200, len: 260, amp: (55 * Math.PI) / 180 };
+const BOOK: Rect = { x: sc(500), y: sc(300), w: sc(280), h: sc(120) };
+const PAGE_WALL: Rect = { x: sc(632), y: sc(300), w: sc(16), h: sc(120) };
+const DISC = { x: CX, y: CY, r: sc(215), label: sc(70) };
+const ARM = { x: sc(880), y: sc(150), len: sc(300) };
+const PEND = { x: CX, y: sc(200), len: sc(260), amp: (55 * Math.PI) / 180 };
 
 function los(arena: ArenaDef, x0: number, y0: number, x1: number, y1: number) {
   for (const c of arena.pillars) if (distToSegment(c.x, c.y, x0, y0, x1, y1) < c.r - 2) return false;
@@ -158,13 +160,13 @@ function ringAt(index: number) {
 function gongRadius(t: number) {
   const { into } = wrap(Math.max(0, t), 9);
   if (into < 1.5 || into >= 2.4) return 0;
-  return 28 + ((into - 1.5) / 0.9) * 180;
+  return sc(28) + ((into - 1.5) / 0.9) * sc(180);
 }
 
 function forkRadius(t: number) {
   const { into } = wrap(Math.max(0, t), 8);
   if (into < 1.5 || into >= 2.3) return 0;
-  return 24 + ((into - 1.5) / 0.8) * 160;
+  return sc(24) + ((into - 1.5) / 0.8) * sc(160);
 }
 
 export function tideFlooded(t: number) {
@@ -183,7 +185,7 @@ function pendTip(t: number) {
 
 function beatMark(i: number) {
   const k = (i - 2) / 2;
-  return { x: CX + k * 150, y: 500 + Math.abs(k) * 18 };
+  return { x: CX + k * sc(150), y: sc(500) + Math.abs(k) * sc(18) };
 }
 
 function discAng(t: number) {
@@ -196,8 +198,8 @@ function armTip(t: number) {
   if (into < 12) u = into / 12;
   else if (into < 13.5) u = 1;
   else u = 1 - (into - 13.5) / 1.2;
-  const outer = { x: DISC.x + 200, y: DISC.y - 70 };
-  const inner = { x: DISC.x + 76, y: DISC.y - 26 };
+  const outer = { x: DISC.x + sc(200), y: DISC.y - sc(70) };
+  const inner = { x: DISC.x + sc(76), y: DISC.y - sc(26) };
   return { x: outer.x + (inner.x - outer.x) * u, y: outer.y + (inner.y - outer.y) * u, u };
 }
 
@@ -235,7 +237,7 @@ export function tuneMove(arena: ArenaDef, x: number, y: number, t: number): Tune
     out.speed = 0.65;
   } else if (arena.id === 'metronomo') {
     const m = beatMark(c.index);
-    if (Math.hypot(x - m.x, y - m.y) < 26) {
+    if (Math.hypot(x - m.x, y - m.y) < sc(26)) {
       out.speed = 1.1;
       out.grip = 1.3;
     }
@@ -250,13 +252,13 @@ export function tuneTouch(arena: ArenaDef, x: number, y: number, t: number): { p
   if (arena.id === 'caverna') {
     const g = GONGS[c.index];
     const rad = gongRadius(t);
-    if (rad > 0 && Math.abs(Math.hypot(x - g.x, y - g.y) - rad) < 26 && los(arena, g.x, g.y, x, y)) return { pulse: c.pulse, speed: 0.85 };
+    if (rad > 0 && Math.abs(Math.hypot(x - g.x, y - g.y) - rad) < sc(26) && los(arena, g.x, g.y, x, y)) return { pulse: c.pulse, speed: 0.85 };
   }
   if (arena.id === 'jardim') {
     const f = FORKS[c.index];
     const rad = forkRadius(t);
     const d = Math.hypot(x - f.x, y - f.y);
-    if (rad > 0 && d > 80 && Math.abs(d - rad) < 26 && los(arena, f.x, f.y, x, y)) return { pulse: c.pulse, speed: 1.12 };
+    if (rad > 0 && d > sc(80) && Math.abs(d - rad) < sc(26) && los(arena, f.x, f.y, x, y)) return { pulse: c.pulse, speed: 1.12 };
   }
   return null;
 }
@@ -265,11 +267,11 @@ export function tunePush(arena: ArenaDef, x: number, y: number, t: number): { pu
   const c = clockOf(arena.id, t);
   if (arena.id === 'biblioteca' && c.phase === 'on' && inside(x, y, BOOK)) {
     const left = x < CX;
-    return { pulse: c.pulse, x: left ? BOOK.x - 22 : BOOK.x + BOOK.w + 22, y, vx: left ? -220 : 220, vy: 0 };
+    return { pulse: c.pulse, x: left ? BOOK.x - sc(22) : BOOK.x + BOOK.w + sc(22), y, vx: left ? -220 : 220, vy: 0 };
   }
   if (arena.id === 'vinil' && c.phase === 'on') {
     const tip = armTip(t);
-    if (Math.hypot(x - tip.x, y - tip.y) < 36) {
+    if (Math.hypot(x - tip.x, y - tip.y) < sc(36)) {
       const d = Math.hypot(x - DISC.x, y - DISC.y) || 1;
       return { pulse: c.pulse, x, y, vx: ((x - DISC.x) / d) * 420, vy: ((y - DISC.y) / d) * 420 };
     }
@@ -278,7 +280,7 @@ export function tunePush(arena: ArenaDef, x: number, y: number, t: number): { pu
     const tip = pendTip(t);
     const armX = PEND.x + (tip.x - PEND.x) * 0.42;
     const armY = PEND.y + (tip.y - PEND.y) * 0.42;
-    if (distToSegment(x, y, armX, armY, tip.x, tip.y) < 22) {
+    if (distToSegment(x, y, armX, armY, tip.x, tip.y) < sc(22)) {
       const dir = Math.cos(Math.PI * t) >= 0 ? 1 : -1;
       return { pulse: `pendulo-${Math.floor(t * 2)}`, x, y, vx: dir * 460, vy: -40 };
     }
@@ -311,9 +313,9 @@ export function tuneBody(arena: ArenaDef, x: number, y: number, r: number, t: nu
   if (arena.id === 'vinil' && c.phase === 'idle') {
     const tip = armTip(t);
     const d = Math.hypot(nx - tip.x, ny - tip.y);
-    if (d < r + 14 && d > 0.1) {
-      nx = tip.x + ((nx - tip.x) / d) * (r + 14);
-      ny = tip.y + ((ny - tip.y) / d) * (r + 14);
+    if (d < r + sc(14) && d > 0.1) {
+      nx = tip.x + ((nx - tip.x) / d) * (r + sc(14));
+      ny = tip.y + ((ny - tip.y) / d) * (r + sc(14));
     }
   }
   return { x: nx, y: ny };
@@ -323,21 +325,21 @@ export function tuneSteer(arena: ArenaDef, x: number, y: number, t: number): { a
   const c = clockOf(arena.id, t);
   let avoid = false;
   let seek: { x: number; y: number } | null = null;
-  if (arena.id === 'biblioteca' && c.phase !== 'idle' && inside(x, y, { x: BOOK.x - 20, y: BOOK.y - 20, w: BOOK.w + 40, h: BOOK.h + 40 })) avoid = true;
+  if (arena.id === 'biblioteca' && c.phase !== 'idle' && inside(x, y, { x: BOOK.x - sc(20), y: BOOK.y - sc(20), w: BOOK.w + sc(40), h: BOOK.h + sc(40) })) avoid = true;
   if (arena.id === 'caverna' && c.phase === 'on') {
     const g = GONGS[c.index];
     const rad = gongRadius(t);
-    if (Math.abs(Math.hypot(x - g.x, y - g.y) - rad) < 48) avoid = true;
+    if (Math.abs(Math.hypot(x - g.x, y - g.y) - rad) < sc(48)) avoid = true;
   }
   if (arena.id === 'vinil' && (c.phase === 'warn' || c.phase === 'on')) {
     const tip = armTip(t);
-    if (Math.hypot(x - tip.x, y - tip.y) < 70) avoid = true;
+    if (Math.hypot(x - tip.x, y - tip.y) < sc(70)) avoid = true;
   }
   if (arena.id === 'metronomo') {
     const tip = pendTip(t);
-    if (distToSegment(x, y, PEND.x, PEND.y, tip.x, tip.y) < 36) avoid = true;
+    if (distToSegment(x, y, PEND.x, PEND.y, tip.x, tip.y) < sc(36)) avoid = true;
     const m = beatMark(c.index);
-    if (Math.hypot(x - m.x, y - m.y) < 220) seek = m;
+    if (Math.hypot(x - m.x, y - m.y) < sc(220)) seek = m;
   }
   if (arena.id === 'recife' && tideFlooded(t) && onBank(arena, x, y)) avoid = true;
   if (arena.id === 'anfiteatro' && c.phase !== 'idle') {
@@ -346,7 +348,7 @@ export function tuneSteer(arena: ArenaDef, x: number, y: number, t: number): { a
     seek = { x: CX + ((x - CX) / d) * R, y: CY + ((y - CY) / d) * R };
   }
   if (arena.id === 'jardim' && c.phase === 'warn') seek = FORKS[c.index];
-  if (arena.id === 'camara' && c.phase === 'warn') seek = { x: BOOTHS[c.index].x + 40, y: BOOTHS[c.index].y + 40 };
+  if (arena.id === 'camara' && c.phase === 'warn') seek = { x: BOOTHS[c.index].x + sc(40), y: BOOTHS[c.index].y + sc(40) };
   return { avoid, seek };
 }
 
@@ -382,14 +384,14 @@ export function tuneGlow(arena: ArenaDef, x: number, y: number, t: number) {
     const { n, into } = wrap(Math.max(0, t), 9);
     if (into < 1.5 || into > 3.9) return false;
     const g = GONGS[n % 4];
-    return Math.hypot(x - g.x, y - g.y) < 210 && los(arena, g.x, g.y, x, y);
+    return Math.hypot(x - g.x, y - g.y) < sc(210) && los(arena, g.x, g.y, x, y);
   }
   if (arena.id === 'jardim') {
     const { n, into } = wrap(Math.max(0, t), 8);
     if (into < 1.5 || into > 3.8) return false;
     const f = FORKS[n % 6];
     const d = Math.hypot(x - f.x, y - f.y);
-    return d > 80 && d < 190 && los(arena, f.x, f.y, x, y);
+    return d > sc(80) && d < sc(190) && los(arena, f.x, f.y, x, y);
   }
   return false;
 }
@@ -423,7 +425,7 @@ export function tuneShapes(arena: ArenaDef, t: number, reduced: boolean): TuneSh
     if (c.phase === 'on') out.push({ kind: 'rect', layer: 'air', x: PAGE_WALL.x, y: PAGE_WALL.y, w: PAGE_WALL.w, h: PAGE_WALL.h, color: '#f4e2c0', alpha: 0.9 });
     if (c.phase === 'warn') {
       const dir = c.index === 0 ? 1 : -1;
-      out.push({ kind: 'seg', layer: 'floor', x: CX - dir * 40, y: CY, x2: CX + dir * 70, y2: CY, color: '#ffd27a', alpha: 0.9 });
+      out.push({ kind: 'seg', layer: 'floor', x: CX - dir * sc(40), y: CY, x2: CX + dir * sc(70), y2: CY, color: '#ffd27a', alpha: 0.9 });
     }
   } else if (arena.id === 'camara') {
     const b = BOOTHS[c.index];
@@ -449,7 +451,7 @@ export function tuneShapes(arena: ArenaDef, t: number, reduced: boolean): TuneSh
       if (!b.tide) continue;
       out.push({ kind: 'rect', layer: 'floor', x: b.x, y: b.y, w: b.w, h: b.h, color: flood ? '#1a6ea8' : '#e6c98a', alpha: c.phase === 'warn' ? 0.7 : flood ? 0.45 : 0.2, dash: c.phase === 'warn' });
     }
-    if (c.phase === 'warn') out.push({ kind: 'dot', layer: 'air', x: CX, y: CY, r: 18, color: '#ffd23e', alpha: 0.85 });
+    if (c.phase === 'warn') out.push({ kind: 'dot', layer: 'air', x: CX, y: CY, r: sc(18), color: '#ffd23e', alpha: 0.85 });
   } else if (arena.id === 'metronomo') {
     const tip = pendTip(t);
     out.push({ kind: 'seg', layer: 'air', x: PEND.x, y: PEND.y, x2: tip.x, y2: tip.y, color: '#e6c27a', alpha: 0.95 });
@@ -472,14 +474,14 @@ export function tuneNeedle(arena: ArenaDef, x: number, y: number, t: number) {
   const { into } = wrap(Math.max(0, t), 14.7);
   if (into >= 13.5) return false;
   const tip = armTip(t);
-  return Math.hypot(x - tip.x, y - tip.y) < 22;
+  return Math.hypot(x - tip.x, y - tip.y) < sc(22);
 }
 
 export function tunePendulumHits(x: number, y: number, t: number) {
   const tip = pendTip(t);
   const armX = PEND.x + (tip.x - PEND.x) * 0.42;
   const armY = PEND.y + (tip.y - PEND.y) * 0.42;
-  return distToSegment(x, y, armX, armY, tip.x, tip.y) < 20;
+  return distToSegment(x, y, armX, armY, tip.x, tip.y) < sc(20);
 }
 
 export const TUNE_IDS = ['anfiteatro', 'biblioteca', 'camara', 'caverna', 'jardim', 'vinil', 'recife', 'metronomo'] as const;

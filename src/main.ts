@@ -29,11 +29,12 @@ import { Carousel, fitText } from './ui/carousel';
 import { MapScene, MAP_DIFFICULTY } from './ui/mapArt';
 import { ABILITY_BAL, BOSS, KITS, Loadout, SKILLS, STANDARD_PRIMARIES, ULTS, gearPrice, sanitizeLoadout } from './game/balance';
 import { BASIC, ELEMENT_COLOR, ELEMENT_FX, ELEMENT_NAME, ENERGY_MAX, PLASMA, PLASMA_COLOR, SLOT_COST, catalogAim, cooldownOf, denyPlasma, denyPowerCast, describePower, energyReadout, formOf, kitOf, powerSlotIndex, studioOf } from './game/elements';
-import { comboReady, listSynergies, pickComboRecipe } from './game/combos';
+import { comboReady } from './game/combos';
+import { comboDockState, comboDockTag } from './game/comboDock';
 import { setAbilityTrace } from './game/abilityTrace';
 import { aimStop, castFamily, losOpen } from './game/aimMath';
 import { castAimShape, noteAim, solveAim, type AimShape } from './game/aimService';
-import { ACTION_LABEL, BIND_ROWS, Action, MoveScheme, Slot, bindOwner, commitBind, keyLabel, presetKeys, reservedKeyMessage } from './ui/input';
+import { ACTION_LABEL, BIND_ROWS, Action, KeyBinds, MoveScheme, Slot, bindOwner, commitBind, keyLabel, presetKeys, reservedKeyMessage } from './ui/input';
 import { LoadoutScreen } from './ui/loadout';
 import { MundoController } from './ui/mundoView';
 import { SkillBar, SlotView, drawSlotArt, slotReady } from './ui/skillbar';
@@ -75,6 +76,10 @@ let rulesThenStart = false;
 
 const training = () => false;
 const isOnline = () => game instanceof ClientGame;
+/** sandbox de atalhos: o laboratório reaproveitado, sem moedas e sem gravar a partida */
+let controlLab = false;
+let labKeys: KeyBinds | null = null;
+let labScheme: MoveScheme | null = null;
 
 // ------------------------------------------------------------------ ícones
 const ICONS = {
@@ -450,6 +455,35 @@ function go(action: string, el?: HTMLElement) {
       openOptPane('teclas');
       requestAnimationFrame(() => document.getElementById('controls-anchor')?.scrollIntoView({ block: 'start' }));
       break;
+    case 'try-controls':
+      startControlLab();
+      break;
+    case 'lab-back':
+      leaveControlLab(false);
+      show('screen-options');
+      openOptPane('teclas');
+      break;
+    case 'lab-reset':
+      settings.keys = presetKeys(settings.control, settings.moveScheme);
+      input.binds = settings.keys;
+      input.fireLatch = false;
+      bindConflict = null;
+      input.capture = null;
+      renderKeybinds();
+      renderManualAim();
+      applySettings();
+      if (game) updateHud();
+      break;
+    case 'lab-save':
+      saveSettings(settings);
+      labKeys = { ...settings.keys };
+      labScheme = settings.moveScheme;
+      toast('Atalhos salvos neste aparelho');
+      break;
+    case 'lab-quit':
+      leaveControlLab(true);
+      show('screen-title');
+      break;
     case 'combos':
       lastScreenBeforeOptions = currentScreen() ?? 'screen-title';
       show('screen-howto');
@@ -532,6 +566,12 @@ function go(action: string, el?: HTMLElement) {
       resume();
       break;
     case 'restart':
+      if (controlLab) {
+        leaveControlLab(false);
+        show('screen-options');
+        openOptPane('teclas');
+        break;
+      }
       if (isOnline()) {
         const btn = $<HTMLButtonElement>('#screen-results .btn[data-action=restart]');
         if (game?.mode === 'duelo' && btn.dataset.rematch === '1') {
@@ -546,6 +586,12 @@ function go(action: string, el?: HTMLElement) {
       } else startMatch();
       break;
     case 'select':
+      if (controlLab) {
+        leaveControlLab(false);
+        show('screen-options');
+        openOptPane('teclas');
+        break;
+      }
       if (isOnline() && rematchPending) {
         net?.send({ t: 'rematch', on: false });
         rematchPending = false;
@@ -555,6 +601,11 @@ function go(action: string, el?: HTMLElement) {
       else openSelect();
       break;
     case 'quit':
+      if (controlLab) {
+        leaveControlLab(false);
+        show('screen-title');
+        break;
+      }
       endMatch();
       if (net?.room) {
         net.send({ t: 'leave' });
@@ -1888,6 +1939,76 @@ function localRoster(): RosterEntry[] {
   return [human, ...bots];
 }
 
+function startControlLab() {
+  if (isOnline()) {
+    toast('O teste de controles fica na partida local.');
+    return;
+  }
+  if (!labKeys) {
+    labKeys = { ...settings.keys };
+    labScheme = settings.moveScheme;
+  }
+  controlLab = true;
+  matchMode = 'duelo';
+  const g = new Game({
+    arena: getArena('lab'),
+    humanChar: settings.char,
+    bots: 0,
+    difficulty: 'normal',
+    ownEchoDamage: false,
+    training: true,
+    dummy: true,
+    mode: 'duelo',
+    roundSec: 600,
+    suddenSec: 600,
+    roster: [
+      { id: 'p0', char: settings.char, isBot: false, name: 'Você' },
+      { id: 'alvo', char: 'luna', isBot: false, name: 'Alvo' },
+    ],
+  });
+  beginMatchView(g);
+  $('#control-lab').hidden = false;
+  show(null);
+}
+
+function leaveControlLab(save: boolean) {
+  if (save) saveSettings(settings);
+  else if (labKeys && labScheme) {
+    settings.keys = { ...labKeys };
+    settings.moveScheme = labScheme;
+    input.binds = settings.keys;
+    input.moveScheme = labScheme;
+  }
+  labKeys = null;
+  labScheme = null;
+  controlLab = false;
+  $('#control-lab').hidden = true;
+  endMatch();
+  renderKeybinds();
+  renderManualAim();
+  applySettings();
+  loadoutScreen.relabel();
+  audio.playMusic('menu');
+}
+
+function controlLabRead(): string {
+  const live = input.live();
+  const dirs: string[] = [];
+  if (live.my < -0.2) dirs.push('cima');
+  if (live.my > 0.2) dirs.push('baixo');
+  if (live.mx < -0.2) dirs.push('esquerda');
+  if (live.mx > 0.2) dirs.push('direita');
+  const move = Math.hypot(live.mx, live.my) > 0.12 ? `Andando ${dirs.join(' e ')}`.trim() : 'Parado';
+  const names = BIND_ROWS.filter((r) => live.held.includes(r.id)).map((r) => `${r.name} (${keyLabel(settings.keys[r.id])})`);
+  const held = names.length ? names.join(' · ') : 'Nenhuma tecla de poder';
+  const me = game?.human;
+  const energy = me ? `Energia ${energyReadout(me.energy ?? 0)}` : '';
+  const cds = me?.powerCd ?? [0, 0, 0, 0];
+  const slotKeys = [settings.keys.ability, settings.keys.skill, settings.keys.ult, settings.keys.bonus].map((c) => keyLabel(c));
+  const cd = cds.map((n, i) => (n > 0.05 ? `${slotKeys[i]} ${n.toFixed(1).replace('.', ',')}s` : `${slotKeys[i]} pronto`)).join(' · ');
+  return [move, held, energy, cd].filter(Boolean).join(' — ');
+}
+
 function startMatch() {
   audio.unlock();
   const hint = practiceHint;
@@ -1949,6 +2070,8 @@ function beginMatchView(g: AnyGame) {
 
 function endMatch() {
   game = null;
+  controlLab = false;
+  $('#control-lab').hidden = true;
   document.body.classList.remove('rewinding');
   $('#rw-sum').hidden = true;
   input.cancelAim();
@@ -2145,68 +2268,15 @@ let comboDone: { name: string; aEl: string; bEl: string; until: number } | null 
 let lastComboEls: [string, string] = ['fire', 'lightning'];
 
 /** combo do loadout: disponível, armado, janela, recusa ou confirmação curta */
-function comboState(g: AnyGame): { phase: 'ready' | 'armed' | 'wait' | 'done'; key: string; name: string; frac: number; aKey: string; bKey: string; aEl: string; bEl: string; need?: string } | null {
-  const me = g.human;
-  if (!me.alive) return null;
-  const foes = g.players
-    .filter((o) => o.alive && o.id !== me.id && g.hostile(me, o))
-    .map((o) => ({ burn: o.burnT, frozen: o.frozenT, gust: o.gustT, shock: o.shockT, root: o.rootT, marked: o.markedT, field: o.fieldT, fieldEl: o.fieldEl, stun: o.stunT, ctrl: o.ctrlT, plasma: o.plasmaPrimeT ?? 0, combo: o.comboT ?? 0, rupture: o.ruptureT ?? 0 }));
-  const labels = [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)];
-  const cds = me.powerCd ?? [0, 0, 0, 0];
-  // "pronto" só se dá para usar agora: sem recarga, com energia (ou a suprema carregada)
-  const why = (i: number): string => {
-    if ((cds[i] ?? 0) > 0) return `recarga ${(cds[i] ?? 0).toFixed(1).replace('.', ',')}s`;
-    if (i === 2) return (me.ultCharge ?? 100) < 100 ? 'suprema em carga' : '';
-    return (me.energy ?? ENERGY_MAX) < SLOT_COST[i] ? 'sem energia' : '';
-  };
-  const usable = [0, 1, 2, 3].map((i) => (why(i) ? 9 : 0));
-  const keyOf = (_slot: number, key: string) => key;
-  const pairOf = (row: { slots: number[]; powers: { element: string }[]; name: string }) => {
-    const a = row.slots[0] ?? 0;
-    const b = row.slots[1] ?? 1;
-    return {
-      aKey: keyOf(Math.max(0, a), labels[a] ?? ''),
-      bKey: keyOf(Math.max(0, b), labels[b] ?? ''),
-      aEl: row.powers[0]?.element ?? 'fire',
-      bEl: row.powers[1]?.element ?? 'lightning',
-      name: row.name,
-    };
-  };
-  const rows = listSynergies(me.char.id, me.loadout?.secondary ?? null).filter((row) => row.state === 'active' && row.slots.length === 2);
-  const recipe = pickComboRecipe(rows);
-  if (comboDone && performance.now() < comboDone.until) {
-    return { phase: 'done', key: '', name: comboDone.name, frac: 1, aKey: '', bKey: '', aEl: comboDone.aEl, bEl: comboDone.bEl };
-  }
-  const marked = foes.find((o) => (o.rupture ?? 0) > 0);
-  if (marked) {
-    const slot = [0, 1, 3].find((i) => !why(i)) ?? 0;
-    const key = keyOf(slot, labels[slot] ?? 'Q');
-    const ready = !why(slot);
-    const zKey = keyLabel(settings.keys.plasma);
-    return { phase: ready ? 'armed' : 'wait', key, name: 'Ruptura Marcada', frac: Math.min(1, (marked.rupture ?? 0) / 2.4), aKey: zKey, bKey: key, aEl: 'lightning', bEl: kitOf(me.char.id).powers[slot].element, need: ready ? `Marca aplicada ✓ → ${key}: habilidade compatível` : why(slot) };
-  }
-  const hit = comboReady(me.char.id, usable, foes, labels);
-  if (hit) {
-    const row = rows.find((r) => r.name === hit.name) ?? recipe;
-    const base = row ? pairOf(row) : { aKey: '', bKey: keyOf(hit.slot, hit.key), aEl: 'ice', bEl: 'lightning', name: hit.name };
-    lastComboEls = [base.aEl, base.bEl];
-    return { phase: 'armed', key: keyOf(hit.slot, hit.key), frac: hit.total ? Math.min(1, hit.left / hit.total) : 0, ...base, bKey: keyOf(hit.slot, hit.key), name: hit.name };
-  }
-  // o alvo já está preparado, mas falta algo: mostra o que falta (sem fingir que dá)
-  const armed = comboReady(me.char.id, [0, 0, 0, 0], foes, labels);
-  if (armed) {
-    const row = rows.find((r) => r.name === armed.name) ?? recipe;
-    const base = row ? pairOf(row) : { aKey: '', bKey: keyOf(armed.slot, armed.key), aEl: 'ice', bEl: 'lightning', name: armed.name };
-    return { phase: 'wait', key: keyOf(armed.slot, armed.key), frac: armed.total ? Math.min(1, armed.left / armed.total) : 0, need: why(armed.slot) || 'não dá para fechar', ...base, bKey: keyOf(armed.slot, armed.key), name: armed.name };
-  }
-  const plasma = g.players.find((o) => o.alive && o.id !== me.id && g.hostile(me, o) && o.plasmaT > 0);
-  if (plasma && (me.powerCd ?? [0, 0, 0, 0]).some((n) => n <= 0)) return { phase: 'armed', key: '', name: 'Explosão de Plasma', frac: Math.min(1, plasma.plasmaT / 4), aKey: '', bKey: keyLabel(settings.keys.plasma), aEl: 'plasma', bEl: 'plasma' };
-  if (recipe) {
-    const base = pairOf(recipe);
-    lastComboEls = [base.aEl, base.bEl];
-    return { phase: 'ready', key: base.bKey, frac: 0, ...base };
-  }
-  return null;
+function comboState(g: AnyGame) {
+  const cs = comboDockState(g, {
+    labels: [keyLabel(settings.keys.ability), keyLabel(settings.keys.skill), keyLabel(settings.keys.ult), keyLabel(settings.keys.bonus)],
+    plasmaKey: keyLabel(settings.keys.plasma),
+    now: performance.now(),
+    done: comboDone,
+  });
+  if (cs && cs.phase !== 'done') lastComboEls = [cs.aEl, cs.bEl];
+  return cs;
 }
 
 function comboLine(g: AnyGame): string {
@@ -2554,7 +2624,11 @@ function updateHud() {
   const g = game;
   rewindPanel(g);
   const suddenOn = g.mode === 'duelo' && g.sudden && g.phase === 'play';
-  const roundLabel = suddenOn ? 'MORTE SÚBITA' : g.tiebreak ? 'DESEMPATE' : training() && !isOnline() ? `TREINO ${g.round}/${g.totalRounds}` : `RODADA ${g.round}/${g.totalRounds}`;
+  const roundLabel = controlLab ? 'TESTE DE CONTROLES' : suddenOn ? 'MORTE SÚBITA' : g.tiebreak ? 'DESEMPATE' : training() && !isOnline() ? `TREINO ${g.round}/${g.totalRounds}` : `RODADA ${g.round}/${g.totalRounds}`;
+  if (controlLab) {
+    $('#control-lab').hidden = false;
+    setText('#control-lab-read', controlLabRead());
+  }
   setText('#hud-round', roundLabel);
   $('#hud-round').classList.toggle('sudden', suddenOn);
   const t = g.phase === 'prep' ? g.roundDur : g.timeLeft();
@@ -2580,8 +2654,7 @@ function updateHud() {
     if (comboEl.dataset.sig !== sig) {
       comboEl.dataset.sig = sig;
       const ico = (el: string) => `<i class="cb-el" data-el="${escapeHtml(el)}" style="--el:${ELEMENT_COLOR[el as keyof typeof ELEMENT_COLOR] ?? '#fff'}">${EL_TAG[el] ?? '•'}</i>`;
-      const tag =
-        cs.phase === 'done' ? 'COMBO EXECUTADO' : cs.need && /energia/i.test(cs.need) ? 'ENERGIA INSUFICIENTE' : cs.phase === 'wait' ? 'SEQUÊNCIA INTERROMPIDA' : cs.phase === 'armed' ? `PRÓXIMA HABILIDADE: ${cs.key || cs.bKey}` : 'COMBO DISPONÍVEL';
+      const tag = comboDockTag(cs);
       comboEl.innerHTML = `<span class="cb-tag">${tag}</span><span class="cb-pair">${ico(cs.aEl)}<em>+</em>${ico(cs.bEl)}</span><span class="cb-go">→</span><b>${escapeHtml(cs.name)}</b>${cs.aKey ? `<kbd>${escapeHtml(cs.aKey)}</kbd>` : ''}${cs.bKey ? `<kbd class="cb-fin">${escapeHtml(cs.bKey)}</kbd>` : ''}<small class="cb-need"></small><i class="cb-bar"><i></i></i>`;
       if (cs.phase === 'armed' || cs.phase === 'done') {
         comboEl.classList.remove('pop');
@@ -3104,6 +3177,10 @@ function resultRow(i: number, name: string, charId: string, skin: string, sub: s
 
 async function showResults() {
   if (!game || isOnline()) return;
+  if (controlLab) {
+    startControlLab();
+    return;
+  }
   const g = game as Game;
   const rank = g.ranking();
   const me = g.human;

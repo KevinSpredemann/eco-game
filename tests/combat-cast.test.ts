@@ -53,9 +53,9 @@ describe('colisão e ciclo do golpe', () => {
     const g = fight();
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 900;
-    b.y = 250;
+    b.y = 360;
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     expect(g.bullets.some((n) => n.el === kitOf('kai').powers[0].element)).toBe(true);
     expect(a.powerCd[0]).toBeGreaterThan(3);
@@ -69,9 +69,9 @@ describe('colisão e ciclo do golpe', () => {
     const g = fight();
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 520;
-    b.y = 250;
+    b.y = 360;
     const before = b.hp;
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 30 && b.hp === before; i++) g.step(STEP, { a: idle, b: idle });
@@ -99,10 +99,10 @@ describe('colisão e ciclo do golpe', () => {
     expect(c.hp).toBe(hc);
     const blocked = fight();
     const [s, t] = blocked.players;
-    s.x = 400;
-    s.y = 300;
-    t.x = 700;
-    t.y = 300;
+    s.x = 520;
+    s.y = 420;
+    t.x = 760;
+    t.y = 420;
     blocked.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 40; i++) blocked.step(STEP, { a: idle, b: idle });
     expect(t.hp).toBe(t.maxHp);
@@ -112,10 +112,10 @@ describe('colisão e ciclo do golpe', () => {
     const g = fight();
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 620;
-    b.y = 250;
-    g.iceWalls.push(wall(480, 180, 6, 140));
+    b.y = 360;
+    g.iceWalls.push(wall(480, 290, 6, 140));
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     for (let i = 0; i < 40; i++) g.step(STEP, { a: idle, b: idle });
     expect(b.hp).toBe(b.maxHp);
@@ -126,9 +126,9 @@ describe('colisão e ciclo do golpe', () => {
     const open = fight();
     const [a, b] = open.players;
     a.x = 300;
-    a.y = 250;
+    a.y = 360;
     b.x = 500;
-    b.y = 250;
+    b.y = 360;
     const before = b.hp;
     open.bullets.push({
       id: 50,
@@ -152,8 +152,8 @@ describe('colisão e ciclo do golpe', () => {
     const [s, t] = blocked.players;
     s.x = 300;
     t.x = 800;
-    s.y = t.y = 250;
-    blocked.iceWalls.push(wall(460, 160, 4, 180));
+    s.y = t.y = 360;
+    blocked.iceWalls.push(wall(460, 270, 4, 180));
     blocked.bullets.push({
       id: 51,
       x: s.x + 20,
@@ -182,12 +182,12 @@ describe('colisão e ciclo do golpe', () => {
     ]);
     const [a, b, c] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 460;
-    b.y = 250;
+    b.y = 360;
     c.x = 460;
-    c.y = 300;
-    g.iceWalls.push(wall(420, 268, 24, 20));
+    c.y = 410;
+    g.iceWalls.push(wall(420, 378, 24, 20));
     const hb = b.hp;
     const hc = c.hp;
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 60 }, b: idle, c: idle });
@@ -200,10 +200,10 @@ describe('colisão e ciclo do golpe', () => {
     const g = fight();
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 460;
-    b.y = 250;
-    g.iceWalls.push(wall(424, 200, 16, 100));
+    b.y = 360;
+    g.iceWalls.push(wall(424, 310, 16, 100));
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 60 }, b: idle });
     expect(b.hp).toBe(b.maxHp);
     expect(a.powerCd[1]).toBe(0);
@@ -214,9 +214,9 @@ describe('colisão e ciclo do golpe', () => {
     const g = fight();
     const [a] = g.players;
     a.x = 560;
-    a.y = 250;
+    a.y = 360;
     a.dir = 0;
-    g.iceWalls.push(wall(600, 180, 8, 140));
+    g.iceWalls.push(wall(600, 290, 8, 140));
     g.step(0.1, { a: { ...idle, dash: true, mx: 1 }, b: idle });
     expect(a.x).toBeLessThan(600);
     expect(a.x).toBeGreaterThan(520);
@@ -230,9 +230,9 @@ describe('colisão e ciclo do golpe', () => {
       const g = fight();
       const [a, b] = g.players;
       a.x = 400;
-      a.y = 250;
+      a.y = 360;
       b.x = 900;
-      b.y = 250;
+      b.y = 360;
       g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
       expect(a.powerCd[0]).toBe(0);
       expect(a.energy).toBe(ENERGY_MAX);
@@ -256,9 +256,9 @@ describe('colisão e ciclo do golpe', () => {
       const g = fight();
       const [a, b] = g.players;
       a.x = 400;
-      a.y = 250;
+      a.y = 360;
       b.x = 900;
-      b.y = 250;
+      b.y = 360;
       g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
       expect(a.powerCd[0]).toBe(0);
       g.step(0.25, { a: idle, b: idle });
@@ -274,13 +274,13 @@ describe('colisão e ciclo do golpe', () => {
     const g = fight();
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 700;
     b.y = 120;
     g.bullets.push({
       id: 70,
       x: 400,
-      y: 250 - GUN_Y,
+      y: 360 - GUN_Y,
       vx: 500,
       vy: 0,
       owner: a.id,
@@ -340,9 +340,9 @@ describe('colisão e ciclo do golpe', () => {
     const g = fight();
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 250;
+    a.y = 360;
     b.x = 900;
-    b.y = 250;
+    b.y = 360;
     g.step(STEP, { a: { ...idle, ability: true, aim: 0, ca: 0 }, b: idle });
     expect(abilityLog().some((s) => s.step === 'launch')).toBe(true);
     setAbilityTrace(false);
