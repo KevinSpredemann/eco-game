@@ -166,9 +166,10 @@ describe('SPEC A — perigo, energia, passo e setas', () => {
 });
 
 describe('SPEC A — arenas maiores', () => {
-  it('o mundo cresce 40% e a colisão do lab acompanha', () => {
-    expect(ARENA_SCALE).toBeGreaterThanOrEqual(1.3);
-    expect(ARENA_SCALE).toBeLessThanOrEqual(1.5);
+  it('a área jogável fica entre 2× e 3× e a colisão do lab acompanha', () => {
+    const ratio = (WORLD_W * WORLD_H) / (VIEW_W * VIEW_H);
+    expect(ratio).toBeGreaterThanOrEqual(2);
+    expect(ratio).toBeLessThanOrEqual(3);
     expect(WORLD_W).toBe(Math.round(VIEW_W * ARENA_SCALE));
     expect(WORLD_H).toBe(Math.round(VIEW_H * ARENA_SCALE));
     const lab = getArena('lab');

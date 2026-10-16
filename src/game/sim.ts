@@ -33,7 +33,8 @@ import { withSkin } from './characters';
 import { choosePortalExit, portalPairAt } from './portals';
 import { mirrorRest, spinEcho, tuneBlocks, tuneBody, tuneClock, tuneEchoDrag, tuneHides, tuneMove, tuneNeedle, tunePendulumHits, tunePush, tuneTouch } from './mapTune';
 import { DUEL, duelTiebreak, type DuelReason } from './duel';
-import { FFA, capAoe, ffaCall } from './ffa';
+import { FFA, capAoe, ffaCall, spreadSpawns } from './ffa';
+import { TEAM_WINDOW, teamComboName } from './teamPlay';
 import { lockHostile } from './aimLock';
 import { EnergyOrb, ORB_ENERGY, ORB_PAD } from './orbs';
 import {
@@ -798,7 +799,7 @@ export type GameEvent =
   | { type: 'minion'; x: number; y: number; kind: MinionKind }
   | { type: 'block'; x: number; y: number }
   | { type: 'stunned'; x: number; y: number; pid: string }
-  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string; vfx?: 'ult' | 'burst' | 'root' | 'element'; id?: string }
+  | { type: 'combo'; x: number; y: number; name: string; bonus: number; pid: string; vfx?: 'ult' | 'burst' | 'root' | 'element'; id?: string; team?: boolean; confirmed?: boolean }
   /** poder acertou alguém (mesmo ponto do dano): efeito de impacto do elemento */
   | { type: 'phit'; x: number; y: number; el: string; pid: string; aoe?: boolean }
   /** projétil de poder acabou sem acertar (parede ou alcance): dissipa no lugar */
@@ -852,6 +853,7 @@ export class Game {
   enemies: Enemy[] = [];
   abilityOrbs: AbilityOrb[] = [];
   energyOrbs: EnergyOrb[] = [];
+  private teamCasts: { pid: string; el: Element; t: number }[] = [];
   private orbTimer = 6;
   iceWalls: IceWall[] = [];
   vortexes: Vortex[] = [];
@@ -968,9 +970,10 @@ export class Game {
     }
     assignUniqueColors(this.players);
     assignUniqueNames(this.players);
-    // 2x2: primeira metade no time azul, segunda no vermelho (amigos entram antes dos bots)
-    const half = Math.ceil(this.players.length / 2);
-    this.players.forEach((p, i) => (p.team = this.mode === 'dupla' ? (i < half ? 0 : 1) : -1));
+    // 2x2: no máximo 2 por time. Um roster maior é cortado. Com 2 pessoas, um em cada time.
+    if (this.mode === 'dupla' && this.players.length > 4) this.players.length = 4;
+    const perTeam = this.mode === 'dupla' ? Math.min(2, Math.ceil(this.players.length / 2)) : 0;
+    this.players.forEach((p, i) => (p.team = this.mode === 'dupla' ? (i < perTeam ? 0 : 1) : -1));
     this.nextRound();
   }
 
@@ -1146,6 +1149,7 @@ export class Game {
     this.enemies = [];
     this.abilityOrbs = [];
     this.energyOrbs = [];
+    this.teamCasts = [];
     this.orbTimer = 5 + Math.random() * 3;
     this.iceWalls = [];
     this.ultZones = [];
@@ -1277,7 +1281,8 @@ export class Game {
         p.x = sp.x;
         p.y = sp.y;
       } else {
-        const sp = [spawns[0], spawns[1]][i % 2];
+        const spots = spreadSpawns(spawns, this.players.length, WORLD_W / 2, WORLD_H / 2);
+        const sp = spots[i % spots.length];
         p.x = sp.x;
         p.y = sp.y;
       }
@@ -3024,6 +3029,16 @@ export class Game {
     }
   }
 
+  /** Indicador de combo de equipe. O bônus é zero: o dano continua o de cada golpe. */
+  private noteTeamCast(p: Player, el: Element) {
+    const t = this.roundT;
+    const prev = p.team >= 0 ? this.teamCasts.find((c) => c.pid !== p.id && this.teamOf(c.pid) === p.team && t - c.t <= TEAM_WINDOW && teamComboName(c.el, el)) : undefined;
+    this.teamCasts.push({ pid: p.id, el, t });
+    this.teamCasts = this.teamCasts.filter((c) => t - c.t <= TEAM_WINDOW);
+    if (!prev) return;
+    this.events.push({ type: 'combo', x: p.x, y: p.y, name: teamComboName(prev.el, el)!, bonus: 0, pid: p.id, team: true, confirmed: true });
+  }
+
   private checkEnergyOrbs(p: Player, interact: boolean) {
     if (!interact) return;
     const reach = C.PLAYER_R + ORB_PAD;
@@ -3639,6 +3654,7 @@ export class Game {
       if (ult) p.ultCharge = 0;
       else p.energy = clampEnergy(p.energy - cost);
       p.powerCd[slot] = cooldownOf(p.char.id, def.cd);
+      this.noteTeamCast(p, def.element);
     };
     if (def.act === 'dash' || def.act === 'blink' || def.act === 'decoy' || def.act === 'zone' || def.act === 'wall') {
       if ((def.act === 'dash' || def.act === 'blink') && p.rootT > 0) {

@@ -124,11 +124,11 @@ describe('mira, carga e leitura do golpe', () => {
     ]);
     const [a, b, c] = g.players;
     a.x = 400;
-    a.y = 300;
+    a.y = 360;
     b.x = 460;
-    b.y = 300;
+    b.y = 360;
     c.x = 700;
-    c.y = 300;
+    c.y = 360;
     const hb = b.hp;
     const hc = c.hp;
     g.step(STEP, { a: { ...idle, skill: true, aim: 0, ca: 0, cr: 70 }, b: idle, c: idle });

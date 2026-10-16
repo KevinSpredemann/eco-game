@@ -85,6 +85,8 @@ let labKeys: KeyBinds | null = null;
 let labScheme: MoveScheme | null = null;
 let spectateId: string | null = null;
 let spectateKiller = '';
+let teamComboText = '';
+let teamComboUntil = 0;
 
 // ------------------------------------------------------------------ ícones
 const ICONS = {
@@ -2716,6 +2718,12 @@ function updateHud() {
     orbEl.hidden = !orb;
     if (orb) setText('#orb-prompt', orb);
   }
+  const teamEl = $('#team-combo');
+  if (teamEl) {
+    const showTeam = teamComboText !== '' && performance.now() < teamComboUntil && g.phase === 'play';
+    teamEl.hidden = !showTeam;
+    if (showTeam) setText('#team-combo', teamComboText);
+  }
   // combo armado: tecla + nome + barra da janela que está acabando (some sozinho quando fecha)
   const cs = powersMatch(g) && g.phase === 'play' ? comboState(g) : null;
   const comboEl = $('#hud-combo');
@@ -2972,6 +2980,11 @@ function onEvents(events: GameEvent[]) {
         }
         break;
       case 'combo':
+        if (e.team && e.confirmed) {
+          teamComboText = e.name;
+          teamComboUntil = performance.now() + 1800;
+          break;
+        }
         audio.combo(panOf(e.x), e.vfx === 'ult');
         // combo SEU: nome grande e rápido no alto (sem caixa de texto no meio da arena)
         if (mine) {

@@ -124,10 +124,10 @@ describe('o golpe segue o ponto, não o corpo', () => {
     ]);
     const [a, b] = g.players;
     a.x = 400;
-    a.y = 300;
+    a.y = 360;
     a.dir = 0;
     b.x = 700;
-    b.y = 300;
+    b.y = 360;
     g.step(STEP, { a: { ...idle, mx: 0, my: -1, ability: true, aim: Math.PI, ca: Math.PI, cr: 180 }, b: idle });
     const bullet = g.bullets[g.bullets.length - 1];
     expect(bullet.vx).toBeLessThan(0);
@@ -141,7 +141,7 @@ describe('o golpe segue o ponto, não o corpo', () => {
     ]);
     const a = g.players[0];
     a.x = 400;
-    a.y = 300;
+    a.y = 360;
     a.dir = 0;
     g.step(STEP, { a: { ...idle, ability: true, aim: Math.PI, ca: Math.PI, cr: 160 }, b: idle });
     expect(g.bullets[g.bullets.length - 1].vx).toBeLessThan(0);
@@ -159,12 +159,12 @@ describe('o golpe segue o ponto, não o corpo', () => {
     ]);
     const [a, b, c] = g.players;
     a.x = 400;
-    a.y = 300;
+    a.y = 360;
     a.dir = Math.PI;
     b.x = 470;
-    b.y = 300;
+    b.y = 360;
     c.x = 330;
-    c.y = 300;
+    c.y = 360;
     const hb = b.hp;
     const hc = c.hp;
     g.step(STEP, { a: { ...idle, mx: -1, my: 0, skill: true, aim: 0, ca: 0, cr: 70 }, b: idle, c: idle });

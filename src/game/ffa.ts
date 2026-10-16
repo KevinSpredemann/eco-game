@@ -24,6 +24,15 @@ export function capAoe<T extends { x: number; y: number; id: string }>(mode: str
   }).slice(0, cap);
 }
 
+/** Spawns mais longe do centro, um por pessoa. Evita dois corpos no mesmo ponto. */
+export function spreadSpawns<T extends { x: number; y: number }>(spawns: readonly T[], n: number, cx: number, cy: number): T[] {
+  const ranked = spawns
+    .map((s, i) => ({ s, i, d: (s.x - cx) ** 2 + (s.y - cy) ** 2 }))
+    .sort((a, b) => b.d - a.d || a.i - b.i);
+  const take = Math.max(1, Math.min(n, ranked.length));
+  return ranked.slice(0, take).map((r) => r.s);
+}
+
 /** Próximo jogador vivo na câmera de espectador. */
 export function spectateCycle(ids: string[], current: string | null, dir: 1 | -1): string | null {
   if (!ids.length) return null;

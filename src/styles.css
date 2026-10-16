@@ -847,6 +847,22 @@ input[type='checkbox'] {
 .orb-prompt[hidden] {
   display: none;
 }
+.team-combo {
+  position: absolute;
+  left: 50%;
+  top: max(108px, calc(env(safe-area-inset-top) + 96px));
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: rgba(8, 16, 32, 0.82);
+  color: #b7f3ff;
+  font-size: 0.95rem;
+  pointer-events: none;
+  z-index: 2;
+}
+.team-combo[hidden] {
+  display: none;
+}
 .spec-bar {
   position: absolute;
   left: 50%;

@@ -17,7 +17,8 @@ import { drawCrate, drawMinion, drawPools, drawResSpot, isMinion } from './minio
 import { corpsePose, gritSpecks } from './visuals';
 import { AimPreview, drawAimPreview, drawBossOver, drawBossUnder, drawCastsGround, drawPylon, drawStatus, drawTraps } from './combatFx';
 import { screenToWorld, viewFromLetterbox, type WorldView } from '../game/aimService';
-import { Expr, SpriteCache, WALK_FRAMES, drawCharacter, drawSymbol, facingOf, rr } from './sprites';
+import { Expr, SpriteCache, WALK_FRAMES, bodyPose, drawCharacter, drawSymbol, facingOf, rr } from './sprites';
+import { allyOf } from '../game/teamPlay';
 import { AbilityVfx } from './abilityVfx';
 
 type Particle = {
@@ -2352,6 +2353,13 @@ export class Renderer {
       ctx.beginPath();
       ctx.ellipse(p.x, p.y + 3, C.PLAYER_R + 8, (C.PLAYER_R + 8) * 0.5, 0, 0, Math.PI * 2);
       ctx.stroke();
+      if (allyOf(game.human, p)) {
+        ctx.strokeStyle = '#9ef0ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y - 46, 7, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
     // investida: poeira e linhas de impacto
     if (p.chargeT > 0 && !this.reducedEffects) {
@@ -2396,7 +2404,7 @@ export class Renderer {
       return;
     }
     // pose de lançar habilidade (braço estendido) por um instante
-    const img = this.sprites.get(p.char, facing, frame, p.moving, null, expr, an.cast > 0.2 || p.castT > 0 ? 'cast' : 'normal');
+    const img = this.sprites.get(p.char, facing, frame, p.moving, null, expr, bodyPose({ hitFlash: p.hitFlash, dodgeT: p.dodgeT, dashT: p.dashT, cast: an.cast, castT: p.castT }));
     const gunBehind = game.combat && Math.sin(p.aim) < -0.45;
     // recuo do tiro: o corpo e a arma vão um pouco para trás (impacto e recuperação)
     const rk = an.recoil * an.recoil * 3;

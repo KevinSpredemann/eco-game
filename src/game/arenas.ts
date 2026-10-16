@@ -1,7 +1,7 @@
 import { STUDIO_ARENAS } from './studioArenas';
 
-/** 40% maior que o mapa de 1280×720. Colisão, limites, spawns e nav usam este fator. */
-export const ARENA_SCALE = 1.4;
+/** Área jogável entre 2× e 3× o mapa de 1280×720. 1,58 linear ≈ 2,5× de área. Colisão, limites, spawns e nav usam este fator. */
+export const ARENA_SCALE = 1.58;
 export const VIEW_W = 1280;
 export const VIEW_H = 720;
 export const WORLD_W = Math.round(VIEW_W * ARENA_SCALE);
@@ -160,6 +160,8 @@ const ALL_ARENAS: ArenaDef[] = [
       { x: 1074, y: 290, w: 36, h: 140 },
       { x: 600, y: 30, w: 80, h: 70 },
       { x: 600, y: 620, w: 80, h: 70 },
+      // cobertura baixa no flanco esquerdo. O corredor central (depois da escala, y ≈ 360) continua livre.
+      { x: 48, y: 340, w: 86, h: 20 },
     ],
     pillars: [
       { x: 500, y: 300, r: 22 },

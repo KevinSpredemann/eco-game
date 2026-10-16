@@ -234,8 +234,19 @@ export function spriteKey(c: CharacterDef): string {
 }
 
 // ================================================================== corpo
-/** 'cast' = braço da frente estendido lançando o poder (vista lateral) */
-export type Pose = 'normal' | 'cast';
+/**
+ * Poses do desenho 2D. Não há esqueleto 3D.
+ * 'cast' e 'windup' só mudam o braço na vista lateral.
+ */
+export type Pose = 'normal' | 'cast' | 'windup' | 'hurt' | 'dodge';
+
+export function bodyPose(o: { hitFlash: number; dodgeT: number; dashT: number; cast: number; castT: number }): Pose {
+  if (o.hitFlash > 0.08) return 'hurt';
+  if (o.dodgeT > 0 || o.dashT > 0) return 'dodge';
+  if (o.cast > 0.2) return 'cast';
+  if (o.castT > 0) return 'windup';
+  return 'normal';
+}
 
 export function drawCharacter(ctx0: CanvasRenderingContext2D, c: CharacterDef, facing: Facing, phase: number, moving: boolean, expr: Expr = 'neutral', pose: Pose = 'normal') {
   const ctx = thinLines(ctx0);
@@ -329,7 +340,10 @@ export function drawCharacter(ctx0: CanvasRenderingContext2D, c: CharacterDef, f
   drawTorso(ctx, c, L, facing);
 
   // ---------------------------------------------------------------- braços da frente
+  if (pose === 'hurt') ctx.translate(0, 3);
   if (side && pose === 'cast') armAt(ctx, c, L, 1.5, -40, 9.5, -38.5, 18, -38.5, false, true, 1);
+  else if (side && pose === 'windup') armAt(ctx, c, L, 1.5, -40, -8, -34, -1, -30, false, true, 1);
+  else if (side && pose === 'dodge') armAt(ctx, c, L, 1.5, -40, 2, -28, 6, -24, false, true, 1);
   else if (side) drawArm(ctx, c, L, 1.5, -40, armSwing, false, side);
   else {
     drawArm(ctx, c, L, -12.5 * B, -40, armSwing, false, side);

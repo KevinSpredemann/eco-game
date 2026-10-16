@@ -2,6 +2,7 @@ import type { CharacterDef } from '../game/characters';
 
 import { drawCharacter as drawChar, type Expr, type Facing, type Pose } from './chars';
 export type { Expr, Facing, Pose };
+export { bodyPose } from './chars';
 export const drawCharacter = drawChar;
 
 export function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -228,7 +229,7 @@ export class SpriteCache {
 
   get(c: CharacterDef, facing: Facing, frame: number, moving: boolean, ghost: string | null, expr: Expr = 'neutral', pose: Pose = 'normal'): HTMLCanvasElement {
     if (ghost) expr = 'neutral';
-    if (facing !== 'side') pose = 'normal';
+    if (facing !== 'side' && (pose === 'cast' || pose === 'windup')) pose = 'normal';
     const key = `${c.id}:${c.skinId ?? ''}|${facing}|${moving ? 'm' : 'i'}${frame}|${ghost ?? ''}|${expr}|${pose}`;
     let cv = this.cache.get(key);
     if (cv) return cv;

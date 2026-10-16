@@ -56,7 +56,7 @@ describe('previsão online', () => {
   it('encostar numa parede não quebra o quadro nem atravessa', () => {
     const g = duel();
     const cg = mirror();
-    const side = g.arena.walls.find((w) => w.h > w.w && w.x < g.arena.walls.reduce((m, n) => Math.min(m, n.x), 9999) + 1)!;
+    const side = g.arena.walls.filter((w) => w.h > w.w).sort((a, b) => a.x - b.x)[0];
     g.players[0].y = side.y + side.h / 2;
     g.players[0].x = side.x - 28;
     cg.applySnapshot(encodeSnapshot(g, true, false), []);
